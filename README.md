@@ -26,6 +26,22 @@
 | `skills.js` | 7 个演示 SKILL 的展示资料 |
 | `app.js` | 导航、角色切换、预览、检索、详情与复制 |
 | `README.txt` | 本地使用说明与验证记录 |
+| `skills/foru-web-ui/` | 完整 FORU SKILL，含说明、参考资料、原站证据截图和独立 starter |
+
+## 附带的 FORU SKILL
+
+完整技能位于 [skills/foru-web-ui](skills/foru-web-ui/)，入口为 [SKILL.md](skills/foru-web-ui/SKILL.md)。
+
+下载仓库后，把整个 `foru-web-ui` 文件夹放入 Codex 的 skills 目录，保留 `agents`、`references` 和 `assets`，不要只复制 `SKILL.md`。
+
+调用示例：
+
+```text
+使用 $foru-web-ui，为我的业务制作 FORU 风格的响应式页面。
+保留原生 HTML/CSS/JS，明确角色入口、资源内容与必要交互。
+```
+
+技能素材、证据截图和 starter 按原目录完整保留。证据用于核对设计；复用时应使用自己的品牌与业务内容，不将原站客户、统计、联系方式或资质当作目标业务的背书。
 
 ## 演示边界
 
