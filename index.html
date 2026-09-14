@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SKILL 广场：按任务寻找设计、开发、研究与内容创作的方法，查看示例、依赖和安装说明。">
+<title>SKILL 广场 · FORU 风格 Demo</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23165DFF'/%3E%3Cpath d='m16 6 10 6-10 6-10-6Zm-10 12 10 6 10-6' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script src="skills.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<svg class="foru-symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <linearGradient id="foru-icon-blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8DB8FF"/><stop offset="1" stop-color="#3B69F2"/></linearGradient>
+  <linearGradient id="foru-icon-purple" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D5BBFF"/><stop offset="1" stop-color="#A063E8"/></linearGradient>
+  <linearGradient id="foru-icon-green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B8F59D"/><stop offset="1" stop-color="#7BD663"/></linearGradient>
+  <linearGradient id="foru-scene-white" x1="0" y1="0" x2=".5" y2="1"><stop stop-color="#FFF"/><stop offset="1" stop-color="#DDE9F6"/></linearGradient>
+  <linearGradient id="foru-scene-blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A7E6FF"/><stop offset=".55" stop-color="#67ABFA"/><stop offset="1" stop-color="#3C65EF"/></linearGradient>
+  <linearGradient id="foru-scene-cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D9F8FF"/><stop offset="1" stop-color="#71D8E8"/></linearGradient>
+  <linearGradient id="foru-scene-violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D2C2FB"/><stop offset=".55" stop-color="#9ABDFB"/><stop offset="1" stop-color="#63E3ED"/></linearGradient>
+  <filter id="foru-scene-shadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#6B9FE9" flood-opacity=".20"/></filter>
+  <symbol id="foru-learning" viewBox="0 0 56 56"><path d="M4 18 28 7l24 11-24 12Z" fill="url(#foru-icon-blue)"/><path d="M12 25v15c10 7 22 7 32 0V25l-16 8Z" fill="#8DB9FF"/><path d="m9 43 19 8 19-8v5l-19 8-19-8Z" fill="#77DCEB"/><path d="M50 20v17" stroke="#5483ED" stroke-width="3"/><circle cx="50" cy="39" r="3" fill="#5E91FA"/></symbol>
+  <symbol id="foru-assessment" viewBox="0 0 56 56"><rect x="6" y="8" width="37" height="44" rx="5" fill="url(#foru-icon-blue)"/><path d="M15 5v9m19-9v9" stroke="#8EF0D9" stroke-width="4" stroke-linecap="round"/><path d="M13 24h17m-17 9h11" stroke="#FFF" stroke-width="4" stroke-linecap="round"/><path d="M29 24c12-9 26 2 22 14l-6 13H30l-2-13c-2-6-2-9 1-14Z" fill="url(#foru-icon-purple)"/><text x="31" y="40" fill="#FFF" font-size="13" font-family="sans-serif" font-weight="700">AI</text></symbol>
+  <symbol id="foru-jobs" viewBox="0 0 56 56"><path d="M17 17V9c0-2 3-3 5-3h12c2 0 5 1 5 3v8" stroke="#8ADC71" stroke-width="6" fill="none"/><rect x="5" y="16" width="46" height="34" rx="7" fill="url(#foru-icon-green)"/><path d="M5 25c12 8 34 8 46 0" fill="none" stroke="#CCF9B5" stroke-width="3"/><rect x="25" y="28" width="6" height="9" rx="2" fill="#FFF"/><circle cx="47" cy="46" r="7" fill="#8CE5C8" stroke="#FFF" stroke-width="2"/><path d="m51 51 3 3" stroke="#8CE5C8" stroke-width="3"/></symbol>
+  <symbol id="foru-projects" viewBox="0 0 56 56"><path d="M5 11h19l5 6h20v31H5Z" fill="#6A65D8"/><rect x="5" y="18" width="47" height="32" rx="4" fill="url(#foru-icon-blue)"/><path d="M12 27h4m-4 7h4m4-7h13m-13 7h9" stroke="#E5F6FF" stroke-width="2"/><rect x="34" y="31" width="21" height="18" rx="3" fill="#98DD75"/><path d="m38 37 4-3m-4 3 4 3m9 3-4 3m4-3-4-3M38 37h12m-10 6h11" fill="none" stroke="#FFF" stroke-width="1.5"/></symbol>
+  <symbol id="foru-scene-ai" viewBox="0 0 360 310"><path d="m0 230 177-82 183 82v80H0Z" fill="url(#foru-scene-white)"/><path d="m-4 267 187-95 190 97M-4 285l187-95 190 97" fill="none" stroke="#D0DEEB" stroke-width="2"/><g filter="url(#foru-scene-shadow)"><ellipse cx="198" cy="238" rx="126" ry="44" fill="#85BDF4"/><ellipse cx="198" cy="230" rx="126" ry="44" fill="#EEF7FD"/><ellipse cx="198" cy="230" rx="110" ry="34" fill="#D8EAF9"/><path d="M198 94c-33-31-74-7-74 21-20 8-30 32-16 49-10 25 12 46 31 46l19 26h49l-2-33c20-3 34-20 25-36 26-10 26-40 7-48 3-20-15-30-39-25Z" fill="url(#foru-scene-blue)"/><path d="m175 118-8 27 16 13m-43-7 17 15-4 18m-16 3 16 9m57-60-18 13 5 15m-33 44 18-13m-50-87 12 7" fill="none" stroke="#407DE8" stroke-width="5" stroke-linecap="round"/><path d="m55 227 41-19 30 13-42 20Z" fill="#5BAAF3"/><path d="m59 225 1-31 36-16v30Z" fill="#8BD8FF"/><path d="m276 192 20-9 23 11-20 10Z" fill="#75C8FF"/><path d="m297 184 4-20 21 11-3 20Z" fill="#5D9CE8"/><path d="M198 233v15m-73-22-13 8m167-8 14 8" stroke="#B0CCE8" stroke-width="2"/></g></symbol>
+  <symbol id="foru-scene-car" viewBox="0 0 360 310"><path d="m0 212 184-111 176 81v128H0Z" fill="url(#foru-scene-white)"/><g filter="url(#foru-scene-shadow)"><path d="M-30 228C65 184 117 293 182 195S279 97 401 58" fill="none" stroke="#E1E9EF" stroke-width="91"/><path d="M-30 220C65 176 117 285 182 187S279 89 401 50" fill="none" stroke="#FBFDFE" stroke-width="81"/><path d="M-30 250C65 206 117 315 182 217S279 119 401 80" fill="none" stroke="#9BE8B9" stroke-width="5"/><path d="M-30 185C65 141 117 250 182 152S279 54 401 15" fill="none" stroke="#C6F6D7" stroke-width="4"/><ellipse cx="67" cy="177" rx="34" ry="14" fill="#A8C5E9"/><path d="M33 92v84c0 17 68 17 68 0V92" fill="url(#foru-scene-white)"/><ellipse cx="67" cy="92" rx="34" ry="13" fill="#FFF"/><path d="m210 132 30 13-6 22-38-17Z" fill="url(#foru-scene-blue)"/><path d="m203 126 14-5 25 11-13 6Z" fill="#B7EBFB"/><path d="m200 128 4-2 25 12-1 7-28-12Z" fill="#578EDC"/><path d="M194 162q-20 5-10 16m3-22q-30 10-21 30m73-23q15 9 4 19m2-13q25 9 12 32" fill="none" stroke="#6FAEED" stroke-width="3"/><path d="m268 259 24-13 22 10v35l-24 13-22-11Z" fill="#F6FBFE"/><path d="m318 238 25-13 23 11v49l-26 13-22-12Z" fill="#E3EEF7"/></g></symbol>
+  <symbol id="foru-scene-commerce" viewBox="0 0 360 310"><path d="m0 240 178-83 182 80v73H0Z" fill="url(#foru-scene-white)"/><g filter="url(#foru-scene-shadow)"><ellipse cx="180" cy="258" rx="158" ry="44" fill="#D6E7F7"/><ellipse cx="180" cy="250" rx="158" ry="40" fill="#F9FDFF"/><path d="m53 127 32-13 30 14v116l-31 14-31-16Z" fill="url(#foru-scene-cyan)"/><path d="m82 114 33 14v116l-33 15Z" fill="#93C4F2"/><path d="m166 140 93-28 45 26v124l-93 18-45-24Z" fill="url(#foru-scene-blue)"/><path d="m172 144 85-24 39 20-85 24Z" fill="#F2FBFE"/><path d="m192 142 63-15 20 9-63 16Z" fill="#7CCEEA"/><path d="m179 177 32 15 81-21v9l-81 21-32-15Z" fill="#8BC5FF"/><path d="m126 206 26-11 31 11v65l-29 12-28-14Z" fill="url(#foru-scene-white)"/><path d="m126 206 26-11 31 11-29 12Z" fill="#FFD898"/><path d="m76 256 20-9 23 9v31l-22 11-21-11Z" fill="#FFF"/><path d="m274 260 20-7 23 8v25l-22 9-21-9Z" fill="#F2FBFE"/><path d="m274 260 20-7 23 8-22 9Z" fill="#FFD990"/><path d="m236 14-53 62 53 57 49-64Z" fill="url(#foru-scene-violet)"/><path d="m236 14-11 62-42 0m53 57-11-57 60-7" fill="none" stroke="#C7EFFF" stroke-width="2"/><path d="m236 14-11 62 60-7Z" fill="#A4F1F3" opacity=".55"/></g></symbol>
+  <symbol id="foru-scene-robot" viewBox="0 0 360 310"><path d="m0 231 190-93 170 69v103H0Z" fill="url(#foru-scene-white)"/><path d="m45 278 164-76 151 59M64 310l161-77 135 57" fill="none" stroke="#B7D0E6" stroke-width="2"/><g filter="url(#foru-scene-shadow)"><ellipse cx="137" cy="231" rx="83" ry="29" fill="#5089E6"/><ellipse cx="137" cy="223" rx="83" ry="29" fill="#FBFDFF"/><ellipse cx="137" cy="215" rx="61" ry="22" fill="#D9EAF6"/><path d="M123 164h32v48c-7 12-25 12-32 0Z" fill="url(#foru-scene-white)"/><path d="m126 163 13-43 31 8-19 48Z" fill="url(#foru-scene-white)"/><circle cx="140" cy="168" r="16" fill="#C7DDEC"/><circle cx="140" cy="168" r="9" fill="#FFF"/><path d="m144 125 32-51 24 13-35 50Z" fill="#F8FBFF"/><circle cx="158" cy="127" r="16" fill="#D9E9F2"/><path d="m181 74 43 2-2 16-34 1Z" fill="url(#foru-scene-white)"/><circle cx="188" cy="85" r="12" fill="#E4F0F9"/><path d="m223 83 4 20 10 8m-10-9-6 13" fill="none" stroke="#70C9F3" stroke-width="6"/><path d="m257 170 42-18 48 20v69l-47 20-43-21Z" fill="url(#foru-scene-blue)"/><path d="m257 170 42-18 48 20-47 19Z" fill="url(#foru-scene-violet)"/><path d="m280 208 13-6v22l-13 6m26-20 13-6v22l-13 6" fill="none" stroke="#7DDFEF" stroke-width="3"/><path d="m58 151 48-21v58l-48 21Z" fill="#EAF6FC" stroke="#BBD9EC" stroke-width="3"/><path d="m66 167 9-4m-9 16 25-11m-25 21 25-11" stroke="#99C7ED" stroke-width="3"/></g></symbol>
+  <symbol id="foru-book" viewBox="0 0 48 48"><path d="M5 10h15l4 4 4-4h15v29H28l-4 4-4-4H5z" fill="currentColor"/><path d="M24 16v20M10 17h8m-8 7h8m12-7h8m-8 7h8" stroke="white" stroke-width="3"/></symbol>
+  <symbol id="foru-building" viewBox="0 0 48 48"><path d="M8 9h22v32H8zm22 12h11v20H30z" fill="currentColor"/><path d="M14 17h10m-10 8h10m-10 8h10m11-4h2m-2 7h2" stroke="white" stroke-width="3"/></symbol>
+  <symbol id="foru-case" viewBox="0 0 48 48"><path d="M17 14V8h14v6M6 25v16h36V25M6 15h36v14H6z" fill="currentColor"/><path d="M18 10h12m-6 13v10M7 27h34" stroke="white" stroke-width="3"/></symbol>
+  <symbol id="foru-team" viewBox="0 0 48 48"><g fill="currentColor"><circle cx="24" cy="13" r="7"/><circle cx="9" cy="21" r="5"/><circle cx="39" cy="21" r="5"/><path d="M14 40V30a10 10 0 0 1 20 0v10zM2 39V32a7 7 0 0 1 10-6v13zm34 0V26a7 7 0 0 1 10 6v7z"/></g></symbol>
+</defs></svg>
+
+<a class="foru-skip" href="#main">跳至内容</a>
+<header class="foru-header"><div class="foru-container foru-header-inner">
+<a class="foru-brand" href="#/"><svg class="brand-mark" viewBox="0 0 38 38" aria-hidden="true"><rect width="38" height="38" rx="10" fill="#165DFF"/><path d="m19 7 12 7-12 7-12-7Z" fill="#fff"/><path d="m7 21 12 7 12-7" fill="none" stroke="#78E5EA" stroke-width="3" stroke-linejoin="round"/></svg>SKILL 广场</a>
+<button class="foru-nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="foru-nav">菜单</button>
+<nav id="foru-nav" class="foru-nav" aria-label="主导航">
+<a href="#/" data-nav="home" aria-current="page">首页</a>
+<details class="foru-menu" id="product-menu"><summary>角色入口</summary><div class="foru-megamenu" id="mega-content"></div></details>
+<a href="#/catalog" data-nav="catalog">全部 SKILL</a>
+<a href="#/guide" data-nav="guide">使用指南</a>
+</nav>
+<a class="foru-primary foru-contact" href="#/catalog">浏览 SKILL</a>
+</div></header>
+<main id="main" tabindex="-1">
+<div class="page-view" data-page="home">
+<section class="foru-hero"><div class="foru-container foru-hero-layout">
+<div class="foru-hero-copy"><h1>把专业方法<br>变成可用的 SKILL</h1><p>设计 · 开发 · 研究 · 内容创作</p><div class="foru-hero-actions">
+<a class="foru-pill" href="#/catalog"><svg viewBox="0 0 22 22" aria-hidden="true"><path d="M2 4h18v12H2Z" fill="currentColor"/><path d="M1 19h20M11 16v3" stroke="currentColor" stroke-width="1.5"/></svg>找到适合的 SKILL</a>
+<a class="foru-pill" href="#/guide"><svg aria-hidden="true" viewBox="0 0 48 48"><use href="#foru-book"/></svg>了解安装与使用</a>
+</div></div><div class="foru-hero-art" aria-hidden="true"><svg class="foru-hero-illustration" viewBox="0 0 650 440" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="hero-base" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFF"/><stop offset=".50" stop-color="#F5FEFF"/><stop offset="1" stop-color="#A0DDF8"/></linearGradient>
+        <linearGradient id="hero-glass" x1="0" y1="0" x2="1" y2=".15"><stop stop-color="#AC88EE" stop-opacity=".5"/><stop offset=".5" stop-color="#ADB4FF" stop-opacity=".25"/><stop offset="1" stop-color="#3B80FA" stop-opacity=".55"/></linearGradient>
+        <linearGradient id="hero-core" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#DDD0FF" stop-opacity=".7"/><stop offset=".45" stop-color="#E7F4FF" stop-opacity=".75"/><stop offset="1" stop-color="#88F4F0" stop-opacity=".65"/></linearGradient>
+        <linearGradient id="hero-ai" x1="0" y1="0" x2=".75" y2="1"><stop stop-color="#8B22E6"/><stop offset=".45" stop-color="#4924D4"/><stop offset="1" stop-color="#172CEC"/></linearGradient>
+        <filter id="hero-shadow" x="-25%" y="-40%" width="150%" height="210%"><feDropShadow dx="0" dy="18" stdDeviation="13" flood-color="#6DBFF4" flood-opacity=".28"/></filter>
+      </defs>
+      <path d="M8 297C171 227 348 204 650 196M28 322c191-76 433-94 622-91" fill="none" stroke="#FFF" stroke-width="3" opacity=".68"/>
+      <g filter="url(#hero-shadow)"><path d="M59 325C190 246 482 251 633 297v35c-159 77-380 122-559 55Z" fill="url(#hero-base)"/><path d="M59 325c155-86 359-91 574-28-160 91-395 140-574 28Z" fill="#FAFFFF"/>
+      <ellipse cx="347" cy="308" rx="240" ry="58" fill="#BFEFFA" opacity=".7"/><ellipse cx="347" cy="299" rx="231" ry="55" fill="#FBFFFF"/>
+      <path d="M114 150v141c0 73 465 73 465 0V150" fill="url(#hero-glass)" stroke="#EBEEFF" stroke-width="1"/><ellipse cx="347" cy="150" rx="233" ry="58" fill="url(#hero-glass)" stroke="#E8EDFF"/>
+      <path d="M253 132v152c0 30 186 30 186 0V132" fill="url(#hero-core)" stroke="#D9F8FF" stroke-opacity=".8"/><ellipse cx="346" cy="132" rx="93" ry="24" fill="#C8F7F6" opacity=".82"/>
+      <path d="m296 131 58-76 14 0 25 76h-16l-7-23h-37l-18 23Zm48-38h21l-7-24Z" fill="#3518B8"/><path d="m290 126 58-76 14 0 25 76h-16l-7-23h-37l-18 23Zm48-38h21l-7-24Z" fill="url(#hero-ai)"/>
+      <path d="m400 53 16 0-11 79h-17Z" fill="#2316AE"/><path d="m394 49 16 0-11 79h-17Z" fill="url(#hero-ai)"/>
+      <path d="m161 209 79 11v83l-79-9Z" fill="url(#hero-core)" stroke="#FFF" stroke-opacity=".7"/><path d="m224 169 56 9v123l-56-5Z" fill="#D5C7F9" opacity=".4" stroke="#FFF"/>
+      <path d="m392 198 77-11v105l-77 9Z" fill="url(#hero-core)" stroke="#D5F8FF"/><path d="m382 244 112-17v77l-112 14Z" fill="#DCE6FF" opacity=".52" stroke="#FFF"/>
+      <path d="m403 211 29-4m-29 14 50-7m-57 44 31-5m-31 14 56-8" fill="none" stroke="#879AEB" stroke-width="5" opacity=".42"/>
+      <path d="M114 224c28 66 423 87 465 0M114 263c34 54 423 79 465 0" fill="none" stroke="#F5FDFF" stroke-width="7" opacity=".38"/>
+      <path d="M114 150v141c0 73 465 73 465 0V150" fill="none" stroke="#DDF4FF" stroke-width="1.4" opacity=".6"/>
+      <ellipse cx="347" cy="310" rx="234" ry="56" fill="none" stroke="#E5FBFF" stroke-width="4"/>
+      </g>
+      <path d="m260 73-27-76h246l-32 103Z" fill="#FFF" opacity=".13"/><circle cx="269" cy="69" r="3.5" fill="#60F0D3"/><circle cx="438" cy="18" r="4" fill="#7720DC"/><circle cx="301" cy="84" r="2" fill="#6F37E1"/>
+    </svg></div>
+</div></section>
+<section class="foru-section role-section" id="ecosystem"><div class="foru-container">
+<div class="foru-section-heading"><h2>从你的任务出发</h2><p>选择角色，查看对应的 SKILL</p></div>
+<div class="foru-tabs" id="role-tabs" role="tablist" aria-label="使用角色"></div>
+<div id="products" class="foru-products" role="tabpanel" tabindex="0"></div>
+<p class="demo-note">演示清单 · 具体依赖和使用范围请查看详情</p>
+</div></section>
+<section class="foru-section foru-feature-section" id="features"><div class="foru-container">
+<div class="foru-section-heading"><h2>先看效果，再决定使用</h2><p>页面、架构图、研究报告与视频，按产物了解能力</p></div>
+<div class="foru-features" id="feature-area">
+<div class="foru-feature-list" id="feature-tabs" role="tablist" aria-label="产物预览" aria-orientation="vertical"></div>
+<div id="feature-preview" class="foru-preview" role="tabpanel" tabindex="0"></div>
+</div><div class="foru-feature-controls"><button type="button" id="feature-pause" aria-pressed="false">暂停自动展示</button></div>
+</div></section>
+<section class="foru-section foru-soft" id="catalog"><div class="foru-container">
+<div class="foru-section-heading"><h2>全部 SKILL</h2><p>查看用途、调用示例和必要依赖</p></div>
+<div class="catalog-controls"><label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15 15 6 6" stroke="currentColor" stroke-width="2"/></svg><input id="search-input" type="search" placeholder="搜索名称、用途或关键词" aria-label="搜索 SKILL"></label><label class="sort-label">排序<select id="sort-select"><option value="featured">精选优先</option><option value="updated">最近更新</option><option value="name">名称排序</option></select></label></div>
+<div id="categories" class="category-list" aria-label="SKILL 分类"></div>
+<div class="catalog-meta"><span id="result-count" aria-live="polite"></span><span id="sort-note">演示条目，仓库与发布信息待补充</span></div>
+<div class="skill-grid" id="skill-grid"></div>
+<div class="empty-state" id="empty-state" hidden><svg viewBox="0 0 56 56" aria-hidden="true"><use href="#foru-projects"/></svg><h3>未找到匹配的 SKILL</h3><p>试试其他关键词，或恢复完整清单。</p><button type="button" class="outline-button" id="clear-filters">清除筛选</button></div>
+</div></section>
+</div>
+<div class="page-view" data-page="detail" hidden><div class="foru-container reading-container" id="detail-content"></div></div>
+<div class="page-view" data-page="guide" hidden><div class="foru-container reading-container" id="guide-content"></div></div>
+<noscript><div class="foru-container noscript-note">请开启浏览器 JavaScript 以使用角色切换、检索和详情页。此 demo 不需要联网。</div></noscript>
+</main>
+<footer class="foru-footer" id="footer"><div class="foru-container"><div class="foru-footer-grid">
+<div><h2>SKILL 广场</h2><p>收集专业方法，展示具体产物。</p><span class="footer-badge">FORU 风格 · 本地 Demo</span></div>
+<div><h3>快速入口</h3><a href="#/catalog">全部 SKILL</a><a href="#/guide">安装与使用</a><a href="#/role/creator">角色入口</a></div>
+<div><h3>内容说明</h3><p>当前为展示与交互样例，未接入下载仓库。</p><p>依赖、费用和许可以 SKILL 发布资料为准。</p></div>
+</div><div class="footer-bottom">独立风格重建，不使用原站 API、联系方式或合作背书。</div></div></footer>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
