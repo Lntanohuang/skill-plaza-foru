@@ -101,3 +101,4 @@
 .preview-frame{min-height:318px}.foru-preview{min-height:416px}.skill-card-head>div{min-width:0}
 @media(max-width:767px){.search-box{flex:none;min-height:54px}.preview-frame{min-height:350px}.foru-preview{min-height:430px}.foru-tabs button{flex:1 0 0;min-width:0;gap:6px;font-size:14px}.foru-tabs svg{width:20px;height:20px}.foru-tabs{overflow:visible}.report-sidebar{font-size:12px;padding:10px 8px}.guide-step>div:last-child{min-width:0}}
 @media(max-width:767px){#feature-preview .preview-frame{min-height:368px}.guide-step pre{white-space:pre-wrap;overflow-wrap:anywhere}}
+.detail-info strong{overflow-wrap:anywhere}.detail-info a{color:#165dff}.source-note{flex-wrap:wrap}.source-note a{min-height:40px;padding:8px 16px;border:1px solid #94bfff;border-radius:5px;color:#165dff;background:#f0f5ff;display:inline-flex;align-items:center}.source-note span{overflow-wrap:anywhere}
