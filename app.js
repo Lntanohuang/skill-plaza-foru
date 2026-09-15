@@ -17,9 +17,8 @@
     {id:'interview',title:'组织实训与就业',description:'围绕目标岗位和简历完成面试练习闭环。',tags:['能力地图','逐题追问','回答复盘'],slug:'ai-interview',icon:'jobs'},
     {id:'data',title:'治理训练数据',description:'把样本构造、机器质检和专家抽检连成流程。',tags:['数据集划分','泄漏检查','专家抽检'],slug:'training-data-qa',icon:'assessment'}
   ];
-  const state = {q:'',category:'全部',sort:'featured',role:'manager',page:'home'};
+  const state = {q:'',category:'全部',sort:'featured',page:'home'};
   const categories = ['全部','产业与专业建设','课程与教学开发','实训与就业','数据治理与模型底座'];
-  const roleTabs = $('#role-tabs');
   const featureTabs = $('#feature-tabs');
   const nav = $('#foru-nav');
   const navToggle = $('#nav-toggle');
@@ -47,21 +46,7 @@
       if(index!==undefined){event.preventDefault();select(index);list[index].focus();}
     }));
   }
-  function selectRole(id) {
-    const role=roles.find(item=>item.id===id);if(!role)return;
-    state.role=id;
-    roleTabs.querySelectorAll('button').forEach(button=>{const active=button.dataset.role===id;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;});
-    const panel=$('#products');panel.setAttribute('aria-labelledby','role-'+id);panel.style.setProperty('--product-count',role.items.length);
-    panel.innerHTML=role.items.map(([slug,description])=>{
-      const skill=skills.find(item=>item.slug===slug);
-      return `<a class="foru-product" href="${detailHash(slug)}"><span class="foru-product-icon">${icon(iconNames[skill.kind])}</span><span>${esc(skill.name)}</span><span class="product-desc">${esc(description)}</span></a>`;
-    }).join('');
-  }
-  roleTabs.innerHTML=roles.map((role,i)=>`<button id="role-${role.id}" type="button" role="tab" data-role="${role.id}" aria-selected="${i===0}" aria-controls="products" tabindex="${i===0?0:-1}">${icon(role.icon)}${role.label}</button>`).join('');
-  const tabs=[...roleTabs.querySelectorAll('button')];
-  tabs.forEach(button=>button.addEventListener('click',()=>selectRole(button.dataset.role)));
-  keyboardTabs(tabs,index=>selectRole(roles[index].id));
-  $('#mega-content').innerHTML=roles.map(role=>`<div class="foru-menu-group"><h3><span>面向${role.label}</span></h3>${role.items.slice(0,3).map(([slug,description])=>{const skill=skills.find(item=>item.slug===slug);return `<a class="foru-menu-item" href="#/role/${role.id}">${icon(iconNames[skill.kind])}<div><strong>${esc(skill.name)}</strong><p>${esc(description)}</p></div></a>`;}).join('')}</div>`).join('');
+  $('#mega-content').innerHTML=roles.map(role=>`<div class="foru-menu-group"><h3><span>面向${role.label}</span></h3>${role.items.slice(0,3).map(([slug,description])=>{const skill=skills.find(item=>item.slug===slug);return `<a class="foru-menu-item" href="${detailHash(slug)}">${icon(iconNames[skill.kind])}<div><strong>${esc(skill.name)}</strong><p>${esc(description)}</p></div></a>`;}).join('')}</div>`).join('');
 
   function closeNav(restore=false) {
     const wasOpen=nav.classList.contains('open');
@@ -147,8 +132,7 @@
     if(path.startsWith('/skill/')){const skill=skills.find(item=>item.slug===path.slice(7));if(skill){renderDetail(skill,p.get('return'));showPage('detail');setCurrentNav('catalog');document.title=skill.name+' · SKILL 广场';window.scrollTo(0,0);return;}}
     state.q=p.get('q')||'';state.category=categories.includes(p.get('category'))?p.get('category'):'全部';state.sort=['featured','updated','name'].includes(p.get('sort'))?p.get('sort'):'featured';
     $('#search-input').value=state.q;$('#sort-select').value=state.sort;renderCatalog();showPage('home');document.title='SKILL 广场 · FORU 风格 Demo';
-    if(path==='/catalog'){setCurrentNav('catalog');requestAnimationFrame(()=>$('#catalog').scrollIntoView());}
-    else if(path.startsWith('/role/')){selectRole(path.slice(6));setCurrentNav('home');requestAnimationFrame(()=>$('#ecosystem').scrollIntoView());}
+    if(path==='/catalog'||path.startsWith('/role/')){setCurrentNav('catalog');requestAnimationFrame(()=>$('#catalog').scrollIntoView());}
     else{setCurrentNav('home');window.scrollTo(0,0);}
   }
   function renderDetail(skill,returnTo) {
@@ -176,7 +160,7 @@
     $('#guide-content').innerHTML=`<a class="back-link" href="#/catalog">← 返回 SKILL 目录</a><header class="guide-header"><h1>从一个明确的任务开始</h1><p>选择业务分类，复制安装提示词，再用最小输入示例开始。</p></header><div class="guide-steps"><section class="guide-step"><div class="step-icon">1</div><div><h2>按业务分类选择</h2><p>目录包含产业与专业建设、课程与教学开发、实训与就业、数据治理与模型底座四类，每类先提供一个公开 SKILL。</p></div></section><section class="guide-step"><div class="step-icon">2</div><div><h2>复制安装提示词</h2><p>进入详情页复制完整句子并发给 Codex；提示词包含指定 GitHub 仓库和保留完整目录的要求。</p><pre>请从 GitHub 仓库安装对应 SKILL，\n保留 SKILL.md、references、scripts、assets 等完整目录，\n并在安装后检查依赖、说明调用方式。</pre></div></section><section class="guide-step"><div class="step-icon">3</div><div><h2>从最小输入开始</h2><p>复制详情页的最小输入示例，再把地区、课程资料、岗位简历或治理数据替换成你的实际内容。</p><pre>使用 $ai-interview，\n目标岗位是 Java 后端实习生，\n岗位要求和匿名简历见附件，请开始 3 题模拟面试。</pre></div></section></div><div class="guide-faq"><h2>常见问题</h2><details><summary>这个 demo 需要 npm 吗？</summary><p>不需要。双击此目录的 index.html 即可，所有样式、数据和交互均在本地。没有 package.json，也不需要 npm install 或 npm run dev。</p></details><details><summary>能从页面获取 SKILL 吗？</summary><p>可以进入详情页打开对应的公开 GitHub 仓库，并复制安装提示词交给 Codex；本页面只提供入口，不会在线执行 SKILL。</p></details><details><summary>为什么要保留完整目录？</summary><p>这些 SKILL 可能依赖 references、scripts、assets、examples 或 requirements.txt。只复制 SKILL.md 可能丢失执行规则、脚本、模板或示例。</p></details></div>`;
   }
   window.addEventListener('hashchange',route);
-  selectRole('manager');selectFeature(0);renderGuide();route();frame=requestAnimationFrame(tick);
+  selectFeature(0);renderGuide();route();frame=requestAnimationFrame(tick);
   window.addEventListener('pagehide',()=>{cancelAnimationFrame(frame);observer.disconnect();});
   window.addEventListener('pageshow',event=>{if(event.persisted){observer.observe(area);previous=0;frame=requestAnimationFrame(tick);}});
 })();
