@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, existsSync } from 'node:fs'
+import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -20,10 +20,12 @@ import {
   exportSessionTrace,
   traceFilePath,
   TRACES_DIR,
+  readIndex,
   type RunOutcome,
   type RunRecord,
   type UsageSummary,
 } from './lib/traceExport.ts'
+import { renderTraceMd } from './lib/traceMd.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 8767)
@@ -278,7 +280,8 @@ function readBody(req: any): Promise<Buffer> {
 }
 
 const server = createServer((req, res) => {
-  const path = (req.url || '').split('?')[0]
+  const path = decodeURIComponent((req.url || '').split('?')[0])
+  const seg = path.split('/').filter(Boolean) // 如 ['api','runs',runId,'file',kind]
   if (req.method === 'GET' && path === '/api/health') {
     sendJson(res, 200, {
       ok: true,
@@ -292,8 +295,88 @@ const server = createServer((req, res) => {
     handleChat(req, res)
     return
   }
+  /* ---- 运行记录（只读，评测用）---- */
+  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'runs') {
+    if (!originAllowed(req.headers.origin)) {
+      sendJson(res, 403, { error: '不允许跨站调用本地 API。' })
+      return
+    }
+    handleRunsApi(req, res, seg)
+    return
+  }
   sendJson(res, 404, { error: '接口不存在。' })
 })
+
+/** GET /api/runs（列表）· /api/runs/:runId（详情）· /api/runs/:runId/file/:kind（下载，md 按需生成） */
+function handleRunsApi(req: any, res: any, seg: string[]) {
+  if (seg.length === 2) {
+    const query = new URL(req.url, 'http://localhost').searchParams
+    const limit = Math.max(1, Math.min(500, Number(query.get('limit')) || 100))
+    const skill = query.get('skill') || undefined
+    const outcome = query.get('outcome') || undefined
+    const runs = readIndex()
+      .reverse()
+      .filter(r => (!skill || r.skill === skill) && (!outcome || r.outcome === outcome))
+      .slice(0, limit)
+    sendJson(res, 200, { runs })
+    return
+  }
+
+  const runId = seg[2]
+  const record = readIndex().find(r => r.runId === runId)
+  if (!record) {
+    sendJson(res, 404, { error: '运行记录不存在。' })
+    return
+  }
+
+  if (seg.length === 3) {
+    let trace: unknown = null
+    try {
+      if (record.files.trace && existsSync(record.files.trace))
+        trace = JSON.parse(readFileSync(record.files.trace, 'utf8'))
+    } catch {
+      /* 文件损坏按无详情处理 */
+    }
+    sendJson(res, 200, { item: record, trace })
+    return
+  }
+
+  if (seg.length === 5 && seg[3] === 'file') {
+    const kind = seg[4]
+    let file: string | null = null
+    let type = 'text/plain; charset=utf-8'
+    if (kind === 'events' && record.files.events && existsSync(record.files.events)) {
+      file = record.files.events
+      type = 'application/x-ndjson; charset=utf-8'
+    } else if (kind === 'trace' && record.files.trace && existsSync(record.files.trace)) {
+      file = record.files.trace
+      type = 'application/json; charset=utf-8'
+    } else if (kind === 'md' && record.files.trace && existsSync(record.files.trace)) {
+      const mdFile = traceFilePath(runId, 'trace').replace(/\.json$/, '.md')
+      if (!existsSync(mdFile)) {
+        const trace = JSON.parse(readFileSync(record.files.trace, 'utf8'))
+        writeFileSync(mdFile, renderTraceMd(trace))
+      }
+      file = mdFile
+      type = 'text/markdown; charset=utf-8'
+    }
+    if (!file) {
+      sendJson(res, 404, { error: '文件不存在。' })
+      return
+    }
+    const data = readFileSync(file)
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': data.length,
+      'Content-Disposition': `attachment; filename="${file.split('/').pop()}"`,
+      'Cache-Control': 'no-store',
+    })
+    res.end(data)
+    return
+  }
+
+  sendJson(res, 404, { error: '接口不存在。' })
+}
 
 async function handleChat(req: any, res: any) {
   let body: any
