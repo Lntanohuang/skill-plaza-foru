@@ -94,10 +94,22 @@ code, pre, .mono { font-family: var(--font-mono); }
 .icon-btn:hover { color: var(--ink-strong); background: var(--surface-sunken); }
 
 /* ---------- 页头 ---------- */
+/* 首屏顶部：透明无装饰；滚动后：液态玻璃 */
 .site-head {
   position: sticky; top: 0; z-index: 40;
-  background: var(--surface-card);
+  background: transparent;
   border-bottom: 1px solid var(--line-hair);
+  transition:
+    background var(--dur-base) var(--ease),
+    border-color var(--dur-base) var(--ease),
+    backdrop-filter var(--dur-base) var(--ease),
+    -webkit-backdrop-filter var(--dur-base) var(--ease);
+}
+.site-head.is-scrolled {
+  background: color-mix(in srgb, var(--surface-card) 62%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.7);
+  backdrop-filter: blur(20px) saturate(1.7);
+  border-bottom-color: var(--line-hair);
 }
 .head-inner { display: flex; align-items: center; gap: var(--sp-5); height: var(--head-h); position: relative; }
 
@@ -107,12 +119,8 @@ code, pre, .mono { font-family: var(--font-mono); }
   display: flex; align-items: center; justify-content: center;
 }
 .brand-mark img { height: 44px; width: auto; display: block; }
-/* 深色模式：logo 的深色字在深底上不可读，垫一个浅色圆角底衬 */
-[data-mode='dark'] .brand-mark img {
-  box-sizing: content-box;
-  height: 36px; padding: 7px 12px;
-  background: rgba(240, 241, 243, 0.96); border-radius: 12px;
-}
+/* 深色模式：logo 换成反白版（白字透明底） */
+[data-mode='dark'] .brand-mark img { content: url('/logo-reverse.png'); }
 .brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .brand-name { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--ink-strong); line-height: 1.25; }
 .brand-sub { font-size: 11.5px; color: var(--ink-muted); line-height: 1.3; font-family: var(--font-mono); }
@@ -782,6 +790,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 .hero-inner > * { animation: rise-in .85s var(--ease) both; }
 .hero-inner > .hero-title { animation: none; } /* 标题逐字动画接管 */
 .hero-inner .hero-sub { animation-delay: 1250ms; }
+.hero-inner .hero-actions { animation-delay: 1320ms; }
 .hero-inner .install-bar { animation-delay: 1400ms; }
 .hero-inner .hero-hint { animation-delay: 1550ms; }
 /* 卡片区不套整体浮现（会压住卡片自己的 gather-in），淡入交给 .hero-card */
@@ -906,7 +915,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
   font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium);
   cursor: pointer; transition: background var(--dur-fast) var(--ease);
 }
-.login-btn:hover { background: #000; }
+.login-btn:hover { background: color-mix(in srgb, var(--ink-strong) 86%, var(--brand-on)); } /* 深浅模式通用：亮色下略变浅的黑，深色下略变暗的白 */
 .user-wrap { position: relative; }
 .user-btn {
   display: flex; align-items: center; gap: 7px;
@@ -967,6 +976,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 }
 .login-close:hover { background: var(--brand-soft); color: var(--ink-strong); }
 .login-brand img { height: 42px; width: auto; margin-bottom: var(--sp-3); }
+[data-mode='dark'] .login-brand img { content: url('/logo-reverse.png'); }
 .login-title { margin: 0; font-size: 22px; font-weight: var(--fw-bold); color: var(--ink-strong); }
 .login-sub { margin: var(--sp-2) 0 var(--sp-5); font-size: var(--fs-sm); color: var(--ink-muted); }
 .login-tabs { display: flex; justify-content: center; gap: var(--sp-2); margin-bottom: var(--sp-5); }
@@ -1119,7 +1129,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 }
 .exp-act:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
 .exp-act-primary { background: var(--ink-strong); border-color: var(--ink-strong); color: var(--brand-on); }
-.exp-act-primary:hover { color: var(--brand-on); background: #000; }
+.exp-act-primary:hover { color: var(--brand-on); background: color-mix(in srgb, var(--ink-strong) 86%, var(--brand-on)); }
 .exp-ai-note { margin: var(--sp-3) 0 0; font-size: 12px; color: var(--ink-muted); }
 /* 整页滚动：输入框吸底 + 顶部渐隐垫底，避免消息从输入框下穿过时生硬 */
 .exp-input {
@@ -1438,7 +1448,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 }
 
 /* ---------- 「直接使用」入口（首页 / 卡片 / 详情页） ---------- */
-.hero-actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-5); }
+.hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-3); margin-top: var(--sp-5); }
 .card-go.is-quiet { color: var(--ink-muted); }
 .card-go.is-quiet:hover { color: var(--brand); }
 .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
