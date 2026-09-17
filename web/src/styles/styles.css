@@ -1107,6 +1107,8 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
   font-size: 11px; padding: 2px 8px; border-radius: var(--r-full);
   background: var(--brand-soft); color: var(--ink-muted);
 }
+.exp-demo-tag.is-real { background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); }
+.exp-agent-label.is-real { color: var(--brand); font-weight: 600; }
 .exp-typing { display: inline-flex; gap: 4px; margin-left: auto; }
 .exp-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-muted); animation: exp-dot 1s infinite; }
 .exp-typing i:nth-child(2) { animation-delay: .15s; }
@@ -1360,6 +1362,9 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 .use-answer p { margin-top: 6px; font-size: var(--fs-sm); line-height: 1.8; color: var(--ink-body); white-space: pre-wrap; }
 .use-answer.is-error { border-color: color-mix(in srgb, var(--danger) 34%, var(--line-hair)); background: color-mix(in srgb, var(--danger) 5%, transparent); }
 .use-answer.is-error .use-answer-mark { background: var(--danger); }
+.use-usage { display: block; margin-top: 8px; font-size: var(--fs-xs); color: var(--ink-muted); }
+.use-caret { display: inline-block; margin-left: 2px; color: var(--ink-muted); animation: use-caret-blink 1s steps(2) infinite; }
+@keyframes use-caret-blink { 50% { opacity: 0; } }
 .use-loading { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-muted); }
 .use-loading i {
   width: 13px; height: 13px; border-radius: 50%;

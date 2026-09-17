@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-/* /api/* 转发到本机 python3 server.py（默认 8766）：密钥只在 Python 侧读取。
-   未启动代理时，工作台会提示启动方式，表单仍可正常预览。 */
+/* /api/* 转发到本机 Node 后端（server/index.ts，默认 8767）：
+   由它桥接 ZCode app-server（GLM Coding Plan），密钥与 CLI 都不进前端。
+   未启动后端时，工作台会提示启动方式，表单仍可正常预览。 */
 const apiProxy = {
   '/api': {
-    target: 'http://127.0.0.1:8766',
+    target: 'http://127.0.0.1:8767',
     changeOrigin: false,
   },
 }

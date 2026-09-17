@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { bySlug, catOf, type Skill } from '../data/skills'
+import { checkHealth, streamChat } from '../composables/useChatApi'
 import Icon from '../components/Icon.vue'
 import { useSession } from '../composables/session'
 import { useCopy } from '../composables/useCopy'
 import { toast } from '../composables/toast'
 
-/* 在线体验：聊天式演示 + 历史对话侧栏。
-   页面不执行 SKILL——发送后按所配 SKILL 输出演示摘要，并引导安装到本地 AI 工具。 */
+/* 在线体验：后端就绪时真实流式运行 SKILL（ZCode + GLM），
+   后端未启动时回落为演示摘要输出，并引导安装到本地 AI 工具。 */
 const { user, openLogin } = useSession()
 const { copy } = useCopy()
 
-interface Msg { role: 'user' | 'ai'; text: string; skill?: Skill; done: boolean }
+interface Msg { role: 'user' | 'ai'; text: string; skill?: Skill; done: boolean; real?: boolean }
 interface Conv { id: number; title: string; messages: Msg[]; updatedAt: number }
 
 interface Demo { slug: string; question: string; reply: string }
@@ -68,6 +69,21 @@ function onDocClick(event: MouseEvent) {
 }
 
 const EXAMPLES = DEMOS.map(d => ({ slug: d.slug, question: d.question, skill: bySlug.get(d.slug) }))
+
+/* ---- 后端就绪探测：就绪则真实流式，否则演示输出 ---- */
+const apiReady = ref(false)
+const apiModel = ref('')
+const DEFAULT_SLUG = DEMOS[0].slug
+/** 每个对话对应一个后端会话（多轮上下文保留）；技能也随对话固定，不逐轮重匹配 */
+const convSessions = new Map<number, string>()
+const convSlugs = new Map<number, string>()
+
+async function probeApi() {
+  const result = await checkHealth()
+  apiReady.value = result.ok
+  apiModel.value = result.ok ? (result.model ?? '') : ''
+  if (result.ok) MODELS[0].name = result.runner === 'zcode' ? 'Skill搭子 Agent（真实运行）' : 'Skill搭子 Agent'
+}
 
 function matchDemo(text: string): Demo | null {
   const t = text.trim().toLowerCase()
@@ -167,6 +183,79 @@ function fmtTime(ts: number) {
 }
 
 /* ---- 发送 ---- */
+function startAiMsg(skill: Skill | undefined, real: boolean): Msg {
+  messages.value.push({ role: 'ai', text: '', skill, done: false, real })
+  const msg = messages.value[messages.value.length - 1]
+  scrollTop()
+  syncToConv()
+  return msg
+}
+
+/* 演示输出：逐字打字机效果 */
+function typeInto(msg: Msg, reply: string) {
+  if (reducedMotion.matches) {
+    msg.text = reply
+    msg.done = true
+    sending.value = false
+    syncToConv()
+    return
+  }
+  streamTimer = setInterval(() => {
+    msg.text = reply.slice(0, msg.text.length + 3)
+    scrollTop()
+    if (msg.text.length >= reply.length) {
+      msg.text = reply
+      msg.done = true
+      sending.value = false
+      if (streamTimer) { clearInterval(streamTimer); streamTimer = null }
+      syncToConv()
+    }
+  }, 24)
+}
+
+/* 真实运行：走本地 Node 后端 → ZCode（GLM），SSE 流式回填 */
+async function runReal(text: string, slug: string, skill: Skill | undefined) {
+  const convId = activeId.value
+  const msg = startAiMsg(skill, true)
+  if (convId === null) return
+  convSlugs.set(convId, slug)
+  try {
+    await streamChat({
+      skill: slug,
+      messages: [{ role: 'user', content: text }],
+      sessionId: convSessions.get(convId),
+      onEvent: event => {
+        if (event.type === 'session') {
+          convSessions.set(convId!, event.sessionId)
+        } else if (event.type === 'text') {
+          msg.text += event.delta
+          scrollTop()
+        } else if (event.type === 'done') {
+          if (!msg.text && event.content) msg.text = event.content
+        } else if (event.type === 'error') {
+          throw new Error(event.message)
+        }
+      },
+    })
+    msg.done = true
+  } catch (error) {
+    if (!msg.text) {
+      /* 一字未出就失败：回落到演示输出，保证页面可用 */
+      msg.real = false
+      toast(error instanceof Error ? error.message : '真实运行失败，已切换为演示输出')
+      const demo = DEMOS.find(d => d.slug === slug)
+      typeInto(msg, demo ? demo.reply : FALLBACK)
+      return
+    }
+    msg.done = true
+  } finally {
+    if (msg.done) {
+      sending.value = false
+      syncToConv()
+    }
+  }
+}
+
 function send(raw?: string) {
   const text = (raw ?? textarea.value).trim()
   if (!text || sending.value) return
@@ -185,32 +274,15 @@ function send(raw?: string) {
 
   const demo = matchDemo(text)
   const skill = demo ? bySlug.get(demo.slug) : undefined
-  const reply = demo ? demo.reply : FALLBACK
-  messages.value.push({ role: 'ai', text: '', skill, done: false })
-  scrollTop()
-  syncToConv()
+  const convId = activeId.value
 
-  if (reducedMotion.matches) {
-    const msg = messages.value[messages.value.length - 1]
-    msg.text = reply
-    msg.done = true
-    sending.value = false
-    syncToConv()
+  if (apiReady.value) {
+    /* 首轮按内容匹配技能，后续轮沿用对话已固定的技能 */
+    const slug = (convId !== null && convSlugs.get(convId)) || demo?.slug || DEFAULT_SLUG
+    void runReal(text, slug, skill ?? bySlug.get(slug))
     return
   }
-
-  streamTimer = setInterval(() => {
-    const msg = messages.value[messages.value.length - 1]
-    msg.text = reply.slice(0, msg.text.length + 3)
-    scrollTop()
-    if (msg.text.length >= reply.length) {
-      msg.text = reply
-      msg.done = true
-      sending.value = false
-      if (streamTimer) { clearInterval(streamTimer); streamTimer = null }
-      syncToConv()
-    }
-  }, 24)
+  typeInto(startAiMsg(skill, false), demo ? demo.reply : FALLBACK)
 }
 
 function fill(slug: string) {
@@ -227,6 +299,7 @@ const skillCat = (slug: string) => { const s = bySlug.get(slug); return s ? catO
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   if (user.value) conversations.value = loadPersisted()
+  void probeApi()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
@@ -286,10 +359,10 @@ onBeforeUnmount(() => {
             <div class="exp-ai-head">
               <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : 'Skill搭子' }}</span>
               <span class="exp-ai-badge" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
-                {{ msg.skill ? skillCat(msg.skill.slug) : '演示' }}
+                {{ msg.skill ? skillCat(msg.skill.slug) : (msg.real ? '在线' : '演示') }}
               </span>
               <span v-if="!msg.done" class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
-              <span v-else class="exp-demo-tag">演示输出</span>
+              <span v-else class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
             </div>
             <pre class="exp-ai-text">{{ msg.text }}<span v-if="!msg.done" class="exp-caret">▌</span></pre>
             <div v-if="msg.done && msg.skill" class="exp-ai-actions">
@@ -298,7 +371,8 @@ onBeforeUnmount(() => {
               </button>
               <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
             </div>
-            <p v-if="msg.done" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
+            <p v-if="msg.done && !msg.real" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
+            <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（本地 Agent · {{ apiModel || 'GLM' }}）。</p>
           </div>
         </template>
       </div>
@@ -335,7 +409,7 @@ onBeforeUnmount(() => {
                 </div>
               </span>
               <span class="exp-agent-dot" aria-hidden="true">·</span>
-              <span class="exp-agent-label">演示</span>
+              <span class="exp-agent-label" :class="{ 'is-real': apiReady }">{{ apiReady ? (apiModel || '在线 Agent') : '演示' }}</span>
             </span>
             <button type="button" class="exp-send" :disabled="!textarea.trim() || sending" aria-label="发送" @click="send()">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>

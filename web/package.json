@@ -7,7 +7,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.ts",
+    "trace:md": "node server/scripts/traceMd.ts",
+    "traces:summary": "node server/scripts/tracesSummary.ts",
+    "trace:backfill": "node server/scripts/traceBackfill.ts",
+    "traces:prune": "node server/scripts/tracesPrune.ts"
   },
   "dependencies": {
     "vue": "^3.5.13",

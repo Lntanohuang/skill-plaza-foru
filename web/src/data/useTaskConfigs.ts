@@ -41,6 +41,8 @@ export interface UseTaskConfig {
   output: string
   sections: TaskSection[]
   example: Record<string, string | string[]>
+  /** 进入页面时自动带入 example 作为默认值（方便直接运行测试） */
+  autoFillExample?: boolean
   knowledge: KnowledgeItem[]
 }
 
@@ -80,6 +82,7 @@ export const USE_TASK_CONFIGS: UseTaskConfig[] = [
       topics: ['区域产业链', '岗位人才需求', '专业与课程', '就业去向'],
       context: '为某高职院校论证新能源汽车专业建设方向，结论需要区分事实、推断和建议。',
     },
+    autoFillExample: true,
     knowledge: [
       { id: 'industry-policy', title: '区域产业政策资料库', meta: '政策与规划 · 38 份', tag: '政策', default: true },
       { id: 'job-market', title: '重点产业岗位需求库', meta: '招聘与岗位画像 · 12,680 条', tag: '岗位', default: true },

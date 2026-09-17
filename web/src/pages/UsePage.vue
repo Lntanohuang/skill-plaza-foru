@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
-import { checkHealth, sendChat, type ApiState, type ChatMessage } from '../composables/useChatApi'
+import { checkHealth, streamChat, type ApiState, type ChatMessage } from '../composables/useChatApi'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
 
@@ -45,7 +45,12 @@ function resetForm() {
 }
 
 /* 表单必须同步初始化：首次渲染时就会读取必填进度，不能等到 onMounted */
-watch(() => skill.value.slug, () => { resetForm(); void probe() }, { immediate: true })
+watch(() => skill.value.slug, () => {
+  resetForm()
+  /* 配置了 autoFillExample 的 SKILL（如产教决策报告）进入页面即带入示例默认值 */
+  if (config.value.autoFillExample) applyExample()
+  void probe()
+}, { immediate: true })
 
 /* ---------- 必填与进度 ---------- */
 const requiredFields = computed(() => config.value.sections.flatMap(s => s.fields).filter(f => f.required))
@@ -77,11 +82,15 @@ const filteredKnowledge = computed(() => {
 })
 
 /* ---------- 交互 ---------- */
-function fillExample() {
+function applyExample() {
   for (const field of config.value.sections.flatMap(s => s.fields)) {
     const value = config.value.example[field.id]
     form[field.id] = Array.isArray(value) ? [...value] : (value ?? '')
   }
+}
+
+function fillExample() {
+  applyExample()
   toast('示例信息已填入，可继续修改')
 }
 
@@ -128,6 +137,10 @@ function sessionOf(target: string): RunMessage[] {
   return sessions[target]
 }
 
+/* 后端按浏览器会话复用 ZCode 会话（多轮上下文天然保留） */
+const sessionIds: Record<string, string> = {}
+const lastUsage = ref('')
+
 async function run() {
   if (busy.value) return
   if (!canRun.value) { toast('需要先启动本地服务'); return }
@@ -138,14 +151,42 @@ async function run() {
   const target = skill.value.slug
   const list = sessionOf(target)
   list.push({ role: 'user', content: buildPrompt() })
+  /* 先构造发往后端的消息（最后一条必须是刚加入的用户消息），再放流式占位 */
+  const outgoing = list
+    .filter(item => item.role === 'user' || item.role === 'assistant')
+    .map(item => ({ role: item.role, content: item.content }))
+  list.push({ role: 'assistant', content: '' })
+  /* 必须通过响应式代理更新（push 后取回最后一个），直接改原始对象不会触发渲染 */
+  const answer = list[list.length - 1]
   busy.value = true
+  lastUsage.value = ''
   try {
-    const answer = await sendChat(target, list
-      .filter(item => item.role === 'user' || item.role === 'assistant')
-      .map(item => ({ role: item.role, content: item.content }) as ChatMessage))
-    list.push({ role: 'assistant', content: answer })
+    await streamChat({
+      skill: target,
+      messages: outgoing as ChatMessage[],
+      sessionId: sessionIds[target],
+      onEvent: event => {
+        if (event.type === 'session') {
+          sessionIds[target] = event.sessionId
+        } else if (event.type === 'text') {
+          answer.content += event.delta
+        } else if (event.type === 'usage') {
+          const u = event.usage as Record<string, number>
+          const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+          lastUsage.value =
+            `输入 ${k(u.inputTokens ?? 0)} · 输出 ${k(u.outputTokens ?? 0)} · 缓存命中 ${k(u.cacheReadTokens ?? 0)}`
+        } else if (event.type === 'done') {
+          if (!answer.content && event.content) answer.content = event.content
+        } else if (event.type === 'error') {
+          throw new Error(event.message)
+        }
+      },
+    })
   } catch (error) {
-    list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
+    if (!answer.content) {
+      list.splice(list.indexOf(answer), 1)
+      list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
+    }
   } finally {
     busy.value = false
   }
@@ -221,14 +262,13 @@ onMounted(() => {
       </ol>
 
       <p v-if="apiState === 'offline'" class="use-setup">
-        <strong>直接运行需要本地代理。</strong>
-        在项目目录执行 <code>python3 server.py</code> 后刷新页面；表单与 Mock 知识库仍可正常预览。
+        <strong>在线运行需要本地后端。</strong>
+        在 <code>web/</code> 目录执行 <code>npm run server</code> 后刷新页面；表单与 Mock 知识库仍可正常预览。
         <button type="button" class="text-btn" @click="probe">重新检查</button>
       </p>
       <p v-else-if="apiState === 'nokey'" class="use-setup">
-        <strong>本地服务已启动，但没有读到 API 密钥。</strong>
-        设置环境变量 <code>YOUCAI_API_KEY</code>，或把密钥文档放到
-        <code>~/VeryVision/API/API接口密钥.txt</code>，然后重启服务。
+        <strong>本地服务已启动，但没有读到模型配置。</strong>
+        请确认 <code>~/.zcode/cli/config.json</code> 已配置模型 provider（详见 <code>server/samples/PROTOCOL.md</code>），然后重启服务。
         <button type="button" class="text-btn" @click="probe">重新检查</button>
       </p>
 
@@ -315,7 +355,8 @@ onMounted(() => {
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <p>{{ msg.content }}</p>
+                      <p class="use-answer-text">{{ msg.content }}<span v-if="busy && i === visibleMessages.length - 1" class="use-caret">▌</span></p>
+                      <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
                     </div>
                   </article>
                 </template>
