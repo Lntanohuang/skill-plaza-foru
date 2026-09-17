@@ -3,6 +3,8 @@ import HomePage from '../pages/HomePage.vue'
 import SkillsPage from '../pages/SkillsPage.vue'
 import ExperiencePage from '../pages/ExperiencePage.vue'
 import UsePage from '../pages/UsePage.vue'
+import RunListPage from '../pages/RunListPage.vue'
+import RunDetailPage from '../pages/RunDetailPage.vue'
 import DetailPage from '../pages/DetailPage.vue'
 import GuidePage from '../pages/GuidePage.vue'
 import MissingPage from '../pages/MissingPage.vue'
@@ -16,6 +18,8 @@ const routes = [
   { path: '/skill/:slug', name: 'detail', component: DetailPage, meta: { nav: 'skills' } },
   { path: '/experience', name: 'experience', component: ExperiencePage, meta: { title: '在线对话 · Skill搭子', nav: 'experience' } },
   { path: '/use/:slug?', name: 'use', component: UsePage, meta: { nav: 'use' } },
+  { path: '/runs', name: 'runs', component: RunListPage, meta: { title: '运行记录 · Skill搭子', nav: 'runs' } },
+  { path: '/runs/:runId', name: 'runDetail', component: RunDetailPage, meta: { title: '运行详情 · Skill搭子', nav: 'runs' } },
   { path: '/guide', name: 'guide', component: GuidePage, meta: { title: '使用指南 · Skill搭子', nav: 'guide' } },
   { path: '/:pathMatch(.*)*', name: 'missing', component: MissingPage, meta: { title: '没有这个地址 · Skill搭子', nav: 'skills' } },
 ]
