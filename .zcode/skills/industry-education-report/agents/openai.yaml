@@ -1,0 +1,4 @@
+interface:
+  display_name: "产教决策报告"
+  short_description: "按院校与政府模板生成广东产业链报告，附数据证据、口径说明和自动验收"
+  default_prompt: "使用 $industry-education-report 为广东新能源汽车产业链生成院校版与政府版决策报告并检查模板与引用。"
