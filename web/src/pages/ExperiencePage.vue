@@ -1,0 +1,348 @@
+<script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { bySlug, catOf, type Skill } from '../data/skills'
+import Icon from '../components/Icon.vue'
+import { useSession } from '../composables/session'
+import { useCopy } from '../composables/useCopy'
+import { toast } from '../composables/toast'
+
+/* 在线体验：聊天式演示 + 历史对话侧栏。
+   页面不执行 SKILL——发送后按所配 SKILL 输出演示摘要，并引导安装到本地 AI 工具。 */
+const { user, openLogin } = useSession()
+const { copy } = useCopy()
+
+interface Msg { role: 'user' | 'ai'; text: string; skill?: Skill; done: boolean }
+interface Conv { id: number; title: string; messages: Msg[]; updatedAt: number }
+
+interface Demo { slug: string; question: string; reply: string }
+const DEMOS: Demo[] = [
+  {
+    slug: 'industry-education-report',
+    question: '帮我做一份新能源汽车产业的产教决策报告',
+    reply: `【演示输出 · 产教决策报告】\n\n■ 产业与岗位\n· 新能源汽车产业岗位需求持续增长，三电系统维修、智能网联测试为缺口最大的两类岗位\n· 数据来源与统计口径已登记，可回溯\n\n■ 专业与课程建议\n· 建议新增「智能网联汽车检测与维修」培养方向\n· 现有课程体系缺口：车载总线诊断、电池管理系统\n\n■ 待验证项\n· 区域产业规模需补充本地统计年鉴口径后复核\n\n——以上为演示摘要。完整报告（含来源引用与结构校验）请在本地 AI 工具中运行获得。`,
+  },
+  {
+    slug: 'classroom-assistant',
+    question: '把这节课的资料变成课堂练习和答疑助手',
+    reply: `【演示输出 · 课堂助教】\n\n■ 已基于授权资料生成\n· 课堂要点 12 条，按教学顺序排列\n· 练习题 8 道（选择 5 / 简答 3），附答案与出处页码\n· 高频疑问 5 条，已整理成答疑口径\n\n■ 说明\n· 每条结论均附资料定位引用，可回原文核对\n\n——以上为演示摘要。完整课堂网站（含练习作答与统计）请在本地 AI 工具中运行获得。`,
+  },
+  {
+    slug: 'ai-interview',
+    question: '模拟一轮产品经理岗位的 AI 面试',
+    reply: `【演示输出 · AI 面试练习】\n\n■ 面试报告摘要\n· 覆盖题目 6 道：项目深挖 2 / 情景应对 2 / 岗位认知 2\n· 每道题支持追问与重答，回答均保留原话引用\n\n■ 能力地图\n· 表达结构：良好｜岗位认知：待加强｜项目量化：待补充\n\n■ 待验证项\n· "用户增长 30%" 缺少口径说明，已标记为待核实\n\n——以上为演示摘要。完整逐题问答与重练请在本地 AI 工具中运行获得。`,
+  },
+  {
+    slug: 'training-data-qa',
+    question: '构造一批客服领域的训练样本并做质检',
+    reply: `【演示输出 · 训练样本构造与标注质检】\n\n■ 样本构造\n· 四类划分：指令跟随 / 事实问答 / 拒答 / 边界探索\n· 本批生成 200 条候选样本，机器质检通过率 86%\n\n■ 质检说明\n· 候选结果 ≠ 专家确认，全部样本待人工抽检\n· 全程保留来源与谱系，可追溯\n\n——以上为演示摘要。完整样本集与质检台账请在本地 AI 工具中运行获得。`,
+  },
+]
+
+const FALLBACK = `这个问题需要在本地 AI 工具中调用对应的 SKILL 来完成。\n\n在线对话页展示的是各 SKILL 的结果形态（可点击上方示例问题查看）。要获得完整结果：\n\n1. 回到 SKILL 广场，找到匹配的 SKILL\n2. 复制安装提示词，发送给你的 AI 工具\n3. 用最小输入示例开始第一次运行`
+
+const textarea = ref('')
+const sending = ref(false)
+const messages = ref<Msg[]>([])
+const activeId = ref<number | null>(null)
+const conversations = ref<Conv[]>([])
+const streamEl = ref<HTMLElement | null>(null)
+let streamTimer: ReturnType<typeof setInterval> | null = null
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+const HKEY = 'skill-plaza:history'
+
+/* 模型选择器：演示选项，仅影响显示 */
+const MODELS = [
+  { id: 'skill-agent', name: 'Skill搭子 Agent' },
+  { id: 'deepseek', name: 'DeepSeek V4 Pro' },
+  { id: 'gpt', name: 'GPT-5' },
+  { id: 'qwen', name: '通义千问 Max' },
+]
+const model = ref(MODELS[0])
+const modelOpen = ref(false)
+function pickModel(id: string) {
+  model.value = MODELS.find(m => m.id === id) ?? MODELS[0]
+  modelOpen.value = false
+}
+function onDocClick(event: MouseEvent) {
+  if (modelOpen.value && !(event.target as HTMLElement | null)?.closest('.exp-model')) modelOpen.value = false
+}
+
+const EXAMPLES = DEMOS.map(d => ({ slug: d.slug, question: d.question, skill: bySlug.get(d.slug) }))
+
+function matchDemo(text: string): Demo | null {
+  const t = text.trim().toLowerCase()
+  let best: { demo: Demo; score: number } | null = null
+  for (const demo of DEMOS) {
+    const skill = bySlug.get(demo.slug)
+    if (!skill) continue
+    let score = 0
+    for (const kw of [skill.name, ...skill.tags, ...skill.compatibility]) {
+      if (t.includes(kw.toLowerCase())) score += 2
+    }
+    for (const kw of demo.question.toLowerCase().split(/\s+/)) {
+      if (kw.length > 2 && t.includes(kw)) score += 1
+    }
+    if (score > 0 && (!best || score > best.score)) best = { demo, score }
+  }
+  return best?.demo ?? null
+}
+
+function scrollTop() {
+  /* 整页滚动：滚到文档底部（输入框吸底在流下方） */
+  nextTick(() => { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }) })
+}
+
+/* ---- 历史对话：登录后持久化到 localStorage，未登录仅内存 ---- */
+function persist() {
+  if (!user.value) return
+  try { localStorage.setItem(HKEY, JSON.stringify(conversations.value.slice(0, 20))) } catch { /* 忽略 */ }
+}
+function loadPersisted(): Conv[] {
+  try {
+    const raw = localStorage.getItem(HKEY)
+    if (raw) return JSON.parse(raw) as Conv[]
+  } catch { /* 忽略 */ }
+  return []
+}
+watch(user, u => {
+  if (u) {
+    /* 登录：合并存储与内存对话（按 id 去重） */
+    const stored = loadPersisted()
+    const merged = [...conversations.value]
+    for (const c of stored) if (!merged.some(m => m.id === c.id)) merged.push(c)
+    conversations.value = merged.sort((a, b) => b.updatedAt - a.updatedAt)
+    persist()
+  } else {
+    /* 退出：清空历史与存储 */
+    conversations.value = []
+    activeId.value = null
+    messages.value = []
+    try { localStorage.removeItem(HKEY) } catch { /* 忽略 */ }
+  }
+})
+
+function stopTyping() {
+  if (streamTimer) { clearInterval(streamTimer); streamTimer = null }
+  const last = messages.value[messages.value.length - 1]
+  if (last && last.role === 'ai' && !last.done) last.done = true
+  sending.value = false
+}
+function syncToConv() {
+  if (activeId.value === null) return
+  const conv = conversations.value.find(c => c.id === activeId.value)
+  if (conv) { conv.messages = messages.value.map(m => ({ ...m, done: true })); conv.updatedAt = Date.now() }
+  persist()
+}
+function truncate(text: string, n: number) { return text.length > n ? text.slice(0, n) + '…' : text }
+
+function newChat() {
+  stopTyping()
+  syncToConv()
+  activeId.value = null
+  messages.value = []
+  textarea.value = ''
+}
+function openConv(id: number) {
+  if (sending.value) return
+  const conv = conversations.value.find(c => c.id === id)
+  if (!conv) return
+  stopTyping()
+  syncToConv()
+  activeId.value = id
+  messages.value = conv.messages.map(m => ({ ...m, done: true }))
+}
+function delConv(id: number) {
+  conversations.value = conversations.value.filter(c => c.id !== id)
+  if (activeId.value === id) { activeId.value = null; messages.value = [] }
+  persist()
+}
+function fmtTime(ts: number) {
+  const d = new Date(ts)
+  const now = new Date()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (d.toDateString() === now.toDateString()) return hm
+  const yest = new Date(now); yest.setDate(now.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return '昨天'
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/* ---- 发送 ---- */
+function send(raw?: string) {
+  const text = (raw ?? textarea.value).trim()
+  if (!text || sending.value) return
+  if (!user.value) toast('当前为未登录演示，登录后可保存体验记录')
+
+  /* 无当前对话时新建一条历史 */
+  if (activeId.value === null || !conversations.value.some(c => c.id === activeId.value)) {
+    const conv: Conv = { id: Date.now(), title: truncate(text, 22), messages: [], updatedAt: Date.now() }
+    conversations.value.unshift(conv)
+    activeId.value = conv.id
+  }
+
+  messages.value.push({ role: 'user', text, done: true })
+  textarea.value = ''
+  sending.value = true
+
+  const demo = matchDemo(text)
+  const skill = demo ? bySlug.get(demo.slug) : undefined
+  const reply = demo ? demo.reply : FALLBACK
+  messages.value.push({ role: 'ai', text: '', skill, done: false })
+  scrollTop()
+  syncToConv()
+
+  if (reducedMotion.matches) {
+    const msg = messages.value[messages.value.length - 1]
+    msg.text = reply
+    msg.done = true
+    sending.value = false
+    syncToConv()
+    return
+  }
+
+  streamTimer = setInterval(() => {
+    const msg = messages.value[messages.value.length - 1]
+    msg.text = reply.slice(0, msg.text.length + 3)
+    scrollTop()
+    if (msg.text.length >= reply.length) {
+      msg.text = reply
+      msg.done = true
+      sending.value = false
+      if (streamTimer) { clearInterval(streamTimer); streamTimer = null }
+      syncToConv()
+    }
+  }, 24)
+}
+
+function fill(slug: string) {
+  const demo = DEMOS.find(d => d.slug === slug)
+  if (demo) textarea.value = demo.question
+}
+function copyInstall(slug: string) {
+  const skill = bySlug.get(slug)
+  if (skill) copy(skill.installPrompt, '安装提示词已复制')
+}
+const skillTitle = (slug: string) => bySlug.get(slug)?.name ?? ''
+const skillCat = (slug: string) => { const s = bySlug.get(slug); return s ? catOf(s.categoryId).name : '' }
+
+onMounted(() => {
+  document.addEventListener('click', onDocClick)
+  if (user.value) conversations.value = loadPersisted()
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  if (streamTimer) clearInterval(streamTimer)
+})
+</script>
+
+<template>
+  <section class="page page-exp">
+    <aside class="exp-side">
+      <button type="button" class="exp-new" @click="newChat">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        新建对话
+      </button>
+      <p class="exp-side-label">最近对话</p>
+      <div class="exp-history">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="exp-hist-item"
+          :class="{ 'is-active': conv.id === activeId }"
+          role="button"
+          tabindex="0"
+          @click="openConv(conv.id)"
+          @keydown.enter="openConv(conv.id)"
+        >
+          <span class="exp-hist-title">{{ conv.title }}</span>
+          <span class="exp-hist-meta">
+            <span class="exp-hist-time">{{ fmtTime(conv.updatedAt) }}</span>
+            <button type="button" class="exp-hist-del" aria-label="删除对话" @click.stop="delConv(conv.id)">×</button>
+          </span>
+        </div>
+        <p v-if="conversations.length === 0" class="exp-side-empty">{{ user ? '暂无历史对话' : '登录后可保存历史对话' }}</p>
+      </div>
+      <p v-if="!user" class="exp-side-login">
+        <button type="button" class="text-btn" @click="openLogin">登录 →</button>
+      </p>
+    </aside>
+
+    <div class="wrap-exp" :class="{ 'is-empty': messages.length === 0 }">
+      <div class="exp-top" :class="{ 'is-compact': messages.length > 0 }">
+        <h1 class="exp-title">Skill搭子，把产教领域的方法装进你的 AI</h1>
+        <p class="exp-sub">输入你的问题，看看每个 SKILL 会产出什么样的结果</p>
+      </div>
+
+      <div v-if="messages.length === 0" class="exp-examples">
+        <span class="exp-examples-label">试试这些：</span>
+        <button v-for="ex in EXAMPLES" :key="ex.slug" type="button" class="exp-example" @click="fill(ex.slug)">
+          {{ ex.question }}
+        </button>
+      </div>
+
+      <div v-if="messages.length > 0" ref="streamEl" class="exp-stream">
+        <template v-for="(msg, mi) in messages" :key="mi">
+          <div v-if="msg.role === 'user'" class="exp-msg-user">{{ msg.text }}</div>
+          <div v-else class="exp-msg-ai">
+            <div class="exp-ai-head">
+              <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : 'Skill搭子' }}</span>
+              <span class="exp-ai-badge" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
+                {{ msg.skill ? skillCat(msg.skill.slug) : '演示' }}
+              </span>
+              <span v-if="!msg.done" class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
+              <span v-else class="exp-demo-tag">演示输出</span>
+            </div>
+            <pre class="exp-ai-text">{{ msg.text }}<span v-if="!msg.done" class="exp-caret">▌</span></pre>
+            <div v-if="msg.done && msg.skill" class="exp-ai-actions">
+              <button type="button" class="exp-act exp-act-primary" @click="copyInstall(msg.skill.slug)">
+                <Icon name="copy" :size="14" />复制安装提示词
+              </button>
+              <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
+            </div>
+            <p v-if="msg.done" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
+          </div>
+        </template>
+      </div>
+
+      <div class="exp-input" :class="{ 'is-raised': messages.length > 0 }">
+        <div class="exp-input-box">
+          <textarea
+            v-model="textarea"
+            class="exp-textarea"
+            rows="2"
+            placeholder="输入你想完成的事，例如：帮我做一份产业决策报告…"
+            @keydown.enter.exact.prevent="send()"
+          ></textarea>
+          <div class="exp-input-bar">
+            <span class="exp-attach" title="演示环境不支持附件">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            <span class="exp-agent">
+              <span class="exp-model">
+                <button type="button" class="exp-model-btn" :aria-expanded="modelOpen" aria-haspopup="menu" @click.stop="modelOpen = !modelOpen">
+                  {{ model.name }}
+                  <svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-chev-down" /></svg>
+                </button>
+                <div v-if="modelOpen" class="exp-model-menu" role="menu">
+                  <button
+                    v-for="m in MODELS"
+                    :key="m.id"
+                    type="button"
+                    class="exp-model-item"
+                    :class="{ 'is-on': m.id === model.id }"
+                    role="menuitem"
+                    @click.stop="pickModel(m.id)"
+                  >{{ m.name }}<span v-if="m.id !== 'skill-agent'" class="exp-model-tag">模拟</span></button>
+                </div>
+              </span>
+              <span class="exp-agent-dot" aria-hidden="true">·</span>
+              <span class="exp-agent-label">演示</span>
+            </span>
+            <button type="button" class="exp-send" :disabled="!textarea.trim() || sending" aria-label="发送" @click="send()">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

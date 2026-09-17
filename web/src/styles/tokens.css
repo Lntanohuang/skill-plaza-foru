@@ -1,0 +1,126 @@
+/* ============================================================
+   SKILL 广场 · 令牌层
+   ------------------------------------------------------------
+   颜色、字阶、间距、圆角、阴影、动效的唯一来源。
+   组件样式一律引用这里的语义变量，不写死色值。
+   视觉语言：白底黑主色（参照 skillhub.cn），彩色只来自 4 个分类
+   语义色；深色模式整体翻转。
+   模式切换：html[data-mode="dark"]
+   ============================================================ */
+
+:root {
+  /* ---------- 中性：纯白画布 + 浅灰容器 ---------- */
+  --surface-canvas: #FFFFFF;
+  --surface-card: #FFFFFF;
+  --surface-sunken: #F5F6F7;   /* 大圆角灰容器、安装条、hero 特性卡 */
+  --surface-inverse: #17181C;
+
+  --line-hair: #ECEDEF;   /* 常态边界：卡片、分隔 */
+  --line-edge: #D9DCE0;   /* 控件描边 */
+
+  --ink-strong: #17181C;  /* 标题近黑 */
+  --ink-body: #4A4F57;    /* 正文 */
+  --ink-muted: #8A8F98;   /* 次要 */
+  --ink-oninverse: #FFFFFF;
+
+  /* ---------- 主色：黑。只用于主按钮、当前项、激活态 ---------- */
+  --brand: #17181C;
+  --brand-hover: #000000;
+  --brand-pressed: #2A2C31;
+  --brand-soft: #F5F6F7;
+  --brand-on: #FFFFFF;
+
+  /* ---------- 分类语义色：饱和实底，页面里唯一的彩色来源 ---------- */
+  --cat-industry: #2E7CF6;   --cat-industry-soft: #EAF2FE;
+  --cat-teaching: #8B5CF6;   --cat-teaching-soft: #F2EDFE;
+  --cat-career:   #F0821E;   --cat-career-soft:   #FDF0E3;
+  --cat-data:     #14B87A;   --cat-data-soft:     #E5F7F0;
+
+  /* ---------- 状态 ---------- */
+  --ok: #16A34A;      --ok-soft: #E7F6EE;
+  --warn: #B45309;    --warn-soft: #FDF2E3;
+  --danger: #DC2626;  --danger-soft: #FDECEC;
+
+  /* ---------- 字体 ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC",
+    "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Noto Sans Mono CJK SC", monospace;
+
+  --fs-xs: 12px;    --lh-xs: 1.5;
+  --fs-sm: 13px;    --lh-sm: 1.6;
+  --fs-md: 14px;    --lh-md: 1.68;
+  --fs-lg: 15px;    --lh-lg: 1.5;
+  --fs-xl: 19px;    --lh-xl: 1.4;
+  --fs-2xl: 24px;   --lh-2xl: 1.3;
+  --fs-3xl: 32px;   --lh-3xl: 1.22;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ---------- 间距：4 基数 ---------- */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 24px;  --sp-6: 32px;  --sp-7: 44px;  --sp-8: 64px;
+
+  /* ---------- 圆角：控件全圆角（胶囊），区块大圆角 ---------- */
+  --r-ctl: 999px;   /* 按钮、chip、输入：胶囊 */
+  --r-box: 16px;    /* 卡片 */
+  --r-overlay: 20px;
+  --r-full: 999px;
+
+  /* ---------- 阴影：卡片 hover 轻投影，浮层用正式投影 ---------- */
+  --shadow-l1: 0 1px 2px rgba(23, 24, 28, 0.04), 0 8px 24px -8px rgba(23, 24, 28, 0.10);
+  --shadow-overlay: 0 8px 28px -6px rgba(18, 24, 26, 0.18),
+                    0 2px 8px -2px rgba(18, 24, 26, 0.1);
+  --shadow-spot: 0 0 0 9999px rgba(18, 24, 26, 0.52);
+
+  /* ---------- 动效：只解释状态变化 ---------- */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* ---------- 布局 ---------- */
+  --wrap: 1280px;
+  --wrap-read: var(--wrap); /* 全站版心统一 */
+  --head-h: 68px;
+}
+
+/* ============================================================
+   深色模式
+   ============================================================ */
+html[data-mode="dark"] {
+  --surface-canvas: #101214;
+  --surface-card: #17191C;
+  --surface-sunken: #1E2125;
+  --surface-inverse: #F0F1F3;
+
+  --line-hair: #26292E;
+  --line-edge: #363A40;
+
+  --ink-strong: #F0F1F3;
+  --ink-body: #B7BCC3;
+  --ink-muted: #848A93;
+  --ink-oninverse: #17181C;
+
+  --brand: #F0F1F3;
+  --brand-hover: #FFFFFF;
+  --brand-pressed: #D5D8DC;
+  --brand-soft: #1E2125;
+  --brand-on: #17181C;
+
+  --cat-industry: #6FA5F8;   --cat-industry-soft: #17253A;
+  --cat-teaching: #A98BF8;   --cat-teaching-soft: #241C36;
+  --cat-career:   #F2A35C;   --cat-career-soft:   #33261A;
+  --cat-data:     #4FCB96;   --cat-data-soft:     #16291F;
+
+  --ok: #4FCB96;      --ok-soft: #16301F;
+  --warn: #F2A35C;    --warn-soft: #33261A;
+  --danger: #F0857C;  --danger-soft: #351D1B;
+
+  --shadow-l1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 10px 32px -8px rgba(0, 0, 0, 0.62),
+                    0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  --shadow-spot: 0 0 0 9999px rgba(0, 0, 0, 0.66);
+}

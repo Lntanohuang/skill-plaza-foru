@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- Skill搭子 favicon：简化两块拼图（小尺寸下去掉表情） -->
+  <rect x="0" y="0" width="120" height="120" rx="27" fill="#FCF3DC"/>
+  <g transform="rotate(-4 43 51)">
+    <circle cx="43" cy="22" r="11" fill="#2E7CF6"/>
+    <rect x="15" y="24" width="54" height="54" rx="13" fill="#2E7CF6"/>
+  </g>
+  <g transform="rotate(5 78 70)">
+    <circle cx="78" cy="42" r="10" fill="#F6C21F"/>
+    <circle cx="99" cy="94" r="9" fill="#F6C21F"/>
+    <rect x="56" y="44" width="52" height="52" rx="13" fill="#F6C21F"/>
+  </g>
+</svg>

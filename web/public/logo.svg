@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- Skill搭子 Logo：两块拼图 = 你和你的 AI 搭子 -->
+  <rect x="0" y="0" width="120" height="120" rx="27" fill="#FCF3DC"/>
+
+  <!-- 蓝色拼图（左上，微微左倾） -->
+  <g transform="rotate(-4 43 51)">
+    <circle cx="43" cy="22" r="11" fill="#2E7CF6"/>
+    <rect x="15" y="24" width="54" height="54" rx="13" fill="#2E7CF6"/>
+    <!-- 笑脸：点眼 + 开口笑 -->
+    <circle cx="33" cy="51" r="2.8" fill="#0D3C8B"/>
+    <circle cx="51" cy="51" r="2.8" fill="#0D3C8B"/>
+    <path d="M34 60 A 8 8 0 0 0 50 60 Z" fill="#FFFFFF"/>
+  </g>
+
+  <!-- 黄色拼图（右下，微微右倾） -->
+  <g transform="rotate(5 78 70)">
+    <circle cx="78" cy="42" r="10" fill="#F6C21F"/>
+    <circle cx="99" cy="94" r="9" fill="#F6C21F"/>
+    <rect x="56" y="44" width="52" height="52" rx="13" fill="#F6C21F"/>
+    <!-- 眯眼笑：弧线眼 + 小笑 -->
+    <path d="M68 70 Q 72.5 65 77 70" fill="none" stroke="#7A5200" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M87 70 Q 91.5 65 96 70" fill="none" stroke="#7A5200" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M76 79 Q 82 85 88 79" fill="none" stroke="#7A5200" stroke-width="2.6" stroke-linecap="round"/>
+  </g>
+</svg>
