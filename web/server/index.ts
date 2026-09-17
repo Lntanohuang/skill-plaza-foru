@@ -26,11 +26,23 @@ import {
   type UsageSummary,
 } from './lib/traceExport.ts'
 import { renderTraceMd } from './lib/traceMd.ts'
+import { resolveZcodeCli } from './lib/zcodeCli.ts'
+import { loadLocalEnv } from './lib/env.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/* web/.env 本地配置（模板见 .env.example，不进仓库）；外部环境变量优先于文件 */
+loadLocalEnv()
+
 const PORT = Number(process.env.PORT || 8767)
-const ZCODE_CLI =
-  process.env.ZCODE_CLI || '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
+/* zcode CLI 跨平台自动定位：ZCODE_CLI 配置 → 当前平台常见安装位置 → PATH（见 lib/zcodeCli.ts） */
+const CLI = resolveZcodeCli()
+if (!CLI) {
+  console.error('未找到 zcode CLI：已依次检查 ZCODE_CLI 配置、当前平台常见安装位置与 PATH。')
+  console.error('请先安装并登录 ZCode 客户端后重试；CLI 在自定义位置时，在 web/.env 配置')
+  console.error('ZCODE_CLI=<路径>（模板见 .env.example），或运行 npm run detect:cli 查看检查明细。')
+  process.exit(1)
+}
 const RUN_TIMEOUT_MS = 10 * 60_000
 /** 已安装真实技能的运行要读资料、做检索、跑脚本，放宽到 20 分钟（可用 RUN_TIMEOUT_MS 环境变量覆盖） */
 const RUN_TIMEOUT_MS_INSTALLED = Number(process.env.RUN_TIMEOUT_MS || 20 * 60_000)
@@ -94,8 +106,12 @@ class ZcodeBridge {
 
   start() {
     if (this.proc) return
-    const proc = spawn(process.execPath, [ZCODE_CLI, 'app-server'], {
+    /* .cjs 等脚本用当前 node 运行；独立可执行文件直接 spawn；Windows .cmd 等需 shell */
+    const command = CLI.mode === 'node' ? process.execPath : CLI.path
+    const args = CLI.mode === 'node' ? [CLI.path, 'app-server'] : ['app-server']
+    const proc = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'inherit'],
+      ...(CLI.mode === 'shell' ? { shell: true } : {}),
     })
     this.proc = proc
     proc.stdout!.on('data', (d: Buffer) => {
@@ -562,9 +578,11 @@ async function handleChat(req: any, res: any) {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`SKILL 广场 Node 后端：http://127.0.0.1:${PORT}/`)
-  console.log(`zcode CLI：${ZCODE_CLI}`)
-  if (!existsSync(ZCODE_CLI))
-    console.warn('警告：未找到 zcode CLI，请设置 ZCODE_CLI 环境变量。')
+  console.log(
+    `zcode CLI：${CLI.path}（${CLI.source}${CLI.mode === 'node' ? '，以 node 运行' : ''}）`
+  )
+  if (!existsSync(CLI.path))
+    console.warn('警告：该路径不存在，请在 web/.env 配置 ZCODE_CLI 后重试。')
   console.log('模型经 ~/.zcode/cli/config.json 解析（当前为 GLM Coding Plan）。')
   console.log(`trace 记录：${TRACES_DIR}`)
 })

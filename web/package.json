@@ -9,6 +9,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "server": "node server/index.ts",
+    "detect:cli": "node server/scripts/detectCli.ts",
     "trace:md": "node server/scripts/traceMd.ts",
     "traces:summary": "node server/scripts/tracesSummary.ts",
     "trace:backfill": "node server/scripts/traceBackfill.ts",

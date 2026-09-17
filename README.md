@@ -1,67 +1,137 @@
-# SKILL 广场 · FORU 风格 Demo
+# Skill搭子 · SKILL 广场（产教领域）
 
-一个无需 npm 的本地页面，以浅蓝白底、产物预览和资源卡片展示产教领域的 4 个公开 SKILL，并提供可直接调用模型 API 的 SKILL 工作台。
+展示产教领域公开 SKILL 的目录站点，并提供**在线真实运行**：浏览器提交任务 → Node 后端桥接本机 ZCode 无头模式（GLM Coding Plan）→ SSE 流式看到多步 agent 执行 → 运行留痕可回看。
 
-## 打开方式
+- 前端：`web/`，Vue 3 + TypeScript + Vite
+- 后端：`web/server/index.ts`，node:http 零第三方依赖，spawn 常驻 `zcode app-server` 子进程（NDJSON 协议）
+- 技能：`.zcode/skills/` 已随仓库分发，clone 即有
 
-只浏览目录和详情时，双击 `index.html` 即可。
+## 架构
 
-要使用“直接使用”工作台，在项目目录运行：
+```
+Vue SPA ── POST /api/chat ──> Node 后端 (web/server/index.ts, 端口 8767)
+                              │  spawn 常驻: zcode app-server
+                              │    session/create（workspace = web/server/workspace/<会话>/）
+                              │    session/subscribe → session/send
+                              │←─ session/event（text_delta / usage.delta / 终止事件）
+                              │      归一成 SSE 推给浏览器
+                              ├─ GET /api/health
+                              └─ GET /api/runs（运行记录只读 API）
+```
+
+开发期 Vite（4188）把 `/api` 代理到 8767；前端只访问同源 `/api/*`，不感知后端形态。
+
+## 快速开始
+
+### 前置条件
+
+| 依赖 | 说明 |
+| --- | --- |
+| Node.js ≥ 22.18（建议 24+） | 后端用 `node` 直接运行 TypeScript（内置 type stripping），不用 tsx |
+| ZCode 客户端 | AI 执行走本机 ZCode 无头模式，**鉴权是各自本机的 ZCode 登录态（GLM Coding Plan），不进仓库、不需要共享密钥** |
+
+### 启动步骤
 
 ```bash
-python3 server.py
+# 1. 安装并登录 ZCode 桌面客户端（用你自己的 GLM Coding Plan 账号）
+#    登录态保存在本机 ~/.zcode/cli/config.json
+
+# 2. 克隆仓库后安装依赖
+cd web
+npm install
+
+# 3. 终端 1：启动 Node 后端（8767）
+npm run server
+
+# 4. 终端 2：启动前端开发服务（4188，/api 自动代理到 8767）
+npm run dev
 ```
 
-再打开终端显示的 `http://127.0.0.1:8766/`。本项目没有 `package.json`，不需要 Node.js、`npm install` 或 `npm run dev`。Python 服务只使用标准库，会从 `YOUCAI_API_KEY` 环境变量或本机 `~/VeryVision/API/API接口密钥.txt` 读取密钥；密钥不会传给网页，也不会写入仓库。
+打开 http://127.0.0.1:4188 。后端未启动时页面不报错：运行记录页自动回落演示数据，在线运行页会提示启动方式。
 
-## 功能
+### CLI 路径（自动检测，跨平台）
 
-- “直接使用”为 4 个 SKILL 提供独立 URL、专属结构化表单和执行摘要。
-- 每个任务页右侧提供可搜索、多选的 Mock 知识库；当前不读取或上传真实资料。
-- 顶部菜单按院校管理者、教师、学生、数据团队分组，并直接进入对应 SKILL 工作台。
-- 产业专业、课程教学、实训就业、数据治理四类联动示意预览，可暂停自动展示。
-- SKILL 名称、用途和标签搜索，分类筛选与排序。
-- 详情作为二级页面，提供公开 GitHub 仓库、安装提示词、最小输入示例、依赖和使用限制。
-- hash 地址保存筛选条件，从详情返回可恢复列表状态。
-- 桌面与手机响应式布局，减少动态效果适配。
+后端启动时自动定位 zcode CLI，无需手动配置。检测顺序：
 
-## 文件
+1. `ZCODE_CLI` 显式配置（环境变量或 `web/.env`，优先级最高）
+2. 当前平台常见安装位置：macOS 的 `/Applications/ZCode.app/...` 与 `~/Applications/...`、Windows 的 `%LOCALAPPDATA%\Programs\ZCode\...` 与 `C:\Program Files\ZCode\...`、Linux 的 `/opt/ZCode/...` 等，以及 `~/.zcode/cli/`
+3. `PATH` 扫描（`zcode` / `zcode.exe` / `zcode.cmd` / `zcode.cjs`）
 
-| 文件 | 用途 |
+检测结果不落盘：每次启动重新检测，环境变化（升级、换安装位置、PATH 变更）自动适配；显式配置的 `ZCODE_CLI` 即使路径无效也不回落，仅在启动日志警告。
+
+同事 clone 后想确认环境是否就绪，先跑自检（同时检查 CLI 位置与 `~/.zcode/cli/config.json` 登录态）：
+
+```bash
+cd web && npm run detect:cli
+```
+
+找不到 CLI 时服务启动即报错并给出指引；CLI 装在自定义位置时，在 `web/.env` 里设置 `ZCODE_CLI` 兜底（见下节）。
+
+## 配置（web/.env）
+
+后端支持 `web/.env` 本地配置文件：复制模板 `cp web/.env.example web/.env` 后按需取消注释。`.env` 已 gitignore 不进仓库；外部环境变量（shell 里 export 的）优先于 `.env` 文件。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ZCODE_CLI` | 自动检测（见上节） | zcode CLI 路径，仅检测失败或需固定版本时设置 |
+| `PORT` | `8767` | 后端端口（Vite 代理目标需同步改） |
+| `RUN_TIMEOUT_MS` | 已安装技能 20 分钟，其余 10 分钟 | 单次运行超时 |
+| `TRACES_DIR` | `web/server/traces/` | 运行留痕目录（已 gitignore） |
+
+## 页面
+
+| 路由 | 内容 |
 | --- | --- |
-| `index.html` | 页面结构与近似 SVG 插画 |
-| `styles.css` | 视觉样式与响应式布局 |
-| `skills.js` | 4 个业务 SKILL 的展示资料、仓库、安装提示词与最小输入示例 |
-| `app.js` | 导航、独立任务页、结构化表单、Mock 知识库、API 调用、预览、检索、详情与复制 |
-| `server.py` | 静态文件服务与 Youcai API 本地代理；不向浏览器暴露密钥 |
-| `README.txt` | 本地使用说明与验证记录 |
-| `skills/foru-web-ui/` | 完整 FORU SKILL，含说明、参考资料、原站证据截图和独立 starter |
+| `/` | 首页 |
+| `/skills`、`/skill/:slug` | SKILL 目录与详情 |
+| `/experience` | 在线对话（多轮，流式输出） |
+| `/use/:slug?` | 在线运行（结构化表单 → 真实 agent 执行 → 流式渲染 + token 用量） |
+| `/runs`、`/runs/:runId` | 运行记录列表与详情（后端离线时回落演示数据） |
+| `/guide` | 使用指南 |
 
-## 附带的 FORU SKILL
+## 后端 API
 
-完整技能位于 [skills/foru-web-ui](skills/foru-web-ui/)，入口为 [SKILL.md](skills/foru-web-ui/SKILL.md)。
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/health` | 就绪状态（服务在、runner=zcode） |
+| `POST /api/chat` | `{ skill, messages }` → SSE 流式返回（text_delta / usage / 终止） |
+| `GET /api/runs` | 运行列表（来自 traces/index.jsonl） |
+| `GET /api/runs/:runId` | 运行详情 |
+| `GET /api/runs/:runId/file/:kind` | 下载留痕文件（md 可读版按需生成） |
 
-下载仓库后，把整个 `foru-web-ui` 文件夹放入 Codex 的 skills 目录，保留 `agents`、`references` 和 `assets`，不要只复制 `SKILL.md`。
+## 技能安装状态
 
-调用示例：
+- **industry-education-report**：已 vendored 到仓库 `.zcode/skills/`，clone 自带，zcode 自动发现，首轮指示 agent 用 Skill 工具加载。
+- **classroom-assistant / ai-interview / training-data-qa**：尚未安装为真实技能，运行时回落到后端内置的方法论提示词。
 
-```text
-使用 $foru-web-ui，为我的业务制作 FORU 风格的响应式页面。
-保留原生 HTML/CSS/JS，明确角色入口、资源内容与必要交互。
+## 运行留痕（traces）
+
+每次 `/api/chat` 自动三层留痕到 `web/server/traces/`（gitignore）：
+
+1. `<runId>.events.jsonl` — 实时协议流（请求/响应/通知 + runStart/runEnd）
+2. `<runId>.json` — 终态时从 zcode SQLite 导出的权威 trace
+3. `index.jsonl` — 每运行一行（outcome / duration / usage / toolCallCount），评测入口
+
+配套脚本：`npm run traces:summary`（按 skill 统计成功率、时长分位数、token 与缓存命中率）、`npm run trace:md -- <runId>`（可读 MD）、`npm run trace:backfill`（补导历史会话）、`npm run traces:prune -- --keep N`。
+
+## 沙箱与安全边界
+
+- agent 的文件操作限定在 `web/server/workspace/<会话>/` 下，单次运行有超时。
+- 当前定位是**内网自用**：绑本机 CLI 登录态，额度共享、并发受限。公网部署前需要容器隔离 + 工具白名单 + 真实用户体系。
+
+## 构建与部署
+
+```bash
+cd web
+npm run build   # vue-tsc 类型检查 + vite build，产物在 web/dist/
 ```
 
-技能素材、证据截图和 starter 按原目录完整保留。证据用于核对设计；复用时应使用自己的品牌与业务内容，不将原站客户、统计、联系方式或资质当作目标业务的背书。
+产物为纯静态站点，可直接静态托管；在线运行与运行记录功能仍需 8767 后端在 `/api` 同路径提供服务。
 
-## 演示边界
+## 旧版演示（根目录）
 
-本页面复用 `foru-web-ui` 技能的独立 starter 设计语言和近似插画，不是 FORU 原站源码或截图，不使用原站联系方式或合作背书。
+根目录的 `index.html` / `app.js` / `server.py` 是早期无 npm 的静态演示版（Youcai API 本地代理），已被 `web/` 版取代，仅作历史保留。设计背景见 `skills/foru-web-ui/`；后端方案与协议笔记见 `web/docs/agent-backend-mvp.md`、`web/server/samples/PROTOCOL.md`。
 
-预览仍是界面示意，不是实际运行结果。“直接使用”页通过本地代理调用文档配置的 Youcai Chat Completions API，并为每个 SKILL 附加对应的任务边界；它不等同于在 Codex 中安装完整仓库，不能自动使用仓库里的脚本、附件或参考文件。完整能力仍以对应 SKILL 的发布资料为准。页面不提供账号系统，也不生成推测日期、版本、评分或下载量。
+---
 
-## 验证
-
-2026-09-15：新增 4 个独立“直接使用”任务页，现有详情调整为二级入口；每页按业务配置表单、选项、完成度、执行摘要和 Mock 知识库。通过本地 Python 代理直接接入文档提供的 Youcai API，密钥不进入浏览器或公开仓库。目录保持 4 个业务分类、每类 1 个 SKILL。已验证 4 条独立路由、API 配置检测、示例填入、知识库多选、二级详情，以及 390px / 桌面视口无页面横向溢出。
-
-2026-09-14：JavaScript 语法和本地资源引用检查通过。临时本地预览中检查了桌面、手机首页与详情、手机指南，以及角色切换、检索筛选、返回状态恢复、复制反馈、菜单和轮播暂停/恢复。
-
-375、390、448、768、1024、1280、1560px 视口未出现页面横向溢出。减少动态效果做了静态检查，未切换系统偏好实测。浏览器验证工具限制 `file://` 访问，因此双击打开场景未直接实测；目录和详情使用普通相对资源，只有“直接使用”工作台会通过本地代理发起网络请求。
+更新：2026-09-17 — README 重写，对齐 zcode 无头后端 + 运行记录页的当前架构。
