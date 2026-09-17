@@ -1640,3 +1640,9 @@ a.runs-row:hover { background: var(--surface-sunken); color: var(--ink-body); }
 @media (max-width: 1000px) {
   .rd-layout { grid-template-columns: 1fr; }
 }
+
+/* 运行记录 · 实时/演示数据标签与下载行 */
+.runs-demo-tag.is-live { border-style: solid; border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.rd-files { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line-hair); font-size: var(--fs-xs); }
+.rd-files-label { color: var(--ink-muted); }
+.rd-files a { color: var(--brand); }

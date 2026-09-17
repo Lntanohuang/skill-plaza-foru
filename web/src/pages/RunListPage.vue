@@ -1,19 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Icon from '../components/Icon.vue'
 import { bySlug } from '../data/skills'
-import { RUNS_MOCK, OUTCOME_LABEL, type RunOutcome } from '../data/runsMock'
+import { OUTCOME_LABEL, type RunOutcome } from '../data/runsMock'
+import { fetchRuns } from '../api/runsApi'
 
 /* 运行记录：每次在线运行的 outcome / 用量 / 工具调用一览。
-   当前为演示数据（runsMock.ts）；后端 /api/runs 就绪后切换数据源。 */
+   数据来自后端 /api/runs（真实 trace）；后端未启动时回落演示数据。 */
+
+const runs = ref<import('../data/runsMock').RunListItem[]>([])
+const live = ref(false)
+const loading = ref(true)
+
+onMounted(async () => {
+  const result = await fetchRuns()
+  runs.value = result.runs
+  live.value = result.live
+  loading.value = false
+})
 
 const skillFilter = ref('all')
 const outcomeFilter = ref<'all' | RunOutcome>('all')
 
-const skillName = (slug: string) => bySlug.get(slug)?.name ?? slug
+const skillName = (slug: string) => bySlug.get(slug)?.name ?? (slug === 'unknown' ? '历史会话' : slug)
 
 const filtered = computed(() =>
-  RUNS_MOCK.filter(
+  runs.value.filter(
     r =>
       (skillFilter.value === 'all' || r.skill === skillFilter.value) &&
       (outcomeFilter.value === 'all' || r.outcome === outcomeFilter.value),
@@ -21,14 +33,14 @@ const filtered = computed(() =>
 )
 
 const stats = computed(() => {
-  const runs = RUNS_MOCK
-  const finished = runs.filter(r => r.outcome === 'success')
-  const input = runs.reduce((a, r) => a + (r.usage?.inputTokens ?? 0), 0)
-  const cache = runs.reduce((a, r) => a + (r.usage?.cacheReadTokens ?? 0), 0)
+  const all = runs.value
+  const finished = all.filter(r => r.outcome === 'success')
+  const input = all.reduce((a, r) => a + (r.usage?.inputTokens ?? 0), 0)
+  const cache = all.reduce((a, r) => a + (r.usage?.cacheReadTokens ?? 0), 0)
   return {
-    total: runs.length,
-    successRate: runs.length ? Math.round((finished.length / runs.length) * 100) : 0,
-    tools: runs.reduce((a, r) => a + (r.toolCallCount ?? 0), 0),
+    total: all.length,
+    successRate: all.length ? Math.round((finished.length / all.length) * 100) : 0,
+    tools: all.reduce((a, r) => a + (r.toolCallCount ?? 0), 0),
     cacheRate: input ? Math.round((cache / input) * 100) : 0,
   }
 })
@@ -54,7 +66,7 @@ function fmtTime(ts: string): string {
 }
 
 function outcomeRuns(o: RunOutcome): number {
-  return RUNS_MOCK.filter(r => r.outcome === o).length
+  return runs.value.filter(r => r.outcome === o).length
 }
 </script>
 
@@ -67,7 +79,7 @@ function outcomeRuns(o: RunOutcome): number {
           <h1>运行记录</h1>
           <p class="runs-sub">每次在线运行的完整留痕：结果、时长、token 用量与工具调用，可点开查看逐步执行过程。</p>
         </div>
-        <span class="runs-demo-tag">演示数据</span>
+        <span class="runs-demo-tag" :class="{ 'is-live': live }">{{ live ? '实时数据' : '演示数据' }}</span>
       </header>
 
       <div class="runs-stats">
@@ -82,7 +94,7 @@ function outcomeRuns(o: RunOutcome): number {
           <span>SKILL</span>
           <select v-model="skillFilter">
             <option value="all">全部</option>
-            <option v-for="run in RUNS_MOCK.filter((r, i, arr) => arr.findIndex(x => x.skill === r.skill) === i)" :key="run.skill" :value="run.skill">{{ skillName(run.skill) }}</option>
+            <option v-for="run in runs.filter((r, i, arr) => arr.findIndex(x => x.skill === r.skill) === i)" :key="run.skill" :value="run.skill">{{ skillName(run.skill) }}</option>
           </select>
           <Icon name="chev-down" :size="14" />
         </label>
@@ -113,12 +125,14 @@ function outcomeRuns(o: RunOutcome): number {
           <span>{{ run.usage?.cacheReadTokens ? fmtTokens(run.usage.cacheReadTokens) : '-' }}</span>
           <span><b class="runs-tools">{{ run.toolCallCount ?? 0 }}</b></span>
         </RouterLink>
-        <p v-if="filtered.length === 0" class="runs-empty">没有符合筛选条件的运行。</p>
+        <p v-if="loading" class="runs-empty">正在读取运行记录…</p>
+        <p v-else-if="filtered.length === 0" class="runs-empty">没有符合筛选条件的运行。</p>
       </div>
 
       <p class="runs-note">
-        列表对应后端 <code>traces/index.jsonl</code>；详情对应每次运行的权威导出。当前页面为前端演示数据（取材自两次真实运行），
-        后端 <code>/api/runs</code> 就绪后自动切换。
+        列表对应后端 <code>traces/index.jsonl</code>；详情对应每次运行的权威导出。
+        <template v-if="!live">当前后端未启动，显示为演示数据（取材自两次真实运行）。</template>
+        <template v-else>数据实时来自本地后端；点任意运行查看逐步执行过程。</template>
       </p>
     </div>
   </section>

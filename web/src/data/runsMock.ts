@@ -22,6 +22,8 @@ export interface RunListItem {
     totalTokens?: number
   }
   toolCallCount?: number
+  /** 原始文件路径（真实数据才有；演示数据无） */
+  files?: { events?: string; trace?: string }
 }
 
 export interface RunToolPart {
