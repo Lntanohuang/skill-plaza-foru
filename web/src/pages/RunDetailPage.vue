@@ -1,29 +1,46 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import { bySlug } from '../data/skills'
-import { RUN_DETAILS_MOCK, RUNS_MOCK, OUTCOME_LABEL, type RunDetail, type RunToolPart } from '../data/runsMock'
+import { OUTCOME_LABEL, type RunDetail, type RunListItem, type RunToolPart } from '../data/runsMock'
+import { fetchRunDetail, runFileUrl } from '../api/runsApi'
 
 /* 运行详情：概要 + 用量条 + 工具执行时间线（可展开入参/输出）+ 对话流。
-   当前为演示数据；后端 GET /api/runs/:runId 就绪后切换。 */
+   数据来自 GET /api/runs/:runId（item = 索引记录，trace = 权威导出）；
+   后端未启动时回落演示数据。 */
 
 const route = useRoute()
 const runId = computed(() => String(route.params.runId ?? ''))
 
-const detail = computed<RunDetail | undefined>(() => RUN_DETAILS_MOCK[runId.value])
-const listItem = computed(() => RUNS_MOCK.find(r => r.runId === runId.value))
+const item = ref<RunListItem | undefined>()
+const trace = ref<RunDetail | undefined>()
+const live = ref(false)
+const loading = ref(true)
+
+async function load() {
+  loading.value = true
+  const result = await fetchRunDetail(runId.value)
+  item.value = result.item
+  trace.value = result.trace
+  live.value = result.live
+  loading.value = false
+}
+onMounted(load)
+watch(runId, load)
 
 const skillName = computed(() => {
-  const slug = listItem.value?.skill ?? 'industry-education-report'
-  return bySlug.get(slug)?.name ?? slug
+  const slug = item.value?.skill ?? 'industry-education-report'
+  const known = bySlug.get(slug)?.name
+  if (known) return known
+  return slug === 'unknown' || slug === 'historical' ? '历史会话' : slug
 })
 
 /* 时间线：从消息 parts 抽取工具调用（含入参/输出），按出现顺序 */
 interface TimelineItem { part: RunToolPart; time: string }
 const timeline = computed<TimelineItem[]>(() => {
   const items: TimelineItem[] = []
-  for (const m of detail.value?.messages ?? []) {
+  for (const m of trace.value?.messages ?? []) {
     for (const p of m.parts ?? []) {
       if (p.type === 'tool') items.push({ part: p, time: m.time })
     }
@@ -50,8 +67,8 @@ function fmtTokens(n?: number): string {
   if (!n) return '0'
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
-function fmtTime(ts: string): string {
-  return ts.slice(11, 19)
+function fmtTime(ts?: string): string {
+  return ts ? ts.slice(11, 19) : '-'
 }
 function fmtIO(value: unknown): string {
   if (value === undefined || value === null || value === '') return ''
@@ -60,7 +77,7 @@ function fmtIO(value: unknown): string {
 }
 
 const usagePct = computed(() => {
-  const u = detail.value?.usage ?? {}
+  const u = item.value?.usage ?? {}
   const input = u.inputTokens ?? 0
   const cache = Math.min(u.cacheReadTokens ?? 0, input)
   const output = u.outputTokens ?? 0
@@ -71,6 +88,8 @@ const usagePct = computed(() => {
     output: Math.round((output / total) * 100),
   }
 })
+
+const hasData = computed(() => Boolean(item.value && trace.value))
 </script>
 
 <template>
@@ -80,17 +99,19 @@ const usagePct = computed(() => {
         <Icon name="back" :size="14" /> 返回运行记录
       </RouterLink>
 
-      <template v-if="detail">
+      <p v-if="loading" class="rd-missing">正在读取运行详情…</p>
+
+      <template v-else-if="hasData && item && trace">
         <header class="rd-head">
           <div class="rd-head-copy">
             <p class="use-eyebrow">{{ skillName }} · 执行详情</p>
-            <h1>{{ detail.session.title }}</h1>
+            <h1>{{ trace.session.title }}</h1>
             <p class="rd-meta">
-              会话 <code>{{ detail.session.id }}</code> · 沙箱 <code>{{ detail.session.workspace }}</code> ·
-              {{ fmtTime(detail.session.created) }} → {{ fmtTime(detail.session.updated) }}（{{ fmtDuration(listItem?.durationMs) }}）
+              会话 <code>{{ trace.session.id }}</code> · 沙箱 <code>{{ trace.session.workspace }}</code> ·
+              {{ fmtTime(trace.session.created) }} → {{ fmtTime(trace.session.updated) }}（{{ fmtDuration(item.durationMs) }}）
             </p>
           </div>
-          <span class="runs-outcome rd-outcome" :class="`is-${detail.outcome}`">{{ OUTCOME_LABEL[detail.outcome] }}</span>
+          <span class="runs-outcome rd-outcome" :class="`is-${item.outcome}`">{{ OUTCOME_LABEL[item.outcome] }}</span>
         </header>
 
         <div class="rd-usage">
@@ -100,10 +121,10 @@ const usagePct = computed(() => {
             <i class="rd-seg-output" :style="{ width: usagePct.output + '%' }"></i>
           </div>
           <div class="rd-usage-legend">
-            <span><i class="rd-seg-cache"></i>缓存命中 {{ fmtTokens(detail.usage?.cacheReadTokens) }}</span>
-            <span><i class="rd-seg-input"></i>输入 {{ fmtTokens((detail.usage?.inputTokens ?? 0) - (detail.usage?.cacheReadTokens ?? 0)) }}</span>
-            <span><i class="rd-seg-output"></i>输出 {{ fmtTokens(detail.usage?.outputTokens) }}</span>
-            <b>合计 {{ fmtTokens(detail.usage?.totalTokens) }} tokens</b>
+            <span><i class="rd-seg-cache"></i>缓存命中 {{ fmtTokens(item.usage?.cacheReadTokens) }}</span>
+            <span><i class="rd-seg-input"></i>输入 {{ fmtTokens((item.usage?.inputTokens ?? 0) - (item.usage?.cacheReadTokens ?? 0)) }}</span>
+            <span><i class="rd-seg-output"></i>输出 {{ fmtTokens(item.usage?.outputTokens) }}</span>
+            <b>合计 {{ fmtTokens(item.usage?.totalTokens) }} tokens</b>
           </div>
         </div>
 
@@ -111,19 +132,19 @@ const usagePct = computed(() => {
           <aside class="rd-timeline">
             <h2>工具执行（{{ timeline.length }}）</h2>
             <ol class="rd-steps">
-              <li v-for="(item, i) in timeline" :key="item.part.callID" class="rd-step" :class="{ 'is-open': openTool === item.part.callID }">
-                <button type="button" class="rd-step-btn" @click="toggleTool(item.part.callID)">
-                  <span class="rd-step-no" :class="`is-${item.part.state.status}`">{{ i + 1 }}</span>
-                  <span class="rd-step-name">{{ item.part.tool }}</span>
-                  <span class="rd-step-status" :class="`is-${item.part.state.status}`">{{ item.part.state.status === 'completed' ? '完成' : item.part.state.status === 'error' ? '失败' : item.part.state.status }}</span>
-                  <span class="rd-step-time">{{ fmtTime(item.time) }}</span>
+              <li v-for="(entry, i) in timeline" :key="entry.part.callID" class="rd-step" :class="{ 'is-open': openTool === entry.part.callID }">
+                <button type="button" class="rd-step-btn" @click="toggleTool(entry.part.callID)">
+                  <span class="rd-step-no" :class="`is-${entry.part.state.status}`">{{ i + 1 }}</span>
+                  <span class="rd-step-name">{{ entry.part.tool }}</span>
+                  <span class="rd-step-status" :class="`is-${entry.part.state.status}`">{{ entry.part.state.status === 'completed' ? '完成' : entry.part.state.status === 'error' ? '失败' : entry.part.state.status }}</span>
+                  <span class="rd-step-time">{{ fmtTime(entry.time) }}</span>
                   <svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-chev-down" /></svg>
                 </button>
-                <div v-if="openTool === item.part.callID" class="rd-step-body">
-                  <p v-if="fmtIO(item.part.state.input)" class="rd-step-label">入参</p>
-                  <pre v-if="fmtIO(item.part.state.input)" class="rd-step-io">{{ fmtIO(item.part.state.input) }}</pre>
-                  <p v-if="fmtIO(item.part.state.output)" class="rd-step-label">输出</p>
-                  <pre v-if="fmtIO(item.part.state.output)" class="rd-step-io">{{ fmtIO(item.part.state.output) }}</pre>
+                <div v-if="openTool === entry.part.callID" class="rd-step-body">
+                  <p v-if="fmtIO(entry.part.state.input)" class="rd-step-label">入参</p>
+                  <pre v-if="fmtIO(entry.part.state.input)" class="rd-step-io">{{ fmtIO(entry.part.state.input) }}</pre>
+                  <p v-if="fmtIO(entry.part.state.output)" class="rd-step-label">输出</p>
+                  <pre v-if="fmtIO(entry.part.state.output)" class="rd-step-io">{{ fmtIO(entry.part.state.output) }}</pre>
                 </div>
               </li>
             </ol>
@@ -131,7 +152,7 @@ const usagePct = computed(() => {
 
           <main class="rd-stream">
             <h2>对话流</h2>
-            <template v-for="(m, mi) in detail.messages" :key="mi">
+            <template v-for="(m, mi) in trace.messages" :key="mi">
               <article v-if="(m.parts ?? []).some(p => p.type === 'text')" class="rd-msg" :class="`is-${m.role}`">
                 <span class="rd-msg-role">{{ m.role === 'user' ? '任务' : 'AI' }}</span>
                 <div class="rd-msg-body">
@@ -145,16 +166,20 @@ const usagePct = computed(() => {
                 </div>
               </article>
             </template>
-            <p class="rd-note">
-              数据对应后端权威导出（消息 / 内容块 / 工具调用）。原始文件（events.jsonl / trace.json / markdown）下载入口在后端 API 就绪后提供。
-            </p>
+            <div v-if="live && item.files" class="rd-files">
+              <span class="rd-files-label">原始数据：</span>
+              <a v-if="item.files.events" :href="runFileUrl(runId, 'events')" download>events.jsonl</a>
+              <a v-if="item.files.trace" :href="runFileUrl(runId, 'trace')" download>trace.json</a>
+              <a v-if="item.files.trace" :href="runFileUrl(runId, 'md')" download>trace.md</a>
+            </div>
+            <p v-else class="rd-note">演示数据不含原始文件下载；接入后端后每次运行可下载 events.jsonl / trace.json / trace.md。</p>
           </main>
         </div>
       </template>
 
       <div v-else class="rd-missing">
         <h1>该运行暂无详情</h1>
-        <p>演示数据只包含两条完整详情（成功交付的产教报告与取证超时运行）。后端接入后，每次运行都可点开。</p>
+        <p>索引中找不到这次运行，或该运行还没有权威导出（历史早期运行）。</p>
         <RouterLink class="btn btn-primary" :to="{ name: 'runs' }">返回运行记录</RouterLink>
       </div>
     </div>
