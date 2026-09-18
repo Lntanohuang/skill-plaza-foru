@@ -123,16 +123,19 @@ npm run dev      # 终端 2：Vite（4188，/api 代理到 8767）
 
 ## 附：长期方向与决策记录
 
-### 双 Runner（AgentRunner 抽象）
+### 双 Runner（AgentRunner 抽象）—— 已落地（2026-09-18）
 
-- 接口：`run(input): AsyncIterable<AgentEvent>`，事件统一为
-  `text | tool_use | tool_result | usage | done | error`，转 SSE 推给前端。
-- **ZcodeRunner**：面向内网演示——能力最强（多步规划、文件/shell、skills、MCP 全可用），
-  但绑本机 CLI 登录态，额度共享、并发受限，不适合公网。
-- **PiRunner**：面向对外部署——pi 作为 Node 库嵌入，可编程控制工具白名单与缓存断点，
-  模型走 GLM Max（智谱 Anthropic 兼容端点 `https://open.bigmodel.cn/api/anthropic` +
-  `ZHIPU_API_KEY`，模型如 `glm-4.7`），成本透明。
-- 切换：`AGENT_RUNNER=zcode|pi` 环境变量；`/api/health` 暴露当前 runner。
+实际实现与原设想的差异：pi 不作为 Node 库嵌入，而是 **`pi --mode rpc` 常驻子进程**
+（JSONL over stdio，与 zcode app-server 桥同构）；模型也不走 GLM Max 端点，而是复用
+本机 pi 已配置的 **DeepSeek**（`deepseek/deepseek-v4-pro`，`PI_MODEL` 可换）。
+
+- 抽象：`lib/runner.ts` 的 **AgentRunner 抽象类**（分帧 / id 关联 / listen / tap 公共机制），
+  `ZcodeRunner`、`PiRunner` 继承并各自定制（进程模型：zcode 全局共享一进程，pi 每会话一进程）。
+- 事件：引擎归一为 `text_delta | usage | terminal | error` 后由 index.ts 统一转 SSE，前端协议不变。
+- 切换：`AGENT_RUNNER=zcode|pi` 定默认（缺省 pi）；`/api/chat` 请求体 `engine` 字段可按次覆盖，
+  前端 `/experience`、`/use` 有切换控件；会话与引擎绑定，切引擎自动开新会话。
+- trace：两引擎同一套三层留痕；`RunRecord.engine` 区分，pi 详情时间线与 zcode 同构。
+- 协议与实测细节：`docs/pi-runner.md`；成本对比（同任务两引擎各跑 N 次）仍待做。
 
 ### 无头调用的优劣（为什么双轨）
 

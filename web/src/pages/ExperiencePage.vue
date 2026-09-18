@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { bySlug, catOf, type Skill } from '../data/skills'
-import { checkHealth, streamChat } from '../composables/useChatApi'
+import { checkHealth, streamChat, type EngineId, type EngineInfo } from '../composables/useChatApi'
 import Icon from '../components/Icon.vue'
 import { useSession } from '../composables/session'
 import { useCopy } from '../composables/useCopy'
@@ -74,15 +74,26 @@ const EXAMPLES = DEMOS.map(d => ({ slug: d.slug, question: d.question, skill: by
 const apiReady = ref(false)
 const apiModel = ref('')
 const DEFAULT_SLUG = DEMOS[0].slug
-/** 每个对话对应一个后端会话（多轮上下文保留）；技能也随对话固定，不逐轮重匹配 */
-const convSessions = new Map<number, string>()
+/* 执行引擎：默认取后端 AGENT_RUNNER，可切换（切换后各对话走新后端会话） */
+const engine = ref<EngineId>('pi')
+const engines = ref<EngineInfo[]>([])
+const engineOf = (id: EngineId) => engines.value.find(e => e.id === id)
+function pickEngine(id: EngineId) {
+  if (engineOf(id)?.available) engine.value = id
+}
+/** 每个对话对应一个后端会话（多轮上下文保留）；技能随对话固定；key 拼入引擎名，切换引擎自动开新会话 */
+const convSessions = new Map<string, string>()
 const convSlugs = new Map<number, string>()
 
 async function probeApi() {
   const result = await checkHealth()
   apiReady.value = result.ok
   apiModel.value = result.ok ? (result.model ?? '') : ''
-  if (result.ok) MODELS[0].name = result.runner === 'zcode' ? 'Skill搭子 Agent（真实运行）' : 'Skill搭子 Agent'
+  if (result.ok) {
+    MODELS[0].name = 'Skill搭子 Agent（真实运行）'
+    engines.value = result.engines ?? []
+    if (result.runner && engineOf(result.runner)?.available) engine.value = result.runner
+  }
 }
 
 function matchDemo(text: string): Demo | null {
@@ -213,20 +224,22 @@ function typeInto(msg: Msg, reply: string) {
   }, 24)
 }
 
-/* 真实运行：走本地 Node 后端 → ZCode（GLM），SSE 流式回填 */
+/* 真实运行：走本地 Node 后端 → 所选引擎（pi/zcode），SSE 流式回填 */
 async function runReal(text: string, slug: string, skill: Skill | undefined) {
   const convId = activeId.value
   const msg = startAiMsg(skill, true)
   if (convId === null) return
   convSlugs.set(convId, slug)
+  const sessionKey = `${engine.value}:${convId}`
   try {
     await streamChat({
       skill: slug,
       messages: [{ role: 'user', content: text }],
-      sessionId: convSessions.get(convId),
+      sessionId: convSessions.get(sessionKey),
+      engine: engine.value,
       onEvent: event => {
         if (event.type === 'session') {
-          convSessions.set(convId!, event.sessionId)
+          convSessions.set(sessionKey, event.sessionId)
         } else if (event.type === 'text') {
           msg.text += event.delta
           scrollTop()
@@ -372,7 +385,7 @@ onBeforeUnmount(() => {
               <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
             </div>
             <p v-if="msg.done && !msg.real" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
-            <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（本地 Agent · {{ apiModel || 'GLM' }}）。</p>
+            <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（{{ engine }} · {{ apiModel || '本地 Agent' }}）。</p>
           </div>
         </template>
       </div>
@@ -391,6 +404,13 @@ onBeforeUnmount(() => {
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
             </span>
             <span class="exp-agent">
+              <span v-if="apiReady && engines.length > 1" class="engine-switch" role="group" aria-label="切换执行引擎">
+                <button
+                  v-for="e in engines" :key="e.id" type="button" class="engine-btn"
+                  :class="{ 'is-on': e.id === engine }" :disabled="!e.available"
+                  :title="e.available ? `引擎 ${e.id} · ${e.model ?? ''}` : `不可用：${e.reason ?? ''}`"
+                  @click="pickEngine(e.id)">{{ e.id }}</button>
+              </span>
               <span class="exp-model">
                 <button type="button" class="exp-model-btn" :aria-expanded="modelOpen" aria-haspopup="menu" @click.stop="modelOpen = !modelOpen">
                   {{ model.name }}

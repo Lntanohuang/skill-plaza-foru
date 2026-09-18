@@ -117,7 +117,7 @@ function outcomeRuns(o: RunOutcome): number {
           v-for="run in filtered" :key="run.runId" class="runs-row" role="row"
           :to="{ name: 'runDetail', params: { runId: run.runId } }">
           <span class="runs-cell-time">{{ fmtTime(run.ts) }}</span>
-          <span>{{ skillName(run.skill) }}</span>
+          <span>{{ skillName(run.skill) }}<em v-if="run.engine" class="runs-engine" :class="`is-${run.engine}`">{{ run.engine }}</em></span>
           <span class="runs-cell-task" :title="run.promptDigest">{{ run.promptDigest }}</span>
           <span><em class="runs-outcome" :class="`is-${run.outcome}`">{{ OUTCOME_LABEL[run.outcome] }}</em></span>
           <span>{{ fmtDuration(run.durationMs) }}</span>

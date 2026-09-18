@@ -14,6 +14,8 @@ export interface RunListItem {
   skill: string
   promptDigest: string
   outcome: RunOutcome
+  /** 执行引擎（历史记录缺省视为 zcode） */
+  engine?: 'zcode' | 'pi'
   durationMs: number
   usage?: {
     inputTokens?: number

@@ -1,23 +1,28 @@
 # Skill搭子 · SKILL 广场（产教领域）
 
-展示产教领域公开 SKILL 的目录站点，并提供**在线真实运行**：浏览器提交任务 → Node 后端桥接本机 ZCode 无头模式（GLM Coding Plan）→ SSE 流式看到多步 agent 执行 → 运行留痕可回看。
+展示产教领域公开 SKILL 的目录站点，并提供**在线真实运行**：浏览器提交任务 → Node 后端桥接本机 agent 引擎（**pi · DeepSeek** 或 **zcode · GLM**，可切换）→ SSE 流式看到多步 agent 执行 → 运行留痕可回看。
 
 - 前端：`web/`，Vue 3 + TypeScript + Vite
-- 后端：`web/server/index.ts`，node:http 零第三方依赖，spawn 常驻 `zcode app-server` 子进程（NDJSON 协议）
-- 技能：`.zcode/skills/` 已随仓库分发，clone 即有
+- 后端：`web/server/index.ts`，node:http 零第三方依赖；`AgentRunner` 抽象基类（`lib/runner.ts`）下挂两个引擎：
+  - **pi**（默认）：每会话一个 `pi --mode rpc` 常驻子进程（JSONL over stdio），模型 DeepSeek（`deepseek/deepseek-v4-pro`）
+  - **zcode**：全局共享一个 `zcode app-server` 子进程（NDJSON 协议），GLM Coding Plan
+- 技能：`.zcode/skills/` 已随仓库分发，clone 即有（zcode 用 Skill 工具加载，pi 用 `--skill` + `/skill:` 命令）
 
 ## 架构
 
 ```
-Vue SPA ── POST /api/chat ──> Node 后端 (web/server/index.ts, 端口 8767)
-                              │  spawn 常驻: zcode app-server
-                              │    session/create（workspace = web/server/workspace/<会话>/）
-                              │    session/subscribe → session/send
-                              │←─ session/event（text_delta / usage.delta / 终止事件）
-                              │      归一成 SSE 推给浏览器
-                              ├─ GET /api/health
-                              └─ GET /api/runs（运行记录只读 API）
+Vue SPA ── POST /api/chat {skill, messages, engine?} ──> Node 后端 (8767)
+                              │  AgentRunner 抽象（lib/runner.ts）
+                              │    ├─ PiRunner（默认）：每会话 spawn pi --mode rpc
+                              │    │    prompt → message_update(text_delta) → agent_settled
+                              │    └─ ZcodeRunner：全局共享 zcode app-server
+                              │         session/create → subscribe → send → session/event
+                              │  引擎事件归一为 text/usage/terminal/error → SSE 推给浏览器
+                              ├─ GET /api/health（默认引擎 + 可用引擎清单）
+                              └─ GET /api/runs（运行记录只读 API，含 engine 字段）
 ```
+
+默认引擎由 `AGENT_RUNNER=zcode|pi` 选择（缺省 pi）；`/experience`、`/use` 页面可按运行切换引擎（不可用的引擎置灰并提示原因），会话与引擎绑定。
 
 开发期 Vite（4188）把 `/api` 代理到 8767；前端只访问同源 `/api/*`，不感知后端形态。
 
@@ -28,13 +33,18 @@ Vue SPA ── POST /api/chat ──> Node 后端 (web/server/index.ts, 端口 8
 | 依赖 | 说明 |
 | --- | --- |
 | Node.js ≥ 22.18（建议 24+） | 后端用 `node` 直接运行 TypeScript（内置 type stripping），不用 tsx |
-| ZCode 客户端 | AI 执行走本机 ZCode 无头模式，**鉴权是各自本机的 ZCode 登录态（GLM Coding Plan），不进仓库、不需要共享密钥** |
+| pi CLI（默认引擎） | `npm i -g @earendil-works/pi-coding-agent`；模型 key 走环境变量（如 `DEEPSEEK_API_KEY`），自检 `pi auth check --provider deepseek` |
+| ZCode 客户端（可选引擎） | AI 执行走本机 ZCode 无头模式，**鉴权是各自本机的 ZCode 登录态（GLM Coding Plan），不进仓库、不需要共享密钥** |
+
+两个引擎只要有一个可用，后端即可启动；均不可用才报错退出。
 
 ### 启动步骤
 
 ```bash
-# 1. 安装并登录 ZCode 桌面客户端（用你自己的 GLM Coding Plan 账号）
-#    登录态保存在本机 ~/.zcode/cli/config.json
+# 1. 准备引擎（至少其一）：
+#    pi（默认）：npm i -g @earendil-works/pi-coding-agent，并保证启动后端的
+#    shell 环境里有 DEEPSEEK_API_KEY（或写入 web/.env）
+#    zcode：安装并登录 ZCode 桌面客户端（~/.zcode/cli/config.json）
 
 # 2. 克隆仓库后安装依赖
 cd web
@@ -73,6 +83,11 @@ cd web && npm run detect:cli
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `AGENT_RUNNER` | `pi` | 默认引擎（`zcode`\|`pi`）；前端页面仍可按运行切换 |
+| `PI_CLI` | 自动检测（PATH） | pi CLI 路径 |
+| `PI_MODEL` | `deepseek/deepseek-v4-pro` | pi 运行模型，格式 `provider/model`（如 `deepseek/deepseek-flash`） |
+| `PI_IDLE_MS` | 30 分钟 | pi 会话进程空闲回收阈值（pi 每会话一进程） |
+| `DEEPSEEK_API_KEY` | — | pi 引擎的模型 key（也可放 shell 环境；pi 按 `pi auth` 的读取顺序） |
 | `ZCODE_CLI` | 自动检测（见上节） | zcode CLI 路径，仅检测失败或需固定版本时设置 |
 | `PORT` | `8767` | 后端端口（Vite 代理目标需同步改） |
 | `RUN_TIMEOUT_MS` | 已安装技能 20 分钟，其余 10 分钟 | 单次运行超时 |
@@ -93,8 +108,8 @@ cd web && npm run detect:cli
 
 | 接口 | 说明 |
 | --- | --- |
-| `GET /api/health` | 就绪状态（服务在、runner=zcode） |
-| `POST /api/chat` | `{ skill, messages }` → SSE 流式返回（text_delta / usage / 终止） |
+| `GET /api/health` | 就绪状态（默认引擎、模型、可用引擎清单及不可用原因） |
+| `POST /api/chat` | `{ skill, messages, engine? }` → SSE 流式返回（text_delta / usage / 终止）；`engine` 缺省用默认引擎，会话与引擎绑定 |
 | `GET /api/runs` | 运行列表（来自 traces/index.jsonl） |
 | `GET /api/runs/:runId` | 运行详情 |
 | `GET /api/runs/:runId/file/:kind` | 下载留痕文件（md 可读版按需生成） |
@@ -108,9 +123,9 @@ cd web && npm run detect:cli
 
 每次 `/api/chat` 自动三层留痕到 `web/server/traces/`（gitignore）：
 
-1. `<runId>.events.jsonl` — 实时协议流（请求/响应/通知 + runStart/runEnd）
-2. `<runId>.json` — 终态时从 zcode SQLite 导出的权威 trace
-3. `index.jsonl` — 每运行一行（outcome / duration / usage / toolCallCount），评测入口
+1. `<runId>.events.jsonl` — 实时协议流（请求/响应/事件 + runStart/runEnd，两引擎都有）
+2. `<runId>.json` — 权威 trace（zcode：从其 SQLite 导出；pi：从 RPC `get_messages` 导出，形状同构）
+3. `index.jsonl` — 每运行一行（engine / outcome / duration / usage / toolCallCount），评测入口
 
 配套脚本：`npm run traces:summary`（按 skill 统计成功率、时长分位数、token 与缓存命中率）、`npm run trace:md -- <runId>`（可读 MD）、`npm run trace:backfill`（补导历史会话）、`npm run traces:prune -- --keep N`。
 
@@ -130,8 +145,9 @@ npm run build   # vue-tsc 类型检查 + vite build，产物在 web/dist/
 
 ## 旧版演示（根目录）
 
-根目录的 `index.html` / `app.js` / `server.py` 是早期无 npm 的静态演示版（Youcai API 本地代理），已被 `web/` 版取代，仅作历史保留。设计背景见 `skills/foru-web-ui/`；后端方案与协议笔记见 `web/docs/agent-backend-mvp.md`、`web/server/samples/PROTOCOL.md`。
+根目录的 `index.html` / `app.js` / `server.py` 是早期无 npm 的静态演示版（Youcai API 本地代理），已被 `web/` 版取代，仅作历史保留。设计背景见 `skills/foru-web-ui/`；后端方案与协议笔记见 `web/docs/agent-backend-mvp.md`、`web/docs/pi-runner.md`、`web/server/samples/PROTOCOL.md`。
 
 ---
 
+更新：2026-09-18 — 双引擎落地：AgentRunner 抽象 + PiRunner（pi --mode rpc · DeepSeek，默认）+ ZcodeRunner 保留；前端可切换引擎。
 更新：2026-09-17 — README 重写，对齐 zcode 无头后端 + 运行记录页的当前架构。

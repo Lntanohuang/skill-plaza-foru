@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
-import { checkHealth, streamChat, type ApiState, type ChatMessage } from '../composables/useChatApi'
+import { checkHealth, streamChat, type ApiState, type ChatMessage, type EngineId, type EngineInfo } from '../composables/useChatApi'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
 
@@ -24,6 +24,13 @@ const keyword = ref('')
 const apiState = ref<ApiState>('checking')
 const modelName = ref('')
 const busy = ref(false)
+/* 执行引擎：默认取后端 AGENT_RUNNER，可按运行切换（切换后走新后端会话） */
+const engine = ref<EngineId>('pi')
+const engines = ref<EngineInfo[]>([])
+const engineOf = (id: EngineId) => engines.value.find(e => e.id === id)
+function pickEngine(id: EngineId) {
+  if (engineOf(id)?.available) engine.value = id
+}
 
 interface RunMessage {
   role: 'user' | 'assistant' | 'error'
@@ -137,8 +144,10 @@ function sessionOf(target: string): RunMessage[] {
   return sessions[target]
 }
 
-/* 后端按浏览器会话复用 ZCode 会话（多轮上下文天然保留） */
+/* 后端按浏览器会话复用引擎会话（多轮上下文天然保留）；
+   会话与引擎绑定，切换引擎自动开新会话（key 拼入引擎名） */
 const sessionIds: Record<string, string> = {}
+const sessionKey = (slug: string) => `${engine.value}:${slug}`
 const lastUsage = ref('')
 
 async function run() {
@@ -149,6 +158,7 @@ async function run() {
     return
   }
   const target = skill.value.slug
+  const key = sessionKey(target)
   const list = sessionOf(target)
   list.push({ role: 'user', content: buildPrompt() })
   /* 先构造发往后端的消息（最后一条必须是刚加入的用户消息），再放流式占位 */
@@ -164,10 +174,11 @@ async function run() {
     await streamChat({
       skill: target,
       messages: outgoing as ChatMessage[],
-      sessionId: sessionIds[target],
+      sessionId: sessionIds[key],
+      engine: engine.value,
       onEvent: event => {
         if (event.type === 'session') {
-          sessionIds[target] = event.sessionId
+          sessionIds[key] = event.sessionId
         } else if (event.type === 'text') {
           answer.content += event.delta
         } else if (event.type === 'usage') {
@@ -202,6 +213,12 @@ async function probe() {
   if (result.ok) {
     apiState.value = 'ready'
     modelName.value = result.model ?? ''
+    engines.value = result.engines ?? []
+    if (result.runner && engineOf(result.runner)?.available) engine.value = result.runner
+    else if (!engineOf(engine.value)?.available) {
+      const first = engines.value.find(e => e.available)
+      if (first) engine.value = first.id
+    }
     return
   }
   apiState.value = result.reason === 'nokey' ? 'nokey' : 'offline'
@@ -209,10 +226,19 @@ async function probe() {
 
 const statusText = computed(() => {
   if (apiState.value === 'checking') return '正在检查 API'
-  if (apiState.value === 'ready') return `API 已就绪${modelName.value ? ' · ' + modelName.value : ''}`
-  if (apiState.value === 'nokey') return '未读到 API 密钥'
+  if (apiState.value === 'ready') {
+    const model = engineOf(engine.value)?.model ?? modelName.value
+    return `API 已就绪${model ? ' · ' + model : ''}`
+  }
+  if (apiState.value === 'nokey') return '未读到模型配置'
   return '需要启动本地服务'
 })
+
+/* 各引擎的密钥/配置指引（nokey 或引擎不可用时展示） */
+const engineHint = computed(() =>
+  engine.value === 'pi'
+    ? '确认启动后端的 shell 环境里有 DeepSeek Key（如 ~/.zshrc 的 DEEPSEEK_API_KEY），或将其写入 web/.env 后重启服务。'
+    : '请确认 ~/.zcode/cli/config.json 已配置模型 provider（详见 server/samples/PROTOCOL.md），然后重启服务。')
 
 const visibleMessages = computed(() => session.value.slice(-2))
 
@@ -242,6 +268,13 @@ onMounted(() => {
           <p class="use-lead">{{ config.lead }}</p>
         </div>
         <div class="use-head-side">
+          <div v-if="apiState === 'ready' && engines.length" class="engine-switch" role="group" aria-label="切换执行引擎">
+            <button
+              v-for="e in engines" :key="e.id" type="button" class="engine-btn"
+              :class="{ 'is-on': e.id === engine }" :disabled="!e.available"
+              :title="e.available ? `引擎 ${e.id} · ${e.model ?? ''}` : `不可用：${e.reason ?? ''}`"
+              @click="pickEngine(e.id)">{{ e.id === 'pi' ? 'pi · DeepSeek' : 'zcode · GLM' }}</button>
+          </div>
           <span class="use-api" :class="`is-${apiState}`"><i></i>{{ statusText }}</span>
           <RouterLink class="use-detail-link" :to="{ name: 'detail', params: { slug: skill.slug }, query: { from: 'use' } }">
             查看能力详情<Icon name="ext" :size="13" />
@@ -268,7 +301,7 @@ onMounted(() => {
       </p>
       <p v-else-if="apiState === 'nokey'" class="use-setup">
         <strong>本地服务已启动，但没有读到模型配置。</strong>
-        请确认 <code>~/.zcode/cli/config.json</code> 已配置模型 provider（详见 <code>server/samples/PROTOCOL.md</code>），然后重启服务。
+        {{ engineHint }}
         <button type="button" class="text-btn" @click="probe">重新检查</button>
       </p>
 

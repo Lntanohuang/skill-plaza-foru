@@ -17,7 +17,7 @@ if (!existsSync(traceFile)) {
   if (existsSync(join(TRACES_DIR, `${arg}.json`))) {
     traceFile = join(TRACES_DIR, `${arg}.json`)
   } else {
-    const hit = readIndex().find((r) => r.zcodeSessionId === arg || r.runId.includes(arg))
+    const hit = readIndex().find((r) => r.engineSessionId === arg || r.runId.includes(arg))
     if (hit?.files.trace && existsSync(hit.files.trace)) traceFile = hit.files.trace
     else {
       console.error(`找不到对应 trace：${arg}`)

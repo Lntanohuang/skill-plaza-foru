@@ -31,7 +31,9 @@ export interface RunRecord {
   runId: string
   ts: string
   clientSessionId: string
-  zcodeSessionId?: string
+  /** 执行引擎（zcode / pi）；历史记录缺省视为 zcode */
+  engine?: 'zcode' | 'pi'
+  engineSessionId?: string
   skill: string
   promptDigest: string
   outcome: RunOutcome

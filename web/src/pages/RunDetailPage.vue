@@ -111,7 +111,10 @@ const hasData = computed(() => Boolean(item.value && trace.value))
               {{ fmtTime(trace.session.created) }} → {{ fmtTime(trace.session.updated) }}（{{ fmtDuration(item.durationMs) }}）
             </p>
           </div>
-          <span class="runs-outcome rd-outcome" :class="`is-${item.outcome}`">{{ OUTCOME_LABEL[item.outcome] }}</span>
+          <span class="rd-head-badges">
+            <em v-if="item.engine" class="runs-engine" :class="`is-${item.engine}`">{{ item.engine }}</em>
+            <span class="runs-outcome rd-outcome" :class="`is-${item.outcome}`">{{ OUTCOME_LABEL[item.outcome] }}</span>
+          </span>
         </header>
 
         <div class="rd-usage">

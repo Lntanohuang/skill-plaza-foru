@@ -3,7 +3,9 @@
 
 import { appendIndex, exportSessionTrace, listWorkspaceSessions, readIndex, traceFilePath } from '../lib/traceExport.ts'
 
-const known = new Set(readIndex().map((r) => r.zcodeSessionId).filter(Boolean))
+const known = new Set(
+  readIndex().filter((r) => r.engine !== 'pi').map((r) => r.engineSessionId).filter(Boolean),
+)
 const sessions = await listWorkspaceSessions()
 const missing = sessions.filter((s) => !known.has(s.id))
 
@@ -25,7 +27,8 @@ for (const s of missing) {
     runId,
     ts: new Date(s.time_created).toISOString(),
     clientSessionId: 'historical',
-    zcodeSessionId: s.id,
+    engine: 'zcode',
+    engineSessionId: s.id,
     skill: 'unknown',
     promptDigest: s.title.slice(0, 80),
     outcome: 'historical',

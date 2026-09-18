@@ -1651,3 +1651,27 @@ a.runs-row:hover { background: var(--surface-sunken); color: var(--ink-body); }
 .rd-files { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line-hair); font-size: var(--fs-xs); }
 .rd-files-label { color: var(--ink-muted); }
 .rd-files a { color: var(--brand); }
+
+/* ---- 执行引擎：徽标（运行记录）与切换（体验/运行页） ---- */
+.runs-engine {
+  display: inline-block; font-style: normal; font-size: var(--fs-xs);
+  margin-left: 6px; padding: 1px 7px; border-radius: var(--r-ctl);
+  vertical-align: 1px; white-space: nowrap;
+}
+.runs-engine.is-pi { background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); }
+.runs-engine.is-zcode { background: var(--surface-sunken); color: var(--ink-muted); }
+
+.engine-switch {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  border: 1px solid var(--line-hair); border-radius: var(--r-full);
+  background: var(--surface-card); white-space: nowrap;
+}
+.engine-btn {
+  appearance: none; border: 0; height: 22px; padding: 0 10px; border-radius: var(--r-full);
+  background: transparent; font-size: 12px; color: var(--ink-muted); cursor: pointer;
+}
+.engine-btn:hover:not(:disabled) { color: var(--ink-strong); }
+.engine-btn.is-on { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); font-weight: 600; }
+.engine-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.rd-head-badges { display: inline-flex; align-items: center; gap: var(--sp-2); }
