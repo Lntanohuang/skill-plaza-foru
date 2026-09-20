@@ -35,6 +35,19 @@ function pickEngine(id: EngineId) {
 interface RunMessage {
   role: 'user' | 'assistant' | 'error'
   content: string
+  /** done 事件带回的最终一段文本（最后一条 assistant 消息）；有值时 content 的其余部分折叠为执行过程 */
+  final?: string
+}
+
+/* 执行过程 = 全部流式文本去掉结尾的最终段（多轮工具执行时的旁白/边界复述） */
+function procTextOf(msg: RunMessage): string {
+  if (!msg.final) return ''
+  const c = msg.content
+  return (c.endsWith(msg.final) ? c.slice(0, c.length - msg.final.length) : c).trim()
+}
+/* 主结果 = 最终段；异常/中断（无 final）时退回整段 */
+function mainTextOf(msg: RunMessage): string {
+  return msg.final || msg.content
 }
 const sessions = reactive<Record<string, RunMessage[]>>({})
 const session = computed<RunMessage[]>(() => sessions[skill.value.slug] ?? [])
@@ -187,7 +200,7 @@ async function run() {
           lastUsage.value =
             `输入 ${k(u.inputTokens ?? 0)} · 输出 ${k(u.outputTokens ?? 0)} · 缓存命中 ${k(u.cacheReadTokens ?? 0)}`
         } else if (event.type === 'done') {
-          if (!answer.content && event.content) answer.content = event.content
+          if (event.content) answer.final = event.content
         } else if (event.type === 'error') {
           throw new Error(event.message)
         }
@@ -388,7 +401,12 @@ onMounted(() => {
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <p class="use-answer-text">{{ msg.content }}<span v-if="busy && i === visibleMessages.length - 1" class="use-caret">▌</span></p>
+                      <details v-if="procTextOf(msg)" class="use-proc"
+                        :open="busy && !msg.final && i === visibleMessages.length - 1">
+                        <summary>执行过程（{{ procTextOf(msg).length }} 字）</summary>
+                        <pre>{{ procTextOf(msg) }}</pre>
+                      </details>
+                      <p class="use-answer-text">{{ mainTextOf(msg) }}<span v-if="busy && !msg.final && i === visibleMessages.length - 1" class="use-caret">▌</span></p>
                       <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
                     </div>
                   </article>

@@ -38,16 +38,28 @@ export function resolvePiCli(): string | null {
   return null
 }
 
-/** PI_MODEL（格式 provider/model），默认 DeepSeek V4 Pro */
+/** PI_MODEL（格式 provider/model），默认 DeepSeek Flash（便宜快速，MVP 演示够用） */
 export function piModelRef(): { provider: string; modelId: string } {
   loadLocalEnv()
-  const raw = process.env.PI_MODEL?.trim() || 'deepseek/deepseek-v4-pro'
+  const raw = process.env.PI_MODEL?.trim() || 'deepseek/deepseek-flash'
   const i = raw.indexOf('/')
   if (i <= 0 || i >= raw.length - 1) {
-    console.warn(`忽略非法 PI_MODEL（需 provider/model 格式）：${raw}，使用默认 deepseek/deepseek-v4-pro`)
-    return { provider: 'deepseek', modelId: 'deepseek-v4-pro' }
+    console.warn(`忽略非法 PI_MODEL（需 provider/model 格式）：${raw}，使用默认 deepseek/deepseek-flash`)
+    return { provider: 'deepseek', modelId: 'deepseek-flash' }
   }
   return { provider: raw.slice(0, i), modelId: raw.slice(i + 1) }
+}
+
+/** PI_THINKING 思考档位（off..max），默认 low：降 token 大头（长推理），要质量可调 high */
+export function piThinkingLevel(): string {
+  loadLocalEnv()
+  const allowed = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+  const raw = process.env.PI_THINKING?.trim().toLowerCase() || 'low'
+  if (!allowed.includes(raw)) {
+    console.warn(`忽略非法 PI_THINKING=${raw}（可选 ${allowed.join('/')}），使用默认 low`)
+    return 'low'
+  }
+  return raw
 }
 
 /* pi usage → 统一 UsageSummary */
@@ -94,11 +106,13 @@ export class PiRunner extends AgentRunner {
 
   private readonly model: { provider: string; modelId: string }
   private readonly cli: string | null
+  private readonly thinking: string
 
   constructor(model?: { provider: string; modelId: string }, cli?: string | null) {
     super()
     this.model = model ?? piModelRef()
     this.cli = cli === undefined ? resolvePiCli() : cli
+    this.thinking = piThinkingLevel()
   }
 
   describe(): string {
@@ -193,6 +207,8 @@ export class PiRunner extends AgentRunner {
     const args = [
       '--mode', 'rpc',
       '--model', `${this.model.provider}/${this.model.modelId}`,
+      /* 思考档位默认 low：长推理是 token 大头，MVP 演示优先速度与成本 */
+      '--thinking', this.thinking,
       /* 会话文件落在沙箱内，兼作权威 trace 来源 */
       '--session-dir', join(workspaceDir, '.pi-sessions'),
       '-n', sid.slice(0, 8),
@@ -307,8 +323,16 @@ export class PiRunner extends AgentRunner {
     const latest = messages[messages.length - 1]
     if (!isFirstTurn) return latest.content
     if (INSTALLED_SKILLS.has(skill)) {
-      /* --skill 已注册命令，/skill:name 后跟任务内容（展开为技能文档 + User: 任务） */
-      return `/skill:${skill} ${latest.content}`
+      /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
+         MVP 直出模式：不写文件、不跑脚本，报告全文作为最终回复直接输出——
+         内容 token 只花一遍，write/bash 全省；结构校验由 reportParse 兜底 */
+      return (
+        `/skill:${skill} ${latest.content}\n\n` +
+        '（MVP 直出模式：不要写任何文件、不要运行校验或渲染脚本；' +
+        '严格按技能模板的章节结构，把完整报告作为你的最终回复直接输出：' +
+        'Markdown 原样，章节标题照模板使用，保留证据编号与事实/推断/建议分级；' +
+        '不要附加文件清单或执行过程说明。）'
+      )
     }
     return `${SKILL_PROMPTS[skill]}\n\n${latest.content}`
   }

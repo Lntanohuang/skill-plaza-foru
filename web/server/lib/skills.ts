@@ -32,10 +32,28 @@ export const SKILL_PROMPTS: Record<string, string> = {
 /** 已安装为真实技能的 slug（仓库 .zcode/skills/ 下） */
 export const INSTALLED_SKILLS = new Set(['industry-education-report'])
 
-/** 已安装技能的目录（供 pi --skill 直接加载，SKILL.md 格式两边通用） */
+/** 报告期望章节（院校版 C01–C09，源自技能 assets/templates.json；
+    reportParse 结构校验用，政府版 G01–G08 后续按需扩展） */
+export const REPORT_SECTIONS: Array<{ id: string; title: string }> = [
+  { id: 'C01', title: '决策摘要' },
+  { id: 'C02', title: '区域产业链画像' },
+  { id: 'C03', title: '岗位与人才需求' },
+  { id: 'C04', title: '重点企业与合作' },
+  { id: 'C05', title: '毕业生就业去向' },
+  { id: 'C06', title: '专业与课程建设' },
+  { id: 'C07', title: '校地协同与招商主题' },
+  { id: 'C08', title: '行动清单与条件' },
+  { id: 'C09', title: '证据与图表附录' },
+]
+
+/** 已安装技能的目录（供 pi --skill 直接加载，SKILL.md 格式两边通用）。
+    本文件在 web/server/lib/ 下，仓库根需上溯三级：lib → server → web → 根 */
 export function skillDir(slug: string): string {
   return join(
-    dirname(dirname(dirname(fileURLToPath(import.meta.url)))),
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    '..',
     '.zcode',
     'skills',
     slug,

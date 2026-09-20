@@ -24,8 +24,22 @@ export interface RunListItem {
     totalTokens?: number
   }
   toolCallCount?: number
+  /** MVP 直出模式的报告解析摘要（pi 运行才有） */
+  report?: {
+    structurePass: boolean
+    missingSections?: string[]
+    stats: {
+      sections: number
+      facts: number
+      inferences: number
+      recommendations: number
+      gaps: number
+      sources: number
+      chars: number
+    }
+  }
   /** 原始文件路径（真实数据才有；演示数据无） */
-  files?: { events?: string; trace?: string }
+  files?: { events?: string; trace?: string; report?: string }
 }
 
 export interface RunToolPart {

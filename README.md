@@ -85,7 +85,8 @@ cd web && npm run detect:cli
 | --- | --- | --- |
 | `AGENT_RUNNER` | `pi` | 默认引擎（`zcode`\|`pi`）；前端页面仍可按运行切换 |
 | `PI_CLI` | 自动检测（PATH） | pi CLI 路径 |
-| `PI_MODEL` | `deepseek/deepseek-v4-pro` | pi 运行模型，格式 `provider/model`（如 `deepseek/deepseek-flash`） |
+| `PI_MODEL` | `deepseek/deepseek-flash` | pi 运行模型，格式 `provider/model`（要更强推理可切 `deepseek/deepseek-v4-pro`） |
+| `PI_THINKING` | `low` | pi 思考档位（`off`..`max`）。长推理是 token 大头，MVP 演示建议 `low` |
 | `PI_IDLE_MS` | 30 分钟 | pi 会话进程空闲回收阈值（pi 每会话一进程） |
 | `DEEPSEEK_API_KEY` | — | pi 引擎的模型 key（也可放 shell 环境；pi 按 `pi auth` 的读取顺序） |
 | `ZCODE_CLI` | 自动检测（见上节） | zcode CLI 路径，仅检测失败或需固定版本时设置 |

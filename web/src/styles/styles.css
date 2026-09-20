@@ -1675,3 +1675,27 @@ a.runs-row:hover { background: var(--surface-sunken); color: var(--ink-body); }
 .engine-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 .rd-head-badges { display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+/* 运行结果：执行过程折叠块（多轮工具执行的旁白/边界复述，弱化显示） */
+.use-proc { margin-bottom: var(--sp-3); border: 1px dashed var(--line-hair); border-radius: 8px; background: var(--surface-sunken); padding: var(--sp-2) var(--sp-3); }
+.use-proc summary { font-size: var(--fs-xs); color: var(--ink-muted); cursor: pointer; user-select: none; }
+.use-proc pre {
+  margin-top: var(--sp-2); max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--ink-muted);
+}
+
+/* 运行详情：报告解析卡（MVP 直出模式） */
+.rd-parse {
+  display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-4);
+  padding: var(--sp-4); border: 1px solid var(--line-hair); border-radius: 10px;
+}
+.rd-parse.is-fail { border-color: color-mix(in srgb, var(--danger) 40%, var(--line-hair)); }
+.rd-parse-head { display: flex; align-items: center; justify-content: space-between; }
+.rd-parse-head h2 { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink-strong); }
+.rd-parse-stats { display: flex; flex-wrap: wrap; gap: var(--sp-4); list-style: none; }
+.rd-parse-stats li { display: flex; align-items: baseline; gap: 6px; }
+.rd-parse-stats b { font-size: var(--fs-lg); color: var(--ink-strong); }
+.rd-parse-stats span { font-size: var(--fs-xs); color: var(--ink-muted); }
+.rd-parse-missing { font-size: var(--fs-xs); color: var(--danger); line-height: 1.7; }
+.rd-parse-dl { font-size: var(--fs-xs); color: var(--brand); }
+.rd-parse-dl:hover { text-decoration: underline; }

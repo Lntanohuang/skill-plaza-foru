@@ -131,6 +131,27 @@ const hasData = computed(() => Boolean(item.value && trace.value))
           </div>
         </div>
 
+        <div v-if="item.report" class="rd-parse" :class="{ 'is-fail': !item.report.structurePass }">
+          <div class="rd-parse-head">
+            <h2>报告解析</h2>
+            <em class="runs-outcome" :class="item.report.structurePass ? 'is-success' : 'is-error'">
+              {{ item.report.structurePass ? '结构完整' : `缺 ${item.report.missingSections?.length ?? 0} 章` }}
+            </em>
+          </div>
+          <ul class="rd-parse-stats">
+            <li><b>{{ item.report.stats.sections }}</b><span>章节</span></li>
+            <li><b>{{ item.report.stats.facts }}</b><span>事实</span></li>
+            <li><b>{{ item.report.stats.inferences }}</b><span>推断</span></li>
+            <li><b>{{ item.report.stats.recommendations }}</b><span>建议</span></li>
+            <li><b>{{ item.report.stats.gaps }}</b><span>缺口</span></li>
+            <li><b>{{ item.report.stats.sources }}</b><span>来源</span></li>
+          </ul>
+          <p v-if="item.report.missingSections?.length" class="rd-parse-missing">
+            缺失：{{ item.report.missingSections.join('、') }}
+          </p>
+          <a v-if="item.files?.report" class="rd-parse-dl" :href="runFileUrl(runId, 'report')" target="_blank" rel="noopener">下载解析结果（JSON）</a>
+        </div>
+
         <div class="rd-layout">
           <aside class="rd-timeline">
             <h2>工具执行（{{ timeline.length }}）</h2>

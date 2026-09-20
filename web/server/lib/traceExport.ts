@@ -40,7 +40,21 @@ export interface RunRecord {
   durationMs: number
   usage?: UsageSummary
   toolCallCount?: number
-  files: { events?: string; trace?: string }
+  /** MVP 直出模式的报告解析摘要（pi 专属；全文见 files.report） */
+  report?: {
+    structurePass: boolean
+    missingSections: string[]
+    stats: {
+      sections: number
+      facts: number
+      inferences: number
+      recommendations: number
+      gaps: number
+      sources: number
+      chars: number
+    }
+  }
+  files: { events?: string; trace?: string; report?: string }
 }
 
 export function newRunId(): string {
@@ -66,8 +80,10 @@ export function readIndex(): RunRecord[] {
   }
 }
 
-export function traceFilePath(runId: string, kind: 'events' | 'trace'): string {
-  return join(TRACES_DIR, kind === 'events' ? `${runId}.events.jsonl` : `${runId}.json`)
+export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report'): string {
+  if (kind === 'events') return join(TRACES_DIR, `${runId}.events.jsonl`)
+  if (kind === 'report') return join(TRACES_DIR, `${runId}.report.json`)
+  return join(TRACES_DIR, `${runId}.json`)
 }
 
 /* ------------------------------------------------------------

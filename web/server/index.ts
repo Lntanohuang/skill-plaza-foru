@@ -28,6 +28,7 @@ import {
   type UsageSummary,
 } from './lib/traceExport.ts'
 import { renderTraceMd } from './lib/traceMd.ts'
+import { parseReport } from './lib/reportParse.ts'
 import { resolveZcodeCli } from './lib/zcodeCli.ts'
 import { loadLocalEnv } from './lib/env.ts'
 import { SKILL_PROMPTS, INSTALLED_SKILLS } from './lib/skills.ts'
@@ -238,6 +239,9 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
     } else if (kind === 'trace' && record.files.trace && existsSync(record.files.trace)) {
       file = record.files.trace
       type = 'application/json; charset=utf-8'
+    } else if (kind === 'report' && record.files.report && existsSync(record.files.report)) {
+      file = record.files.report
+      type = 'application/json; charset=utf-8'
     } else if (kind === 'md' && record.files.trace && existsSync(record.files.trace)) {
       const mdFile = traceFilePath(runId, 'trace').replace(/\.json$/, '.md')
       if (!existsSync(mdFile)) {
@@ -347,6 +351,7 @@ async function handleChat(req: any, res: any) {
   const promptDigest = String(latest.content).replace(/\s+/g, ' ').slice(0, 80)
   const recorder = new RunRecorder(runId, { clientSessionId, engine, skill, promptDigest })
   let lastUsage: UsageSummary | undefined
+  let finalText = ''
   let runFinalized = false
 
   const finalizeRun = (outcome: RunOutcome) => {
@@ -379,6 +384,23 @@ async function handleChat(req: any, res: any) {
         }
       } catch (exc: any) {
         recorder.note({ traceExportError: exc?.message ?? String(exc) })
+      }
+      /* MVP 直出模式：解析最终回复（报告全文）为结构化结果并落盘（pi 专属） */
+      if (engine === 'pi' && finalText) {
+        try {
+          const parsed = parseReport(finalText)
+          if (parsed) {
+            record.report = {
+              structurePass: parsed.structurePass,
+              missingSections: parsed.missingSections,
+              stats: parsed.stats,
+            }
+            record.files.report = traceFilePath(runId, 'report')
+            writeFileSync(record.files.report, JSON.stringify(parsed, null, 1))
+          }
+        } catch (exc: any) {
+          recorder.note({ reportParseError: exc?.message ?? String(exc) })
+        }
       }
       appendIndex(record)
     })()
@@ -451,6 +473,7 @@ async function handleChat(req: any, res: any) {
         sse({ type: 'usage', usage: ev.usage, content: ev.content })
       } else if (ev.kind === 'terminal') {
         lastUsage = ev.usage ?? lastUsage
+        finalText = ev.response
         sse({ type: 'usage', usage: ev.usage })
         sse({ type: 'done', content: ev.response, resultType: ev.resultType })
         finalizeRun(clientGone ? 'aborted' : 'success')

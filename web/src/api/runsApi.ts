@@ -48,6 +48,6 @@ export async function fetchRunDetail(runId: string): Promise<RunDetailResult> {
 }
 
 /** 原始文件下载地址（仅真实数据可用） */
-export function runFileUrl(runId: string, kind: 'events' | 'trace' | 'md'): string {
+export function runFileUrl(runId: string, kind: 'events' | 'trace' | 'md' | 'report'): string {
   return `/api/runs/${encodeURIComponent(runId)}/file/${kind}`
 }
