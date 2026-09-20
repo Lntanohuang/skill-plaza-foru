@@ -1,0 +1,3 @@
+[submodule ".agents/skills/industry-education-report"]
+	path = .agents/skills/industry-education-report
+	url = https://github.com/Lntanohuang/industry-education-report-skill.git
