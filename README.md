@@ -169,5 +169,6 @@ npm run build   # vue-tsc 类型检查 + vite build，产物在 web/dist/
 
 ---
 
+更新：2026-09-20 — 技能组织模式改为父子仓库：每个技能独立仓库为父，广场以 submodule 挂载 `.agents/skills/`；industry-education-report 更新为 02 模板+05 快照离线版，foru-web-ui 迁入新仓库 foru-web-ui-skill。
 更新：2026-09-18 — 双引擎落地：AgentRunner 抽象 + PiRunner（pi --mode rpc · DeepSeek，默认）+ ZcodeRunner 保留；前端可切换引擎。
 更新：2026-09-17 — README 重写，对齐 zcode 无头后端 + 运行记录页的当前架构。
