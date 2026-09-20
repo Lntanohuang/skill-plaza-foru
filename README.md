@@ -6,7 +6,7 @@
 - 后端：`web/server/index.ts`，node:http 零第三方依赖；`AgentRunner` 抽象基类（`lib/runner.ts`）下挂两个引擎：
   - **pi**（默认）：每会话一个 `pi --mode rpc` 常驻子进程（JSONL over stdio），模型 DeepSeek（`deepseek/deepseek-v4-pro`）
   - **zcode**：全局共享一个 `zcode app-server` 子进程（NDJSON 协议），GLM Coding Plan
-- 技能：`.agents/skills/` 已随仓库分发，clone 即有（zcode 用 Skill 工具自动发现加载，pi 用 `--skill` + `/skill:` 命令）；`.agents/skills/` 是跨引擎中性约定，不绑定任何一家
+- 技能：`.agents/skills/` 下均为独立技能仓库的 git submodule（见「技能组织模式」），clone 需 `--recurse-submodules`（zcode 用 Skill 工具自动发现加载，pi 用 `--skill` + `/skill:` 命令）；`.agents/skills/` 是跨引擎中性约定，不绑定任何一家
 
 ## 架构
 
@@ -115,10 +115,29 @@ cd web && npm run detect:cli
 | `GET /api/runs/:runId` | 运行详情 |
 | `GET /api/runs/:runId/file/:kind` | 下载留痕文件（md 可读版按需生成） |
 
-## 技能安装状态
+## 技能组织模式（父子仓库）
 
-- **industry-education-report**：已 vendored 到仓库 `.agents/skills/`，clone 自带，zcode 自动发现，首轮指示 agent 用 Skill 工具加载。
-- **classroom-assistant / ai-interview / training-data-qa**：尚未安装为真实技能，运行时回落到后端内置的方法论提示词。
+每个技能一个**独立仓库（父）**：技能的全部内容与修改历史都在父仓库，广场不保存副本，只以 git submodule 将其挂载到 `.agents/skills/<slug>`（子引用，钉住 commit）。**今后新增技能一律沿用此模式。**
+
+新技能接入三步：
+
+```bash
+# 1. 技能完成并推送到其独立仓库（技能文件放在仓库根，README 声明与广场的父子关系）
+# 2. 广场挂载
+git submodule add https://github.com/Lntanohuang/<skill-repo>.git .agents/skills/<slug>
+# 3. 在下表登记，提交 .gitmodules 与子模块指针
+```
+
+父仓库更新后广场同步：`git submodule update --remote .agents/skills/<slug>` 后提交。fresh clone 用 `git clone --recurse-submodules`，已克隆的补一句 `git submodule update --init`。
+
+当前挂载：
+
+| `.agents/skills/` | 父仓库 | 状态 |
+| --- | --- | --- |
+| `industry-education-report` | [industry-education-report-skill](https://github.com/Lntanohuang/industry-education-report-skill) | 已安装：zcode 自动发现，首轮指示 agent 用 Skill 工具加载 |
+| `foru-web-ui` | [foru-web-ui-skill](https://github.com/Lntanohuang/foru-web-ui-skill) | 设计参考资料技能（旧版静态演示的设计背景），未接入运行时 |
+
+**classroom-assistant / ai-interview / training-data-qa**：尚未安装为真实技能，运行时回落到后端内置的方法论提示词；后续接入时按上表模式建仓挂载。
 
 ## 运行留痕（traces）
 
@@ -146,7 +165,7 @@ npm run build   # vue-tsc 类型检查 + vite build，产物在 web/dist/
 
 ## 旧版演示（根目录）
 
-根目录的 `index.html` / `app.js` / `server.py` 是早期无 npm 的静态演示版（Youcai API 本地代理），已被 `web/` 版取代，仅作历史保留。设计背景见 `skills/foru-web-ui/`；后端方案与协议笔记见 `web/docs/agent-backend-mvp.md`、`web/docs/pi-runner.md`、`web/server/samples/PROTOCOL.md`。
+根目录的 `index.html` / `app.js` / `server.py` 是早期无 npm 的静态演示版（Youcai API 本地代理），已被 `web/` 版取代，仅作历史保留。设计背景见 `.agents/skills/foru-web-ui/`（独立仓库 [foru-web-ui-skill](https://github.com/Lntanohuang/foru-web-ui-skill) 的 submodule）；后端方案与协议笔记见 `web/docs/agent-backend-mvp.md`、`web/docs/pi-runner.md`、`web/server/samples/PROTOCOL.md`。
 
 ---
 
