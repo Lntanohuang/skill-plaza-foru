@@ -17,15 +17,15 @@ def validate(d):
     def fields(obj, names, label):
         for name in names:
             check(name in obj and obj[name] not in ('', None, []) and (not isinstance(obj[name], str) or bool(obj[name].strip())), f'{label}: missing {name}')
-    fields(d, ['title','audience','region','chain','period','as_of','status'], 'report')
+    fields(d, ['title','edition','region','industry','period','as_of','status'], 'report')
     check(d.get('status') in ['sample','draft','final'], 'invalid status')
     try:
         datetime.date.fromisoformat(d.get('as_of',''))
     except (ValueError, TypeError):
         errors.append('invalid as_of')
     templates = json.loads((ROOT / 'assets/templates.json').read_text())
-    template = templates.get(d.get('audience'))
-    check(template is not None, 'invalid audience')
+    template = templates.get(d.get('edition'))
+    check(template is not None, 'invalid edition')
     indexes = {}
     requirements = {
         'sources':['id','title','publisher','url','published','accessed','locator','scope','excerpt'],
@@ -57,7 +57,7 @@ def validate(d):
             check(isinstance(key,str) and key in indexes[group], f'{obj.get("id")}: unresolved {field} {key}')
         return values
     for s in indexes['sources'].values():
-        check(isinstance(s.get('url'),str) and s['url'].startswith('https://'), f'{s["id"]}: invalid URL')
+        check(isinstance(s.get('url'),str) and (s['url'].startswith('https://') or s['url'].startswith(('references/','assets/'))), f'{s["id"]}: invalid URL')
         try:
             accessed = datetime.date.fromisoformat(s.get('accessed',''))
             check(accessed <= datetime.date.fromisoformat(d['as_of']), f'{s["id"]}: access after cutoff')
@@ -135,9 +135,9 @@ def validate(d):
             'semantic_review':'required: verify original sources and claim entailment', 'errors':errors}
 
 def render(d):
-    template = json.loads((ROOT/'assets/templates.json').read_text())[d['audience']]
+    template = json.loads((ROOT/'assets/templates.json').read_text())[d['edition']]
     indexes = {k:{x['id']:x for x in d[k]} for k in ['claims','gaps','metrics','sources']}
-    out = [f'# {d["title"]}', '', f'区域：{d["region"]}｜产业链：{d["chain"]}｜基期：{d["period"]}｜检索截止：{d["as_of"]}', '',
+    out = [f'# {d["title"]}', '', f'区域：{d["region"]}｜产业：{d["industry"]}｜时间窗/基期：{d["period"]}｜数据时点：{d["as_of"]}', '',
            f'状态：{d["status"]}；模板：{template["name"]}（研究改编）。',
            '数据完备性：存在缺口，不能直接用于审批。' if d['gaps'] else '数据完备性：无登记缺口；仍需语义审核。','']
     for spec,section in zip(template['sections'],d['sections']):
