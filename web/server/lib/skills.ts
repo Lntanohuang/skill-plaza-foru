@@ -2,8 +2,10 @@
    技能注册表（引擎无关）
    ------------------------------------------------------------
    SKILL_PROMPTS 与旧 server.py 保持一致；INSTALLED_SKILLS 为
-   仓库 .zcode/skills/ 下已安装真实技能的 slug，各引擎按自己的
+   仓库 .agents/skills/ 下已安装真实技能的 slug，各引擎按自己的
    方式加载（zcode：Skill 工具；pi：--skill + /skill: 命令）。
+   .agents/skills/ 是跨引擎中性约定：zcode 自动发现该目录，
+   pi 经 --skill 显式路径加载，不绑定任何一家。
    ============================================================ */
 
 import { join, dirname } from 'node:path'
@@ -29,7 +31,7 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '重复、泄漏和分布。未经专家确认的结果只能标为候选；负责数据构造与验收，不执行模型训练。',
 }
 
-/** 已安装为真实技能的 slug（仓库 .zcode/skills/ 下） */
+/** 已安装为真实技能的 slug（仓库 .agents/skills/ 下） */
 export const INSTALLED_SKILLS = new Set(['industry-education-report'])
 
 /** 报告期望章节（院校版 C01–C09，源自技能 assets/templates.json；
@@ -54,7 +56,7 @@ export function skillDir(slug: string): string {
     '..',
     '..',
     '..',
-    '.zcode',
+    '.agents',
     'skills',
     slug,
   )

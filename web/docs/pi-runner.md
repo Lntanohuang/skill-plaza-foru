@@ -22,7 +22,7 @@ pi --mode rpc \
    --session-dir <workspace>/.pi-sessions \  # 会话文件落沙箱，兼作权威 trace 来源
    -n <短id> \
    --no-extensions \                         # 无头运行裁掉扩展发现
-   [--skill <repo>/.zcode/skills/<slug>]     # 已安装技能（SKILL.md 格式两边通用）
+   [--skill <repo>/.agents/skills/<slug>]    # 已安装技能（SKILL.md 格式两边通用）
 ```
 
 - cwd = `web/server/workspace/<clientSessionId>/`（工作目录由 spawn 继承，无协议字段）。
@@ -76,5 +76,5 @@ DeepSeek key 走 pi 自己的读取顺序（环境变量 `DEEPSEEK_API_KEY` 等�
 ## 已安装技能
 
 pi 的技能就是 SKILL.md（与 zcode 同一约定）。`--skill <dir>` 显式加载仓库
-`.zcode/skills/`（绕过项目信任检查），技能目录里的 references/assets 由 agent 在执行时
+`.agents/skills/`（跨引擎中性目录，绕过项目信任检查），技能目录里的 references/assets 由 agent 在执行时
 自行按需读取（渐进披露）。

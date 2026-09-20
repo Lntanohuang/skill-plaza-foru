@@ -6,7 +6,7 @@
 - 后端：`web/server/index.ts`，node:http 零第三方依赖；`AgentRunner` 抽象基类（`lib/runner.ts`）下挂两个引擎：
   - **pi**（默认）：每会话一个 `pi --mode rpc` 常驻子进程（JSONL over stdio），模型 DeepSeek（`deepseek/deepseek-v4-pro`）
   - **zcode**：全局共享一个 `zcode app-server` 子进程（NDJSON 协议），GLM Coding Plan
-- 技能：`.zcode/skills/` 已随仓库分发，clone 即有（zcode 用 Skill 工具加载，pi 用 `--skill` + `/skill:` 命令）
+- 技能：`.agents/skills/` 已随仓库分发，clone 即有（zcode 用 Skill 工具自动发现加载，pi 用 `--skill` + `/skill:` 命令）；`.agents/skills/` 是跨引擎中性约定，不绑定任何一家
 
 ## 架构
 
@@ -117,7 +117,7 @@ cd web && npm run detect:cli
 
 ## 技能安装状态
 
-- **industry-education-report**：已 vendored 到仓库 `.zcode/skills/`，clone 自带，zcode 自动发现，首轮指示 agent 用 Skill 工具加载。
+- **industry-education-report**：已 vendored 到仓库 `.agents/skills/`，clone 自带，zcode 自动发现，首轮指示 agent 用 Skill 工具加载。
 - **classroom-assistant / ai-interview / training-data-qa**：尚未安装为真实技能，运行时回落到后端内置的方法论提示词。
 
 ## 运行留痕（traces）
