@@ -136,6 +136,7 @@ git submodule add https://github.com/Lntanohuang/<skill-repo>.git .agents/skills
 | --- | --- | --- |
 | `industry-education-report` | [industry-education-report-skill](https://github.com/Lntanohuang/industry-education-report-skill) | 已安装：zcode 自动发现，首轮指示 agent 用 Skill 工具加载 |
 | `foru-web-ui` | [foru-web-ui-skill](https://github.com/Lntanohuang/foru-web-ui-skill) | 设计参考资料技能（旧版静态演示的设计背景），未接入运行时 |
+| `career-guidance` | [career-guidance-skill](https://github.com/Lntanohuang/career-guidance-skill) | 已安装：职业定位、岗位匹配、简历改进与求职行动计划 |
 
 **classroom-assistant / ai-interview / training-data-qa**：尚未安装为真实技能，运行时回落到后端内置的方法论提示词；后续接入时按上表模式建仓挂载。
 

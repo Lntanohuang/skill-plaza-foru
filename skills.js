@@ -60,6 +60,26 @@ const skills = [
     kind: 'interview'
   },
   {
+    slug: 'career-guidance',
+    name: '就业指导',
+    identifier: 'career-guidance',
+    summary: '基于目标、经历、岗位要求和现实约束，制定可执行的职业定位与求职行动方案。',
+    category: '实训与就业',
+    tags: ['职业定位', '岗位匹配', '简历优化', '求职计划'],
+    compatibility: ['Codex'],
+    dependencies: ['目标岗位或职业方向', '简历、经历摘要或其他可核验材料'],
+    limitations: ['建议基于用户提供的事实和岗位信息，不承诺录用结果。', '最新招聘状态、薪资行情和劳动法规需要按时间、地区和来源重新核实。'],
+    installation: ['从公开 GitHub 仓库获取完整目录。', '安装时保留 SKILL.md、agents 和 references 等配套文件。'],
+    installPrompt: '请从 https://github.com/Lntanohuang/career-guidance-skill.git 安装 career-guidance SKILL，保留仓库完整目录，并在安装后检查依赖、说明调用方式。',
+    minimalInput: '使用 $career-guidance，目标是 Java 后端实习，请根据我的匿名简历和岗位描述列出匹配证据、关键缺口和 30 天行动计划。',
+    repository: 'https://github.com/Lntanohuang/career-guidance-skill.git',
+    repositoryLabel: 'Lntanohuang/career-guidance-skill',
+    output: '输出职业方向判断、岗位匹配证据、材料改进建议、求职行动计划或 offer 比较矩阵。',
+    featured: true,
+    updatedAt: null,
+    kind: 'career'
+  },
+  {
     slug: 'training-data-qa',
     name: '训练样本构造与标注质检',
     identifier: 'training-data-qa',
