@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSession } from '../composables/session'
+import { isRunsTabVisible } from '../plazaEnv'
 import { SKILLS, catOf } from '../data/skills'
 import Icon from './Icon.vue'
 
@@ -130,7 +131,7 @@ watch(() => route.fullPath, () => { closeNav(); closeMenu(); closeRole() })
           <RouterLink to="/skills" :aria-current="route.name === 'skills' || route.name === 'detail' ? 'page' : undefined">SKILL 广场</RouterLink>
           <RouterLink to="/use" :aria-current="route.name === 'use' ? 'page' : undefined">在线运行</RouterLink>
           <RouterLink to="/experience" :aria-current="route.name === 'experience' ? 'page' : undefined">在线对话</RouterLink>
-          <RouterLink to="/runs" :aria-current="route.name === 'runs' || route.name === 'runDetail' ? 'page' : undefined">运行记录</RouterLink>
+          <RouterLink v-if="isRunsTabVisible()" to="/runs" :aria-current="route.name === 'runs' || route.name === 'runDetail' ? 'page' : undefined">运行记录</RouterLink>
           <RouterLink to="/guide" :aria-current="route.name === 'guide' ? 'page' : undefined">使用指南</RouterLink>
         </nav>
         <div class="head-tools">
