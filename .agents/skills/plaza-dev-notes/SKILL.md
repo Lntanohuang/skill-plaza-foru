@@ -50,4 +50,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 013 | 就业指导正式报告：岗位需求分析与简历修改建议 | 已实现（真实查询与浏览器回归待跑） | [013-career-guidance-formal-report.md](references/013-career-guidance-formal-report.md) |
 | 012 | Pi 运行详情合并工具与对话时间线 | 已实现（Zcode 未接入） | [012-pi-unified-run-timeline.md](references/012-pi-unified-run-timeline.md) |
 | 014 | 流式 Markdown 渲染批处理 | 已实现（浏览器长报告体验待回归） | [014-stream-render-batching.md](references/014-stream-render-batching.md) |
-| 015 | 就业指导 HTML 报告与内联 SVG 绘图 Skill | 开发中 | [015-career-guidance-html-report.md](references/015-career-guidance-html-report.md) |
+| 015 | 就业指导 HTML 报告与内联 SVG 绘图 Skill | 已实现（真实 HTML Agent 输出待回归） | [015-career-guidance-html-report.md](references/015-career-guidance-html-report.md) |
