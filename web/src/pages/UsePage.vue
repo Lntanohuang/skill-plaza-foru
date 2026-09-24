@@ -12,7 +12,7 @@ import { isTestEnv } from '../plazaEnv'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
 import UseHistoryList from '../components/UseHistoryList.vue'
-import { fetchRunDetail, fetchRuns } from '../api/runsApi'
+import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
 import { OUTCOME_LABEL, type RunDetail, type RunListItem } from '../data/runsMock'
 
 /* 「在线运行」工作台：结构化任务表单 + Mock 知识库选择 + 通过本地代理调用模型。
@@ -62,6 +62,8 @@ interface RunMessage {
   /** done 事件带回的最终一段文本（最后一条 assistant 消息）。 */
   final?: string
   charts?: ReportChartData[]
+  runId?: string
+  reportUrl?: string
 }
 
 /* 主结果 = 最终段；异常/中断（无 final）时退回整段 */
@@ -265,6 +267,7 @@ watch([apiState, () => skill.value.slug], () => {
 function makeStreamHandler(answer: RunMessage) {
   return (event: ChatEvent) => {
     if (event.type === 'started') {
+      answer.runId = event.runId
       elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
     } else if (event.type === 'session') {
       sessionIds[sessionKey(skill.value.slug)] = event.sessionId
@@ -283,6 +286,7 @@ function makeStreamHandler(answer: RunMessage) {
     } else if (event.type === 'done') {
       if (event.content) answer.final = event.content
       answer.charts = event.charts ?? []
+      answer.reportUrl = event.reportUrl
     } else if (event.type === 'error') {
       throw new Error(event.message)
     }
@@ -417,6 +421,7 @@ interface HistoryDetail {
   status: HistoryDetailStatus
   output: string
   charts: ReportChartData[]
+  reportUrl?: string
 }
 
 const historyDetails = reactive<Record<string, HistoryDetail>>({})
@@ -487,6 +492,7 @@ async function selectHistory(run: RunListItem) {
       status: 'ok',
       output: historyTextOf(messages.find(message => message.role === 'assistant')),
       charts: result.item?.report?.meta?.charts ?? [],
+      reportUrl: result.item?.files?.html ? runReportUrl(run.runId) : undefined,
     }
   } catch {
     if (historyRequestTokens[run.runId] === token) {
@@ -754,7 +760,7 @@ onBeforeUnmount(endRun)
                 <template v-else-if="selectedHistoryDetail">
                   <div class="use-history-block">
                     <span class="use-history-block-label">结果</span>
-                    <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" />
+                    <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" />
                     <p v-else class="use-history-state">
                       {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                     </p>
@@ -771,7 +777,7 @@ onBeforeUnmount(endRun)
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :streaming="busy && !msg.final && i === visibleMessages.length - 1" />
+                      <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :streaming="busy && !msg.final && i === visibleMessages.length - 1" />
                       <p v-else-if="msg.role === 'error'" class="use-answer-text">{{ mainTextOf(msg) }}</p>
                       <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
                     </div>
@@ -885,7 +891,7 @@ onBeforeUnmount(endRun)
             <template v-else-if="selectedHistoryDetail">
               <div class="use-history-block">
                 <span class="use-history-block-label">结果</span>
-                <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" />
+                <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" />
                 <p v-else class="use-history-state">
                   {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                 </p>
@@ -914,7 +920,7 @@ onBeforeUnmount(endRun)
               <span class="use-chat-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
               <div class="use-chat-ai-body">
                 <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :streaming="busy && !msg.final && i === session.length - 1" />
+                <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :streaming="busy && !msg.final && i === session.length - 1" />
                 <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
                 <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
               </div>

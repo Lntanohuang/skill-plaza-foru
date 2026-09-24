@@ -236,6 +236,10 @@ const server = createServer((req, res) => {
     handleUpload(req, res)
     return
   }
+  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'reports' && seg.length === 3) {
+    handleHtmlReport(req, res, seg[2])
+    return
+  }
   /* ---- 运行记录（只读，评测用）---- */
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'runs') {
     if (!originAllowed(req.headers.origin)) {
@@ -320,6 +324,26 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
   }
 
   sendJson(res, 404, { error: '接口不存在。' })
+}
+
+/** GET /api/reports/:runId：返回就业指导 Agent 直接生成的独立 HTML 报告。 */
+function handleHtmlReport(_req: any, res: any, runId: string) {
+  const record = readIndex().find(r => r.runId === runId)
+  const file = record?.files.html
+  if (!file || !existsSync(file)) {
+    sendJson(res, 404, { error: 'HTML 报告不存在。' })
+    return
+  }
+  const data = readFileSync(file)
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': data.length,
+    'Content-Disposition': 'inline',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; script-src 'none'; object-src 'none'",
+  })
+  res.end(data)
 }
 
 /** POST /api/upload：{ sessionId?, filename, dataBase64 } → 文件落会话沙箱 uploads/ 目录。
@@ -516,6 +540,7 @@ async function handleChat(req: any, res: any) {
   let forwarded = 0
   let hiddenFrom = -1
   let sidecar: SidecarExtract | null = null
+  let htmlReportFile: string | undefined
 
   const finalizeRun = (outcome: RunOutcome) => {
     if (runFinalized) return
@@ -536,6 +561,7 @@ async function handleChat(req: any, res: any) {
       attachments: attachmentNames.length ? attachmentNames : undefined,
       files: { events: recorder.file },
     }
+    if (htmlReportFile) record.files.html = htmlReportFile
     void (async () => {
       try {
         if (entry?.engineSessionId) {
@@ -711,7 +737,18 @@ async function handleChat(req: any, res: any) {
         }
         sse({ type: 'usage', usage: ev.usage })
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
-        sse({ type: 'done', content: finalText, resultType: ev.resultType, charts: checkedCharts })
+        if (skill === 'career-guidance' && /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(finalText)) {
+          htmlReportFile = traceFilePath(runId, 'html')
+          writeFileSync(htmlReportFile, finalText)
+        }
+        sse({
+          type: 'done',
+          content: skill === 'career-guidance' && htmlReportFile ? '' : finalText,
+          resultType: ev.resultType,
+          charts: checkedCharts,
+          runId,
+          reportUrl: htmlReportFile ? `/api/reports/${encodeURIComponent(runId)}` : undefined,
+        })
         finalizeRun(clientGone ? 'aborted' : 'success')
         cleanup()
         finish()

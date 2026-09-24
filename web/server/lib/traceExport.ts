@@ -95,7 +95,7 @@ export interface RunRecord {
       charts?: Array<Record<string, unknown>>
     }
   }
-  files: { events?: string; trace?: string; report?: string }
+  files: { events?: string; trace?: string; report?: string; html?: string }
 }
 
 /** 时间可读 id：YYYYMMDD-HHMMSS-xxxx；prefix 用于区分用途（runId 无前缀，会话 id 传 'sess-'） */
@@ -122,9 +122,10 @@ export function readIndex(): RunRecord[] {
   }
 }
 
-export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report'): string {
+export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report' | 'html'): string {
   if (kind === 'events') return join(TRACES_DIR, `${runId}.events.jsonl`)
   if (kind === 'report') return join(TRACES_DIR, `${runId}.report.json`)
+  if (kind === 'html') return join(TRACES_DIR, `${runId}.report.html`)
   return join(TRACES_DIR, `${runId}.json`)
 }
 

@@ -40,7 +40,7 @@ export type ChatEvent =
   | { type: 'status'; phase: 'initializing' | 'thinking' | 'tool' | 'text'; message?: string; chars?: number; tool?: string }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Record<string, number | string> }
-  | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[] }
+  | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[]; runId?: string; reportUrl?: string }
   | { type: 'error'; message: string }
 
 export async function checkHealth(): Promise<HealthResult> {

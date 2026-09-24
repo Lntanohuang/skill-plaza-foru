@@ -51,3 +51,7 @@ export async function fetchRunDetail(runId: string): Promise<RunDetailResult> {
 export function runFileUrl(runId: string, kind: 'events' | 'trace' | 'md' | 'report'): string {
   return `/api/runs/${encodeURIComponent(runId)}/file/${kind}`
 }
+
+export function runReportUrl(runId: string): string {
+  return `/api/reports/${encodeURIComponent(runId)}`
+}
