@@ -9,9 +9,10 @@ const props = defineProps<{
   charts?: ReportChartData[]
   streaming?: boolean
   reportUrl?: string
+  htmlMode?: boolean
 }>()
 
-const isHtml = computed(() => /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(props.text))
+const isHtml = computed(() => props.htmlMode || /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(props.text))
 </script>
 
 <template>

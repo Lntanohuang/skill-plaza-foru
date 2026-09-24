@@ -20,7 +20,7 @@ const live = ref(false)
 const loading = ref(true)
 
 function isHtmlReportText(text: string): boolean {
-  return /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(text)
+  return item.value?.skill === 'career-guidance' || /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(text)
 }
 
 async function load() {

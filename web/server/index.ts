@@ -347,6 +347,12 @@ function handleHtmlReport(_req: any, res: any, runId: string) {
   res.end(data)
 }
 
+function htmlDocument(text: string): string {
+  const trimmed = text.trim().replace(/^```html\s*/i, '').replace(/\s*```$/i, '')
+  if (/<html[\s>]/i.test(trimmed)) return trimmed
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`
+}
+
 /** POST /api/upload：{ sessionId?, filename, dataBase64 } → 文件落会话沙箱 uploads/ 目录。
     不写 sessions map——引擎会话仍由 /api/chat 首次调用创建（isFirstTurn 判定不受影响），
     workspace 目录名即 sessionId，后续 chat 天然复用同一目录。 */
@@ -738,9 +744,9 @@ async function handleChat(req: any, res: any) {
         }
         sse({ type: 'usage', usage: ev.usage })
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
-        if (skill === 'career-guidance' && /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(finalText)) {
+        if (skill === 'career-guidance' && finalText.trim()) {
           htmlReportFile = traceFilePath(runId, 'html')
-          writeFileSync(htmlReportFile, finalText)
+          writeFileSync(htmlReportFile, htmlDocument(finalText))
         }
         sse({
           type: 'done',
