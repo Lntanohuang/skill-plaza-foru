@@ -4,14 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
 import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage, type EngineId, type EngineInfo } from '../composables/useChatApi'
-import ReportChart from '../components/ReportChart.vue'
+import ReportOutput from '../components/ReportOutput.vue'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
 import { DEMO_FILES } from '../data/demoFiles'
 import { isTestEnv } from '../plazaEnv'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
-import MarkdownView from '../components/MarkdownView.vue'
 import UseHistoryList from '../components/UseHistoryList.vue'
 import { fetchRunDetail, fetchRuns } from '../api/runsApi'
 import { OUTCOME_LABEL, type RunDetail, type RunListItem } from '../data/runsMock'
@@ -755,13 +754,10 @@ onBeforeUnmount(endRun)
                 <template v-else-if="selectedHistoryDetail">
                   <div class="use-history-block">
                     <span class="use-history-block-label">结果</span>
-                    <MarkdownView v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" />
+                    <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" />
                     <p v-else class="use-history-state">
                       {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                     </p>
-                    <div v-if="selectedHistoryDetail.charts.length" class="use-report-charts">
-                      <ReportChart v-for="chart in selectedHistoryDetail.charts" :key="chart.id" :chart="chart" />
-                    </div>
                   </div>
                 </template>
               </div>
@@ -775,10 +771,7 @@ onBeforeUnmount(endRun)
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <MarkdownView v-if="msg.role === 'assistant'" :class="{ 'is-streaming': busy && !msg.final && i === visibleMessages.length - 1 }" :text="mainTextOf(msg)" />
-                      <div v-if="msg.role === 'assistant' && msg.charts?.length" class="use-report-charts">
-                        <ReportChart v-for="chart in msg.charts" :key="chart.id" :chart="chart" />
-                      </div>
+                      <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :streaming="busy && !msg.final && i === visibleMessages.length - 1" />
                       <p v-else-if="msg.role === 'error'" class="use-answer-text">{{ mainTextOf(msg) }}</p>
                       <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
                     </div>
@@ -892,13 +885,10 @@ onBeforeUnmount(endRun)
             <template v-else-if="selectedHistoryDetail">
               <div class="use-history-block">
                 <span class="use-history-block-label">结果</span>
-                <MarkdownView v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" />
+                <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" />
                 <p v-else class="use-history-state">
                   {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                 </p>
-                <div v-if="selectedHistoryDetail.charts.length" class="use-report-charts">
-                  <ReportChart v-for="chart in selectedHistoryDetail.charts" :key="chart.id" :chart="chart" />
-                </div>
               </div>
             </template>
           </div>
@@ -924,10 +914,7 @@ onBeforeUnmount(endRun)
               <span class="use-chat-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
               <div class="use-chat-ai-body">
                 <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                <MarkdownView v-if="msg.role === 'assistant'" :class="{ 'is-streaming': busy && !msg.final && i === session.length - 1 }" :text="mainTextOf(msg)" />
-                <div v-if="msg.role === 'assistant' && msg.charts?.length" class="use-report-charts">
-                  <ReportChart v-for="chart in msg.charts" :key="chart.id" :chart="chart" />
-                </div>
+                <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :streaming="busy && !msg.final && i === session.length - 1" />
                 <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
                 <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
               </div>

@@ -362,16 +362,15 @@ export class PiRunner extends AgentRunner {
     if (!isFirstTurn) return latest.content
     if (INSTALLED_SKILLS.has(skill)) {
       /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
-         正式报告模式：允许读取附件、岗位库和 Skill 参考资料；最终正文与开发侧
-         report-meta 分轨输出，服务端负责剥离、校验和落盘。 */
+         career-guidance 直接输出可展示的 HTML 报告，图表由对应绘图 Skill 以内联 SVG 绘制。 */
       const direct =
         `/skill:${skill} ${latest.content}\n\n` +
-        '（正式报告模式：先读取用户附件和 Skill 参考资料；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
-        '把完整用户报告作为最终回复输出，至少包含：结论、岗位需求分析、岗位匹配、简历修改建议、行动计划。' +
-        '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和结构图表；数据不足登记到开发侧 report-meta，不要编造。' +
+        '（HTML 报告模式：先读取用户附件、Skill 参考资料和对应的 html-chart-skills；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+        '最终回复必须是一个完整、可直接展示的 HTML 文档，至少包含：结论、岗位需求分析、岗位匹配、简历修改建议、行动计划。' +
+        '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
         '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
-        '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、原始 JSON 或文件/执行过程说明。' +
-        '事实、判断和建议用自然语言表达；开发侧缺口、风险、证据对应关系放入 report-meta，不在正文单列“缺口与风险”章节。）'
+        '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +
+        '报告正文使用 HTML 标题、段落、列表、表格和 figure；图表只能使用 HTML/CSS/内联 SVG，每个 figure 必须标注 data-chart-skill。）'
       /* report-meta 侧车：报告尾部附机器校验块（服务端剥离，见 lib/reportMeta.ts） */
       return SIDECAR_SKILLS.has(skill) ? `${direct}\n\n${sidecarInstruction(skill)}` : direct
     }

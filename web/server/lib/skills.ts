@@ -31,8 +31,10 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '标记为已证明、部分证明、缺口或未知；简历改写保留真实经历，不编造数字、公司、职责或成果。' +
     '始终区分用户提供的事实、岗位原文、推断和待核实信息；不承诺录用概率，不给确定法律结论；' +
     '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具，不能用通用招聘常识替代；' +
-    '缺口与风险只写入 report-meta/2 的 gaps、risks，不在用户正文单列展示；' +
-    '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径。',
+    '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
+    '最终回复必须是完整 HTML 报告，不输出 Markdown、JSON、代码围栏或 report-meta 侧车；' +
+    '量化数据和图表必须使用 HTML/CSS/内联 SVG 直接绘制，不能用 Markdown 表格冒充图表；' +
+    '每个图表必须按 career-guidance references/html-chart-skills 下对应的绘图 Skill 输出，并在 figure 上标注 data-chart-skill。',
   'training-data-qa':
     '你正在按 training-data-qa SKILL 工作。根据治理数据、任务模板和标注规则构造黄金种子、' +
     '扩增样本与难例，规划训练/验证/测试/独立评测划分，并检查 Schema、事实证据、业务规则、' +
@@ -44,7 +46,7 @@ export const INSTALLED_SKILLS = new Set(['industry-education-report', 'career-gu
 
 /** 启用 report-meta 侧车输出的技能（终态剥离/校验见 lib/reportMeta.ts；
     设计记录 .agents/skills/plaza-dev-notes 001） */
-export const SIDECAR_SKILLS = new Set(['career-guidance'])
+export const SIDECAR_SKILLS = new Set<string>()
 
 /** 报告期望章节（院校版 C01–C09，源自技能 assets/templates.json；
     reportParse 结构校验用，政府版 G01–G08 后续按需扩展） */
