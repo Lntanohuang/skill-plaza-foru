@@ -17,7 +17,7 @@ const isHtml = computed(() => props.htmlMode || /^\s*(?:<!doctype\s+html|<html[\
 
 <template>
   <p v-if="isHtml" class="report-ready">
-    {{ reportUrl ? '就业指导报告已生成。' : '就业指导报告正在生成，完成后可查看。' }}
+    {{ reportUrl ? '就业指导报告已生成。' : (streaming ? '就业指导报告正在生成，完成后可查看。' : '报告已生成，但本次运行没有保存查看链接，请重新运行。') }}
     <a v-if="reportUrl" :href="reportUrl">点击查看具体报告</a>
   </p>
   <MarkdownView v-else :class="{ 'is-streaming': streaming }" :text="text" />
