@@ -45,3 +45,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 008 | 流式体验补全：status 过程事件、会话失效自愈与 zcode 错误上抛 | 已实现（前端文案浏览器验收待用户确认） | [008-streaming-status-and-session-selfheal.md](references/008-streaming-status-and-session-selfheal.md) |
 | 010 | 就业指导数据图表：结构化规格与前端渲染 | 已实现协议与 Skill 约定（前端组件与真实会话待回归） | [010-career-guidance-charts.md](references/010-career-guidance-charts.md) |
 | 009 | MySQL 只读查询工具：scripts/mysql-query.mjs + 沙箱 AGENTS.md 声明 | 已实现（CLI 与 pi 端到端验收通过） | [009-mysql-query-tool.md](references/009-mysql-query-tool.md) |
+| 011 | 在线运行用户输出边界与图表展示 | 设计定稿，待实现 | [011-user-facing-output-cleanup.md](references/011-user-facing-output-cleanup.md) |

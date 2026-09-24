@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
 import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage, type EngineId, type EngineInfo } from '../composables/useChatApi'
+import ReportChart from '../components/ReportChart.vue'
+import type { ReportChart as ReportChartData } from '../data/runsMock'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
 import { DEMO_FILES } from '../data/demoFiles'
 import { isTestEnv } from '../plazaEnv'
@@ -58,16 +60,11 @@ const demoTried = ref(false)
 interface RunMessage {
   role: 'user' | 'assistant' | 'error'
   content: string
-  /** done 事件带回的最终一段文本（最后一条 assistant 消息）；有值时 content 的其余部分折叠为执行过程 */
+  /** done 事件带回的最终一段文本（最后一条 assistant 消息）。 */
   final?: string
+  charts?: ReportChartData[]
 }
 
-/* 执行过程 = 全部流式文本去掉结尾的最终段（多轮工具执行时的旁白/边界复述） */
-function procTextOf(msg: RunMessage): string {
-  if (!msg.final) return ''
-  const c = msg.content
-  return (c.endsWith(msg.final) ? c.slice(0, c.length - msg.final.length) : c).trim()
-}
 /* 主结果 = 最终段；异常/中断（无 final）时退回整段 */
 function mainTextOf(msg: RunMessage): string {
   return msg.final || msg.content
@@ -268,6 +265,7 @@ function makeStreamHandler(answer: RunMessage) {
         `输入 ${k(u.inputTokens ?? 0)} · 输出 ${k(u.outputTokens ?? 0)} · 缓存命中 ${k(u.cacheReadTokens ?? 0)}`
     } else if (event.type === 'done') {
       if (event.content) answer.final = event.content
+      answer.charts = event.charts ?? []
     } else if (event.type === 'error') {
       throw new Error(event.message)
     }
@@ -396,8 +394,8 @@ const selectedHistoryId = ref<string | null>(null)
 type HistoryDetailStatus = 'loading' | 'ok' | 'fallback' | 'error'
 interface HistoryDetail {
   status: HistoryDetailStatus
-  input: string
   output: string
+  charts: ReportChartData[]
 }
 
 const historyDetails = reactive<Record<string, HistoryDetail>>({})
@@ -429,7 +427,7 @@ function fmtHistoryDuration(ms: number): string {
   return `${minutes}分${String(rest).padStart(2, '0')}秒`
 }
 
-/* 反向取最后一条 user / assistant 消息的文本，覆盖多轮会话只看本轮的场景。 */
+/* 反向取最后一条 assistant 消息的文本，历史用户页不读取或展示原始 prompt。 */
 function historyTextOf(message?: RunDetail['messages'][number]): string {
   return message
     ? (message.parts ?? []).filter(part => part.type === 'text').map(part => part.text ?? '').join('')
@@ -454,24 +452,24 @@ async function selectHistory(run: RunListItem) {
 
   const token = ++historyRequestSeq.value
   historyRequestTokens[run.runId] = token
-  historyDetails[run.runId] = { status: 'loading', input: '', output: '' }
+  historyDetails[run.runId] = { status: 'loading', output: '', charts: [] }
   try {
     const result = await fetchRunDetail(run.runId)
     if (historyRequestTokens[run.runId] !== token) return
     /* live=false 是 mock 兜底数据，不能冒充真实历史；trace 缺失也只能展示摘要。 */
     if (!result.live || !result.trace) {
-      historyDetails[run.runId] = { status: 'fallback', input: run.promptDigest, output: '' }
+      historyDetails[run.runId] = { status: 'fallback', output: '', charts: [] }
       return
     }
     const messages = [...(result.trace.messages ?? [])].reverse()
     historyDetails[run.runId] = {
       status: 'ok',
-      input: historyTextOf(messages.find(message => message.role === 'user')) || run.promptDigest,
       output: historyTextOf(messages.find(message => message.role === 'assistant')),
+      charts: result.item?.report?.meta?.charts ?? [],
     }
   } catch {
     if (historyRequestTokens[run.runId] === token) {
-      historyDetails[run.runId] = { status: 'error', input: '', output: '' }
+      historyDetails[run.runId] = { status: 'error', output: '', charts: [] }
     }
   }
 }
@@ -733,35 +731,28 @@ onMounted(() => {
                 <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
                 <template v-else-if="selectedHistoryDetail">
                   <div class="use-history-block">
-                    <span class="use-history-block-label">原始输入</span>
-                    <pre class="use-history-input">{{ selectedHistoryDetail.input || selectedHistory.promptDigest || '（无原始输入）' }}</pre>
-                  </div>
-                  <div class="use-history-block">
-                    <span class="use-history-block-label">运行输出</span>
+                    <span class="use-history-block-label">结果</span>
                     <MarkdownView v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" />
                     <p v-else class="use-history-state">
-                      {{ selectedHistoryDetail.status === 'fallback' ? '原始记录不可用，仅存任务摘要。' : '本次运行没有文本输出。' }}
+                      {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                     </p>
+                    <div v-if="selectedHistoryDetail.charts.length" class="use-report-charts">
+                      <ReportChart v-for="chart in selectedHistoryDetail.charts" :key="chart.id" :chart="chart" />
+                    </div>
                   </div>
                 </template>
               </div>
               <div v-else-if="visibleMessages.length || busy" class="use-result-body">
                 <template v-for="(msg, i) in visibleMessages" :key="i">
-                  <details v-if="msg.role === 'user'" class="use-task">
-                    <summary>查看本次提交的结构化任务</summary>
-                    <pre>{{ msg.content }}</pre>
-                  </details>
-                  <article v-else class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
+                  <article v-if="msg.role !== 'user'" class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <details v-if="procTextOf(msg)" class="use-proc"
-                        :open="busy && !msg.final && i === visibleMessages.length - 1">
-                        <summary>执行过程（{{ procTextOf(msg).length }} 字）</summary>
-                        <pre>{{ procTextOf(msg) }}</pre>
-                      </details>
                       <MarkdownView v-if="msg.role === 'assistant'" :class="{ 'is-streaming': busy && !msg.final && i === visibleMessages.length - 1 }" :text="mainTextOf(msg)" />
-                      <p v-else class="use-answer-text">{{ mainTextOf(msg) }}</p>
+                      <div v-if="msg.role === 'assistant' && msg.charts?.length" class="use-report-charts">
+                        <ReportChart v-for="chart in msg.charts" :key="chart.id" :chart="chart" />
+                      </div>
+                      <p v-else-if="msg.role === 'error'" class="use-answer-text">{{ mainTextOf(msg) }}</p>
                       <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
                     </div>
                   </article>
@@ -874,15 +865,14 @@ onMounted(() => {
             <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
             <template v-else-if="selectedHistoryDetail">
               <div class="use-history-block">
-                <span class="use-history-block-label">原始输入</span>
-                <pre class="use-history-input">{{ selectedHistoryDetail.input || selectedHistory.promptDigest || '（无原始输入）' }}</pre>
-              </div>
-              <div class="use-history-block">
-                <span class="use-history-block-label">运行输出</span>
+                <span class="use-history-block-label">结果</span>
                 <MarkdownView v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" />
                 <p v-else class="use-history-state">
-                  {{ selectedHistoryDetail.status === 'fallback' ? '原始记录不可用，仅存任务摘要。' : '本次运行没有文本输出。' }}
+                  {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
                 </p>
+                <div v-if="selectedHistoryDetail.charts.length" class="use-report-charts">
+                  <ReportChart v-for="chart in selectedHistoryDetail.charts" :key="chart.id" :chart="chart" />
+                </div>
               </div>
             </template>
           </div>
@@ -904,13 +894,11 @@ onMounted(() => {
               <span class="use-chat-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
               <div class="use-chat-ai-body">
                 <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                <details v-if="procTextOf(msg)" class="use-proc"
-                  :open="busy && !msg.final && i === session.length - 1">
-                  <summary>执行过程（{{ procTextOf(msg).length }} 字）</summary>
-                  <pre>{{ procTextOf(msg) }}</pre>
-                </details>
                 <MarkdownView v-if="msg.role === 'assistant'" :class="{ 'is-streaming': busy && !msg.final && i === session.length - 1 }" :text="mainTextOf(msg)" />
-                <pre v-else class="use-chat-text">{{ mainTextOf(msg) }}</pre>
+                <div v-if="msg.role === 'assistant' && msg.charts?.length" class="use-report-charts">
+                  <ReportChart v-for="chart in msg.charts" :key="chart.id" :chart="chart" />
+                </div>
+                <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
                 <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
               </div>
             </article>

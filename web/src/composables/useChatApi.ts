@@ -13,6 +13,7 @@ export interface ChatMessage {
 
 export type ApiState = 'checking' | 'ready' | 'offline' | 'nokey'
 export type EngineId = 'zcode' | 'pi'
+import type { ReportChart } from '../data/runsMock'
 
 export interface EngineInfo {
   id: EngineId
@@ -38,7 +39,7 @@ export type ChatEvent =
   | { type: 'status'; phase: 'thinking' | 'tool' | 'text'; chars?: number; tool?: string }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Record<string, number | string> }
-  | { type: 'done'; content: string; resultType?: string }
+  | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[] }
   | { type: 'error'; message: string }
 
 export async function checkHealth(): Promise<HealthResult> {

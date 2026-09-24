@@ -1349,12 +1349,6 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 .use-result-actions { flex-shrink: 0; }
 .use-result-body { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
 .use-result-empty { margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--ink-muted); }
-.use-task { border: 1px solid var(--line-hair); border-radius: 8px; background: var(--surface-sunken); padding: var(--sp-3) var(--sp-4); }
-.use-task summary { font-size: var(--fs-sm); color: var(--ink-muted); cursor: pointer; }
-.use-task pre {
-  margin-top: var(--sp-3); white-space: pre-wrap; word-break: break-word;
-  font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--ink-body);
-}
 .use-answer { display: flex; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--line-hair); border-radius: 10px; }
 .use-answer-mark {
   flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
@@ -1680,14 +1674,6 @@ a.runs-row:hover { background: var(--surface-sunken); color: var(--ink-body); }
 
 .rd-head-badges { display: inline-flex; align-items: center; gap: var(--sp-2); }
 
-/* 运行结果：执行过程折叠块（多轮工具执行的旁白/边界复述，弱化显示） */
-.use-proc { margin-bottom: var(--sp-3); border: 1px dashed var(--line-hair); border-radius: 8px; background: var(--surface-sunken); padding: var(--sp-2) var(--sp-3); }
-.use-proc summary { font-size: var(--fs-xs); color: var(--ink-muted); cursor: pointer; user-select: none; }
-.use-proc pre {
-  margin-top: var(--sp-2); max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-  font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--ink-muted);
-}
-
 /* 运行详情：报告解析卡（MVP 直出模式） */
 .rd-parse {
   display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-4);
@@ -1703,17 +1689,18 @@ a.runs-row:hover { background: var(--surface-sunken); color: var(--ink-body); }
 .rd-parse-missing { font-size: var(--fs-xs); color: var(--danger); line-height: 1.7; }
 .rd-parse-dl { font-size: var(--fs-xs); color: var(--brand); }
 .rd-parse-dl:hover { text-decoration: underline; }
-.rd-charts { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+.rd-charts { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-hair); }
 .rd-charts h3 { margin: 0 0 14px; font-size: var(--fs-sm); color: var(--ink-strong); }
-.report-chart { margin: 0 0 16px; padding: 16px; background: var(--paper); border: 1px solid var(--line-soft); border-radius: 10px; }
+.report-chart { margin: 0 0 16px; padding: 16px; background: var(--surface-card); border: 1px solid var(--line-hair); border-radius: 10px; }
 .report-chart figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .report-chart figcaption strong { color: var(--ink-strong); font-size: var(--fs-sm); }
 .report-chart figcaption span, .report-chart-caveat { color: var(--ink-muted); font-size: var(--fs-xs); }
+.report-chart-canvas { width: 100%; height: 250px; }
 .report-chart-bars { display: grid; gap: 9px; }
 .report-chart-row { display: grid; grid-template-columns: minmax(90px, 23%) 1fr auto; align-items: center; gap: 9px; font-size: var(--fs-xs); }
 .report-chart-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-body); }
-.report-chart-track { height: 9px; overflow: hidden; background: var(--surface-muted); border-radius: 99px; }
-.report-chart-track i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.report-chart-track { height: 9px; overflow: hidden; background: var(--surface-sunken); border-radius: 99px; }
+.report-chart-track i { display: block; height: 100%; background: var(--brand); border-radius: inherit; }
 .report-chart-row b { min-width: 52px; text-align: right; color: var(--ink-strong); font-weight: var(--fw-medium); }
 .report-chart-data { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--ink-body); font-size: var(--fs-xs); }
 .report-chart-insight { margin: 13px 0 0; color: var(--ink-strong); font-size: var(--fs-xs); }

@@ -697,7 +697,8 @@ async function handleChat(req: any, res: any) {
           sse({ type: 'text', delta: fullText.slice(forwarded) })
         }
         sse({ type: 'usage', usage: ev.usage })
-        sse({ type: 'done', content: finalText, resultType: ev.resultType })
+        const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
+        sse({ type: 'done', content: finalText, resultType: ev.resultType, charts: checkedCharts })
         finalizeRun(clientGone ? 'aborted' : 'success')
         cleanup()
         finish()

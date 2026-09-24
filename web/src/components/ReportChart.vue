@@ -1,17 +1,83 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ECharts } from 'echarts/core'
 import type { ReportChart } from '../data/runsMock'
 
 const props = defineProps<{ chart: ReportChart }>()
+const chartEl = ref<HTMLDivElement | null>(null)
+let instance: ECharts | undefined
+let resizeObserver: ResizeObserver | undefined
+let echartsApi: typeof import('echarts/core') | undefined
 
-const rows = computed(() => props.chart.data.map((row, index) => ({
-  label: String(row.label ?? row.name ?? row.date ?? row.x ?? index + 1),
-  value: typeof row.value === 'number' ? row.value : Number(row.value ?? 0),
-  code: row.code,
-})).filter(row => Number.isFinite(row.value)))
-const maxValue = computed(() => Math.max(...rows.value.map(row => row.value), 1))
-const isBar = computed(() => ['bar', 'histogram', 'stackedBar'].includes(props.chart.type))
-const unit = computed(() => props.chart.unit ?? props.chart.yAxis?.unit ?? '')
+async function loadECharts() {
+  if (echartsApi) return echartsApi
+  const [core, charts, components, renderers] = await Promise.all([
+    import('echarts/core'),
+    import('echarts/charts'),
+    import('echarts/components'),
+    import('echarts/renderers'),
+  ])
+  core.use([
+    charts.BarChart,
+    charts.LineChart,
+    components.GridComponent,
+    components.TooltipComponent,
+    renderers.CanvasRenderer,
+  ])
+  echartsApi = core
+  return core
+}
+
+function rows() {
+  return props.chart.data.map((row, index) => ({
+    label: String(row.label ?? row.name ?? row.date ?? row.x ?? index + 1),
+    value: typeof row.value === 'number' ? row.value : Number(row.value ?? 0),
+  })).filter(row => Number.isFinite(row.value))
+}
+
+async function render() {
+  if (!chartEl.value) return
+  const echarts = await loadECharts()
+  if (!instance) instance = echarts.init(chartEl.value)
+  const data = rows()
+  const horizontal = props.chart.type !== 'line'
+  const unit = props.chart.unit ?? props.chart.yAxis?.unit ?? ''
+  const isMapFallback = props.chart.type === 'map'
+  instance.setOption({
+    animation: false,
+    grid: { top: 12, right: 20, bottom: 32, left: horizontal ? 82 : 48, containLabel: true },
+    tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => `${value}${unit}` },
+    xAxis: horizontal
+      ? { type: 'value', name: unit, axisLabel: { color: '#7a746c' }, splitLine: { lineStyle: { color: '#eee9e2' } } }
+      : { type: 'category', data: data.map(row => row.label), axisLabel: { color: '#7a746c' } },
+    yAxis: horizontal
+      ? { type: 'category', data: data.map(row => row.label), axisLabel: { color: '#49443d' } }
+      : { type: 'value', name: unit, axisLabel: { color: '#7a746c' }, splitLine: { lineStyle: { color: '#eee9e2' } } },
+    series: [{
+      type: props.chart.type === 'line' ? 'line' : 'bar',
+      data: data.map(row => row.value),
+      barMaxWidth: 24,
+      smooth: props.chart.type === 'line',
+      itemStyle: { color: '#176b5c', borderRadius: horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0] },
+      lineStyle: { color: '#176b5c', width: 2 },
+      areaStyle: props.chart.type === 'line' ? { color: 'rgba(23, 107, 92, .12)' } : undefined,
+    }],
+    graphic: isMapFallback ? [{ type: 'text', left: 'center', top: 'middle', style: { text: '地图数据待接入行政区 GeoJSON', fill: '#7a746c' } }] : undefined,
+  }, true)
+}
+
+onMounted(() => {
+  void render()
+  if (chartEl.value) {
+    resizeObserver = new ResizeObserver(() => instance?.resize())
+    resizeObserver.observe(chartEl.value)
+  }
+})
+watch(() => props.chart, () => { void render() }, { deep: true })
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  instance?.dispose()
+})
 </script>
 
 <template>
@@ -20,19 +86,7 @@ const unit = computed(() => props.chart.unit ?? props.chart.yAxis?.unit ?? '')
       <strong>{{ chart.title }}</strong>
       <span v-if="chart.snapshotDate || chart.region">{{ [chart.region, chart.snapshotDate].filter(Boolean).join(' · ') }}</span>
     </figcaption>
-
-    <div v-if="isBar && rows.length" class="report-chart-bars">
-      <div v-for="row in rows" :key="row.label" class="report-chart-row">
-        <span class="report-chart-label" :title="row.label">{{ row.label }}</span>
-        <span class="report-chart-track"><i :style="{ width: `${Math.max(2, (row.value / maxValue) * 100)}%` }"></i></span>
-        <b>{{ row.value }}{{ unit }}</b>
-      </div>
-    </div>
-    <div v-else-if="rows.length" class="report-chart-data">
-      <span v-for="row in rows" :key="row.label"><b>{{ row.label }}</b> {{ row.value }}{{ unit }}</span>
-    </div>
-    <p v-else class="report-chart-empty">暂无可绘制数据</p>
-
+    <div ref="chartEl" class="report-chart-canvas" role="img" :aria-label="chart.altText || chart.title"></div>
     <p v-if="chart.insight" class="report-chart-insight">{{ chart.insight }}</p>
     <p v-if="chart.caveat" class="report-chart-caveat">口径：{{ chart.caveat }}</p>
   </figure>
