@@ -46,3 +46,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 010 | 就业指导数据图表：结构化规格与前端渲染 | 已实现协议与 Skill 约定（前端组件与真实会话待回归） | [010-career-guidance-charts.md](references/010-career-guidance-charts.md) |
 | 009 | MySQL 只读查询工具：scripts/mysql-query.mjs + 沙箱 AGENTS.md 声明 | 已实现（CLI 与 pi 端到端验收通过） | [009-mysql-query-tool.md](references/009-mysql-query-tool.md) |
 | 011 | 在线运行用户输出边界与图表展示 | 设计定稿，待实现 | [011-user-facing-output-cleanup.md](references/011-user-facing-output-cleanup.md) |
+| 012 | 就业岗位库查询、开发侧缺口与图表 | 已实现（真实内网岗位库回归待跑） | [012-career-market-query-sidecar.md](references/012-career-market-query-sidecar.md) |
+| 013 | 就业指导正式报告：岗位需求分析与简历修改建议 | 已实现（真实查询与浏览器回归待跑） | [013-career-guidance-formal-report.md](references/013-career-guidance-formal-report.md) |
+| 012 | Pi 运行详情合并工具与对话时间线 | 已实现（Zcode 未接入） | [012-pi-unified-run-timeline.md](references/012-pi-unified-run-timeline.md) |
+| 014 | 流式 Markdown 渲染批处理 | 已实现（浏览器长报告体验待回归） | [014-stream-render-batching.md](references/014-stream-render-batching.md) |

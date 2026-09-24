@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
@@ -189,6 +189,21 @@ const sessionKey = (slug: string) => `${engine.value}:${slug}`
 const lastUsage = ref('')
 /* 运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文，正文 delta 前也有推进体感 */
 const streamStatus = ref('')
+const elapsedMs = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
+}
+function beginRun() {
+  if (elapsedTimer) clearInterval(elapsedTimer)
+  const started = Date.now()
+  elapsedMs.value = 0
+  elapsedTimer = setInterval(() => { elapsedMs.value = Date.now() - started }, 250)
+}
+function endRun() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+}
 
 /* ---------- 附件上传：文件落会话沙箱 uploads/，随下一次运行/发送生效 ---------- */
 /* 首次上传发生在 /api/chat 之前：后端为上传生成沙箱目录并返回 sessionId，
@@ -250,10 +265,13 @@ watch([apiState, () => skill.value.slug], () => {
 /* SSE 事件处理（表单运行与对话发送共用）：写入占位的 assistant 消息 */
 function makeStreamHandler(answer: RunMessage) {
   return (event: ChatEvent) => {
-    if (event.type === 'session') {
+    if (event.type === 'started') {
+      elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
+    } else if (event.type === 'session') {
       sessionIds[sessionKey(skill.value.slug)] = event.sessionId
     } else if (event.type === 'status') {
-      if (event.phase === 'thinking') streamStatus.value = `模型思考中 · 已 ${event.chars ?? 0} 字`
+      if (event.phase === 'initializing') streamStatus.value = event.message ?? '正在启动运行环境…'
+      else if (event.phase === 'thinking') streamStatus.value = `模型思考中 · 已 ${event.chars ?? 0} 字`
       else if (event.phase === 'tool') streamStatus.value = `调用工具 ${event.tool ?? ''}`
       else streamStatus.value = '正在生成结果…'
     } else if (event.type === 'text') {
@@ -294,6 +312,7 @@ async function run() {
   busy.value = true
   lastUsage.value = ''
   streamStatus.value = ''
+  beginRun()
   try {
     await streamChat({
       skill: target,
@@ -309,6 +328,7 @@ async function run() {
       list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
     }
   } finally {
+    endRun()
     busy.value = false
   }
 }
@@ -340,6 +360,7 @@ async function sendChat() {
   busy.value = true
   lastUsage.value = ''
   streamStatus.value = ''
+  beginRun()
   try {
     await streamChat({
       skill: target,
@@ -357,6 +378,7 @@ async function sendChat() {
       list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
     }
   } finally {
+    endRun()
     busy.value = false
   }
 }
@@ -540,6 +562,7 @@ onMounted(() => {
     void router.replace({ name: 'use', params: { slug: SKILLS[0].slug }, query: route.query })
   }
 })
+onBeforeUnmount(endRun)
 </script>
 
 <template>
@@ -743,6 +766,10 @@ onMounted(() => {
                 </template>
               </div>
               <div v-else-if="visibleMessages.length || busy" class="use-result-body">
+                <div v-if="busy" class="use-live-status" aria-live="polite">
+                  <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
+                  <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
+                </div>
                 <template v-for="(msg, i) in visibleMessages" :key="i">
                   <article v-if="msg.role !== 'user'" class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
@@ -757,7 +784,6 @@ onMounted(() => {
                     </div>
                   </article>
                 </template>
-                <p v-if="busy" class="use-loading"><i></i>{{ streamStatus || '正在读取配置与知识库选择，生成结果…' }}</p>
               </div>
               <p v-else class="use-result-empty">填写左侧任务信息后，运行结果会显示在这里。</p>
             </section>
@@ -878,6 +904,10 @@ onMounted(() => {
           </div>
         </section>
         <div ref="chatStreamEl" class="use-chat-stream">
+          <div v-if="busy" class="use-live-status" aria-live="polite">
+            <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
+            <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
+          </div>
           <div v-if="!session.length && !busy" class="use-chat-empty">
             <span class="use-chat-empty-mark">{{ skill.name }}</span>
             <p>直接描述任务即可开始，例如：</p>
@@ -903,7 +933,6 @@ onMounted(() => {
               </div>
             </article>
           </template>
-          <p v-if="busy" class="use-loading"><i></i>{{ streamStatus || 'SKILL 正在执行，流式返回中…' }}</p>
         </div>
 
         <div class="use-chat-input">

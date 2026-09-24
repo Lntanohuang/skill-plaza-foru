@@ -51,6 +51,48 @@ export interface MetaEvidence {
   sectionId?: string
 }
 
+/** 开发侧缺口与风险；不进入用户正文。 */
+export interface MetaGap {
+  id: string
+  type?: 'data' | 'evidence' | 'input' | 'query'
+  title: string
+  description?: string
+  impact?: string
+  status?: 'pending' | 'pending_query' | 'query_failed' | 'unverified' | 'resolved'
+  verification?: string
+  sourceIds?: string[]
+}
+
+export interface MetaRisk {
+  id: string
+  title: string
+  description?: string
+  severity?: 'low' | 'medium' | 'high'
+  basis?: string
+  mitigation?: string
+  sourceIds?: string[]
+}
+
+/** 岗位库分析摘要；查询口径和不足供开发侧追溯。 */
+export interface MetaMarketAnalysis {
+  status?: 'complete' | 'partial' | 'query_failed' | 'not_requested'
+  queryId?: string
+  filters?: Record<string, unknown>
+  sampleSize?: number
+  snapshotDate?: string
+  metricIds?: string[]
+  chartIds?: string[]
+  gaps?: string[]
+}
+
+/** 简历审阅摘要；详细证据仍放 evidence。 */
+export interface MetaResumeReview {
+  sourceIds?: string[]
+  strengths?: string[]
+  missingEvidence?: string[]
+  rewriteItems?: string[]
+}
+
 /** 机器可渲染的图表描述；只允许数据和声明，不允许 HTML/JS。 */
 export interface MetaChart {
   id: string
@@ -77,6 +119,11 @@ export interface ReportMeta {
   claims: MetaClaim[]
   /** 岗位要求/用户材料与结论的对应关系，供开发人员优化。 */
   evidence: MetaEvidence[]
+  /** 开发侧缺口与风险，不展示给用户。 */
+  gaps: MetaGap[]
+  risks: MetaRisk[]
+  marketAnalysis?: MetaMarketAnalysis
+  resumeReview?: MetaResumeReview
   /** 可选图表规格；由前端渲染，模型不得输出 HTML/JS。 */
   charts: MetaChart[]
 }
@@ -139,6 +186,10 @@ export function extractSidecar(text: string): SidecarExtract {
         metrics: arr(parsed.metrics),
         claims: arr(parsed.claims),
         evidence: arr(parsed.evidence),
+        gaps: arr(parsed.gaps),
+        risks: arr(parsed.risks),
+        marketAnalysis: parsed.marketAnalysis && typeof parsed.marketAnalysis === 'object' ? parsed.marketAnalysis : undefined,
+        resumeReview: parsed.resumeReview && typeof parsed.resumeReview === 'object' ? parsed.resumeReview : undefined,
         charts: arr(parsed.charts),
       },
       cleanText,
@@ -208,6 +259,24 @@ export function validateMeta(meta: ReportMeta): MetaValidation {
     if (e?.sourceIds) resolves(e.sourceIds, `依据 ${id}`, false)
   }
 
+  for (const g of meta.gaps ?? []) {
+    const id = g?.id || '?'
+    if (!g?.title) push(`缺口 ${id} 缺少 title`)
+    if (g?.sourceIds) resolves(g.sourceIds, `缺口 ${id}`, false)
+  }
+  for (const r of meta.risks ?? []) {
+    const id = r?.id || '?'
+    if (!r?.title) push(`风险 ${id} 缺少 title`)
+    if (r?.sourceIds) resolves(r.sourceIds, `风险 ${id}`, false)
+  }
+
+  if (meta.marketAnalysis?.status === 'complete') {
+    if (!meta.marketAnalysis.queryId) push('marketAnalysis.status=complete 但缺少 queryId')
+    if (typeof meta.marketAnalysis.sampleSize !== 'number') push('marketAnalysis.status=complete 但缺少 sampleSize')
+    if (!meta.marketAnalysis.snapshotDate) push('marketAnalysis.status=complete 但缺少 snapshotDate')
+  }
+  if (meta.resumeReview?.sourceIds) resolves(meta.resumeReview.sourceIds, 'resumeReview', false)
+
   const chartTypes = new Set(['bar', 'stackedBar', 'histogram', 'line', 'map'])
   const charts = Array.isArray(meta.charts) ? meta.charts : []
   if (charts.length > 20) push('图表数量超过 20 个')
@@ -248,11 +317,17 @@ export function sidecarInstruction(skill: string): string {
     '"metrics":[{"id":"M1","name":"…","value":0,"unit":"…","period":"…","region":"…","sourceIds":["DS1"]}],' +
     '"claims":[{"id":"C1","kind":"fact","sourceIds":["DS1"],"sectionId":"…"}], ' +
     '"evidence":[{"id":"E1","requirement":"…","support":"…","status":"matched","sourceIds":["DS1"]}], ' +
+    '"gaps":[{"id":"G1","type":"data","title":"…","description":"…","impact":"…","status":"pending_query","verification":"…"}], ' +
+    '"risks":[{"id":"R1","title":"…","severity":"medium","basis":"…","mitigation":"…"}], ' +
+    '"marketAnalysis":{"status":"complete","queryId":"Q1","filters":{"city":"…","keywords":["…"]},"sampleSize":0,"snapshotDate":"…","metricIds":["M1"],"chartIds":["CH1"],"gaps":[]}, ' +
+    '"resumeReview":{"sourceIds":["DS2"],"strengths":["…"],"missingEvidence":["…"],"rewriteItems":["…"]}, ' +
     '"charts":[{"id":"CH1","type":"bar","title":"…","data":[{"label":"…","value":0}],"sourceIds":["DS1"],"unit":"%","caveat":"…","altText":"…"}]}\n' +
     '要求：sources 列出本报告引用的全部数据来源（内置文档注明快照日期与定位章节，用户提供的材料注明提供方）；' +
     'metrics 覆盖正文每个关键数字，值/单位/时期/地域随正文口径，sourceIds 必填；' +
     'claims 逐条对应正文中面向用户呈现的关键事实、判断和建议，kind 依次为 fact/inference/recommendation；' +
     'evidence 记录岗位要求/用户材料与判断的对应关系，status 使用 matched/partial/gap/unknown；' +
+    'gaps/risks 只记录开发侧缺口与风险，绝对不要在用户正文展示“缺口与风险”章节或内部依据；' +
+    '正式 career-guidance 报告正文必须包含岗位需求分析和简历修改建议；marketAnalysis 记录岗位库查询口径，resumeReview 记录简历改写依据；' +
     '需要图表时只输出 charts 结构化规格：type 只能是 bar/stackedBar/histogram/line/map，data 最多 20 个点；' +
     '图表必须引用 sources，注明单位、快照日期和 caveat；不要输出 HTML、SVG、JavaScript 或图片 Base64；' +
     '依据只写入侧车，不要为了生成侧车在正文添加机器标签。' +

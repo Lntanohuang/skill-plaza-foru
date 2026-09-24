@@ -75,6 +75,10 @@ export interface RunListItem {
         recommendations: number
         charts: number
       }
+      gaps?: Array<Record<string, unknown>>
+      risks?: Array<Record<string, unknown>>
+      marketAnalysis?: { status?: string; queryId?: string; sampleSize?: number }
+      resumeReview?: { strengths?: string[]; missingEvidence?: string[]; rewriteItems?: string[] }
       charts?: ReportChart[]
     }
   }

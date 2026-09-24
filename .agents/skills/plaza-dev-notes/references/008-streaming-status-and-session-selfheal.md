@@ -1,6 +1,6 @@
 # 008 · 流式体验补全：status 过程事件、会话失效自愈与 zcode 错误上抛
 
-**状态**：已实现（2026-09-23 落地并实测；见「验证口径」）。
+**状态**：已实现（2026-09-23 落地并实测；在线运行首包与等待计时补全，浏览器端真实长等待仍待验收；见「验证口径」）。
 **适用范围**：`/api/chat` SSE 协议、双引擎（pi/zcode）事件归一层、UsePage 与 ExperiencePage 前端消费。
 
 ## 动机
@@ -31,6 +31,14 @@
 ### zcode 错误上抛
 
 - `web/server/lib/zcodeRunner.ts:68-73`：`session/event` 的 `payload.error` → `{kind:'error', message:'zcode 会话错误：…'}`，前端立即看到失败原因而不是空转到超时。
+
+### 在线运行首包与等待计时（2026-09-23 回填）
+
+- `web/server/index.ts:440-483`：SSE 建立后调用 `flushHeaders()`，在会话创建和模型首个 delta 前立即发送 `started(runId, startedAt)` 与 `status(initializing)`；运行记录仍由 `RunRecorder` 独立落盘，不向 `/api/runs` 暴露临时状态。
+- `web/src/composables/useChatApi.ts:37-46`：补充 `started` 事件和 `initializing` phase。
+- `web/src/pages/UsePage.vue:190-206,265-289,768-788,907-938`：在线运行表单/对话结果区维护独立等待计时，在正文为空时仍显示阶段、秒数和实时连接状态；不改变历史运行结果选择器及 `/api/runs` 读取路径。
+- `web/src/pages/ExperiencePage.vue:51-67,249-290,410`：在线体验页复用同一套首包事件、阶段文案和等待计时；该页本地对话历史仍是用户侧状态，不与开发侧运行记录混用。
+- `web/src/styles/styles.css:1351-1375`：新增在线运行状态块和脉冲提示样式。
 
 ## 成本与取舍
 

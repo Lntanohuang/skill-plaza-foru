@@ -86,6 +86,11 @@ export interface RunRecord {
         recommendations: number
         charts: number
       }
+      /** 开发侧缺口与风险；用户页不读取。 */
+      gaps?: Array<Record<string, unknown>>
+      risks?: Array<Record<string, unknown>>
+      marketAnalysis?: Record<string, unknown>
+      resumeReview?: Record<string, unknown>
       /** 已通过侧车校验的图表规格，供运行详情页渲染。 */
       charts?: Array<Record<string, unknown>>
     }

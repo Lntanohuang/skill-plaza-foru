@@ -3,11 +3,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 import { bySlug } from '../data/skills'
-import { OUTCOME_LABEL, type RunDetail, type RunListItem, type RunToolPart } from '../data/runsMock'
+import { OUTCOME_LABEL, type RunDetail, type RunListItem, type RunPart } from '../data/runsMock'
 import { fetchRunDetail, runFileUrl } from '../api/runsApi'
 import ReportChart from '../components/ReportChart.vue'
 
-/* 运行详情：概要 + 用量条 + 工具执行时间线（可展开入参/输出）+ 对话流。
+/* 运行详情：概要 + 用量条 + 按 trace parts 原始顺序合并的运行时间线。
    数据来自 GET /api/runs/:runId（item = 索引记录，trace = 权威导出）；
    后端未启动时回落演示数据。 */
 
@@ -37,17 +37,32 @@ const skillName = computed(() => {
   return slug === 'unknown' || slug === 'historical' ? '历史会话' : slug
 })
 
-/* 时间线：从消息 parts 抽取工具调用（含入参/输出），按出现顺序 */
-interface TimelineItem { part: RunToolPart; time: string }
-const timeline = computed<TimelineItem[]>(() => {
+interface TimelineItem {
+  id: string
+  seq: number
+  time: string
+  role?: string
+  part: RunPart
+}
+/* Pi 的 message parts 已经包含真实发生顺序；seq 使用消息/part 顺序，
+   不依赖可能相同的时间戳。 */
+const runTimeline = computed<TimelineItem[]>(() => {
   const items: TimelineItem[] = []
-  for (const m of trace.value?.messages ?? []) {
-    for (const p of m.parts ?? []) {
-      if (p.type === 'tool') items.push({ part: p, time: m.time })
+  for (const [messageIndex, m] of (trace.value?.messages ?? []).entries()) {
+    for (const [partIndex, part] of (m.parts ?? []).entries()) {
+      items.push({
+        id: `${m.seq ?? messageIndex}-${partIndex}-${part.type === 'tool' ? part.callID : part.type}`,
+        seq: messageIndex * 1000 + partIndex,
+        time: m.time,
+        role: m.role,
+        part,
+      })
     }
   }
   return items
 })
+
+const toolCount = computed(() => runTimeline.value.filter(entry => entry.part.type === 'tool').length)
 
 const openTool = ref<string | null>(null)
 function toggleTool(callID: string) {
@@ -56,6 +71,10 @@ function toggleTool(callID: string) {
 
 function partText(part: { type: string; text?: string }): string {
   return part.text ?? ''
+}
+
+function roleLabel(role?: string): string {
+  return role === 'user' ? '任务' : role === 'assistant' ? 'AI' : role ?? '事件'
 }
 
 function fmtDuration(ms?: number): string {
@@ -192,10 +211,36 @@ const envRows = computed(() => {
             <li><b>{{ item.report.meta.counts.inferences }}</b><span>推断</span></li>
             <li><b>{{ item.report.meta.counts.recommendations }}</b><span>建议</span></li>
             <li><b>{{ item.report.meta.counts.charts }}</b><span>图表</span></li>
+            <li><b>{{ item.report.meta.gaps?.length ?? 0 }}</b><span>数据缺口</span></li>
+            <li><b>{{ item.report.meta.risks?.length ?? 0 }}</b><span>判断风险</span></li>
           </ul>
           <p v-if="item.report.meta.errors.length" class="rd-parse-missing">
             {{ item.report.meta.errors.slice(0, 5).join('；') }}{{ item.report.meta.errors.length > 5 ? ' 等' : '' }}
           </p>
+          <div v-if="item.report.meta.gaps?.length || item.report.meta.risks?.length" class="rd-meta-notes">
+            <h3>开发侧缺口与风险</h3>
+            <ul>
+              <li v-for="gap in item.report.meta.gaps ?? []" :key="String(gap.id)">
+                <b>缺口：</b>{{ gap.title }}<span v-if="gap.impact">：{{ gap.impact }}</span>
+              </li>
+              <li v-for="risk in item.report.meta.risks ?? []" :key="String(risk.id)">
+                <b>风险：</b>{{ risk.title }}<span v-if="risk.description">：{{ risk.description }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="item.report.meta.marketAnalysis || item.report.meta.resumeReview" class="rd-meta-notes">
+            <h3>正式报告摘要</h3>
+            <p v-if="item.report.meta.marketAnalysis">
+              岗位分析：{{ String(item.report.meta.marketAnalysis.status ?? '未记录') }}
+              <span v-if="item.report.meta.marketAnalysis.sampleSize !== undefined"> · 样本 {{ item.report.meta.marketAnalysis.sampleSize }}</span>
+              <span v-if="item.report.meta.marketAnalysis.queryId"> · {{ item.report.meta.marketAnalysis.queryId }}</span>
+            </p>
+            <p v-if="item.report.meta.resumeReview">
+              简历审阅：优点 {{ item.report.meta.resumeReview.strengths?.length ?? 0 }} 项 ·
+              待补证据 {{ item.report.meta.resumeReview.missingEvidence?.length ?? 0 }} 项 ·
+              改写项 {{ item.report.meta.resumeReview.rewriteItems?.length ?? 0 }} 项
+            </p>
+          </div>
           <div v-if="item.report.meta.charts?.length" class="rd-charts">
             <h3>数据图表</h3>
             <ReportChart v-for="chart in item.report.meta.charts" :key="chart.id" :chart="chart" />
@@ -204,43 +249,43 @@ const envRows = computed(() => {
         </div>
 
         <div class="rd-layout">
-          <aside class="rd-timeline">
-            <h2>工具执行（{{ timeline.length }}）</h2>
-            <ol class="rd-steps">
-              <li v-for="(entry, i) in timeline" :key="entry.part.callID" class="rd-step" :class="{ 'is-open': openTool === entry.part.callID }">
-                <button type="button" class="rd-step-btn" @click="toggleTool(entry.part.callID)">
-                  <span class="rd-step-no" :class="`is-${entry.part.state.status}`">{{ i + 1 }}</span>
-                  <span class="rd-step-name">{{ entry.part.tool }}</span>
-                  <span class="rd-step-status" :class="`is-${entry.part.state.status}`">{{ entry.part.state.status === 'completed' ? '完成' : entry.part.state.status === 'error' ? '失败' : entry.part.state.status }}</span>
-                  <span class="rd-step-time">{{ fmtTime(entry.time) }}</span>
-                  <svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-chev-down" /></svg>
-                </button>
-                <div v-if="openTool === entry.part.callID" class="rd-step-body">
-                  <p v-if="fmtIO(entry.part.state.input)" class="rd-step-label">入参</p>
-                  <pre v-if="fmtIO(entry.part.state.input)" class="rd-step-io">{{ fmtIO(entry.part.state.input) }}</pre>
-                  <p v-if="fmtIO(entry.part.state.output)" class="rd-step-label">输出</p>
-                  <pre v-if="fmtIO(entry.part.state.output)" class="rd-step-io">{{ fmtIO(entry.part.state.output) }}</pre>
-                </div>
+          <main class="rd-stream">
+            <div class="rd-stream-head">
+              <h2>运行时间线（{{ runTimeline.length }} 个事件）</h2>
+              <span class="rd-stream-count">{{ toolCount }} 次工具调用</span>
+            </div>
+            <ol class="rd-unified-timeline">
+              <li v-for="(entry, i) in runTimeline" :key="entry.id" class="rd-event" :class="`is-${entry.part.type}`">
+                <span class="rd-event-marker">{{ i + 1 }}</span>
+                <article class="rd-event-card">
+                  <header class="rd-event-head">
+                    <span class="rd-msg-role">{{ entry.part.type === 'tool' ? '工具' : roleLabel(entry.role) }}</span>
+                    <strong v-if="entry.part.type === 'tool'">{{ entry.part.tool }}</strong>
+                    <strong v-else-if="entry.part.type === 'reasoning'">思考过程</strong>
+                    <strong v-else>消息</strong>
+                    <span class="rd-step-time">{{ fmtTime(entry.time) }}</span>
+                  </header>
+                  <pre v-if="entry.part.type === 'text'" class="rd-msg-text">{{ partText(entry.part) }}</pre>
+                  <details v-else-if="entry.part.type === 'reasoning'" class="rd-reasoning">
+                    <summary>展开思考内容</summary>
+                    <pre>{{ partText(entry.part) }}</pre>
+                  </details>
+                  <template v-else-if="entry.part.type === 'tool'">
+                    <button type="button" class="rd-tool-toggle" @click="toggleTool(entry.part.callID)">
+                      <span class="rd-step-status" :class="`is-${entry.part.state.status}`">{{ entry.part.state.status === 'completed' ? '完成' : entry.part.state.status === 'error' ? '失败' : entry.part.state.status }}</span>
+                      <span>{{ openTool === entry.part.callID ? '收起详情' : '查看入参与输出' }}</span>
+                      <svg class="ic" :class="{ 'is-open': openTool === entry.part.callID }" width="12" height="12" aria-hidden="true"><use href="#i-chev-down" /></svg>
+                    </button>
+                    <div v-if="openTool === entry.part.callID" class="rd-step-body">
+                      <p v-if="fmtIO(entry.part.state.input)" class="rd-step-label">入参</p>
+                      <pre v-if="fmtIO(entry.part.state.input)" class="rd-step-io">{{ fmtIO(entry.part.state.input) }}</pre>
+                      <p v-if="fmtIO(entry.part.state.output)" class="rd-step-label">输出</p>
+                      <pre v-if="fmtIO(entry.part.state.output)" class="rd-step-io">{{ fmtIO(entry.part.state.output) }}</pre>
+                    </div>
+                  </template>
+                </article>
               </li>
             </ol>
-          </aside>
-
-          <main class="rd-stream">
-            <h2>对话流</h2>
-            <template v-for="(m, mi) in trace.messages" :key="mi">
-              <article v-if="(m.parts ?? []).some(p => p.type === 'text')" class="rd-msg" :class="`is-${m.role}`">
-                <span class="rd-msg-role">{{ m.role === 'user' ? '任务' : 'AI' }}</span>
-                <div class="rd-msg-body">
-                  <template v-for="(p, pi) in m.parts" :key="pi">
-                    <pre v-if="p.type === 'text'" class="rd-msg-text">{{ partText(p) }}</pre>
-                    <details v-else-if="p.type === 'reasoning'" class="rd-reasoning">
-                      <summary>思考过程</summary>
-                      <pre>{{ partText(p) }}</pre>
-                    </details>
-                  </template>
-                </div>
-              </article>
-            </template>
             <div v-if="live && item.files" class="rd-files">
               <span class="rd-files-label">原始数据：</span>
               <a v-if="item.files.events" :href="runFileUrl(runId, 'events')" download>events.jsonl</a>

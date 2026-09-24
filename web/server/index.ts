@@ -124,7 +124,7 @@ const sessions = new Map<
    MySQL 只读查询工具；MYSQL_* 未配置时（如公开部署无凭据）不写
    工具节，避免给 Agent 一把坏工具。内容确定性覆盖，每次创建重写。
    ------------------------------------------------------------ */
-const MYSQL_QUERY_TOOL = join(__dirname, '../../scripts/mysql-query.mjs')
+const CAREER_MARKET_QUERY_TOOL = join(__dirname, '../../scripts/career-market-query.mjs')
 
 function mysqlConfigured(): boolean {
   return Boolean(
@@ -143,11 +143,11 @@ function sandboxAgentsMd(): string {
       '',
       '## MySQL 只读查询工具',
       '',
-      `用 bash 执行 \`node "${MYSQL_QUERY_TOOL}" "SQL"\` 可查询岗位库（只读，JSON 输出：columns/rows/truncated）。`,
-      '选项：`--max-rows N`（默认 200）、`--max-cell-chars N`（默认 400）、`--format table`、`--timeout-ms N`。',
-      '约定：先小范围探查（LIMIT / COUNT）再聚合；无索引列全表 GROUP BY 可能数十秒；',
-      '中文岗位名检索用 LIKE（FULLTEXT 未装 ngram 分词，MATCH 中文无效）。',
-      '报告类技能（industry-education-report / career-guidance）默认以内置口径文档为准，除非用户明确要求查库。',
+      `用 bash 执行白名单工具：\`node "${CAREER_MARKET_QUERY_TOOL}" --query <queryId> --params '<JSON>'\`。`,
+      'Agent 只能选择 queryId 并填写 city、keywords、roleTerms、internship、limit、timeoutMs；不得传原始 SQL。',
+      '可用 queryId：cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution。',
+      `多个独立查询使用 \`node "${CAREER_MARKET_QUERY_TOOL}" --parallel '<JSON数组>'\`，工具内部最多并发 3 个查询；单查询默认 30 秒、最长 60 秒。`,
+      '涉及具体城市、岗位、实习/应届或学历门槛的问题，必须优先调用该工具；查询结果用于 report-meta 的 sources/metrics/charts，查询失败时把原因写入开发侧 gaps/risks。',
     )
   }
   return lines.join('\n') + '\n'
@@ -444,6 +444,7 @@ async function handleChat(req: any, res: any) {
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   })
+  res.flushHeaders?.()
   const sse = (obj: any) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) res.write(': ping\n\n')
@@ -477,6 +478,9 @@ async function handleChat(req: any, res: any) {
   /* ---- trace 记录：实时流 + 终态导出 + 索引（见 lib/traceExport.ts） ---- */
   const runId = newRunId()
   const startedAt = Date.now()
+  /* 首包立即确认在线运行已开始；不要等会话创建或模型首个 delta。 */
+  sse({ type: 'started', runId, startedAt })
+  sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
   const promptDigest = String(latest.content).replace(/\s+/g, ' ').slice(0, 80)
   /* 附件说明在 digest 之后注入 prompt：路径必须落在本会话沙箱内（防穿越）；
      .md/.txt 直接内联内容（截断 16000 字保底），其余格式指示引擎读工作目录文件 */
@@ -571,7 +575,16 @@ async function handleChat(req: any, res: any) {
           if (sidecar.meta) {
             const v = validateMeta(sidecar.meta)
             record.report = {
-              meta: { pass: v.pass, errors: v.errors, counts: v.counts, charts: v.pass ? sidecar.meta.charts : [] },
+              meta: {
+                pass: v.pass,
+                errors: v.errors,
+                counts: v.counts,
+                gaps: sidecar.meta.gaps,
+                risks: sidecar.meta.risks,
+                marketAnalysis: sidecar.meta.marketAnalysis,
+                resumeReview: sidecar.meta.resumeReview,
+                charts: v.pass ? sidecar.meta.charts : [],
+              },
             }
             record.files.report = traceFilePath(runId, 'report')
             writeFileSync(

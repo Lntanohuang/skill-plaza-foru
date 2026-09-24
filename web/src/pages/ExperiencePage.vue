@@ -50,6 +50,21 @@ const textarea = ref('')
 const sending = ref(false)
 /* 真实运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文 */
 const runStatus = ref('')
+const elapsedMs = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
+}
+function beginRun() {
+  if (elapsedTimer) clearInterval(elapsedTimer)
+  const started = Date.now()
+  elapsedMs.value = 0
+  elapsedTimer = setInterval(() => { elapsedMs.value = Date.now() - started }, 250)
+}
+function endRun() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+}
 const messages = ref<Msg[]>([])
 const activeId = ref<number | null>(null)
 const conversations = ref<Conv[]>([])
@@ -238,6 +253,7 @@ async function runReal(text: string, slug: string, skill: Skill | undefined) {
   if (convId === null) return
   convSlugs.set(convId, slug)
   const sessionKey = `${engine.value}:${convId}`
+  beginRun()
   try {
     await streamChat({
       skill: slug,
@@ -245,10 +261,14 @@ async function runReal(text: string, slug: string, skill: Skill | undefined) {
       sessionId: convSessions.get(sessionKey),
       engine: engine.value,
       onEvent: event => {
-        if (event.type === 'session') {
+        if (event.type === 'started') {
+          elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
+          runStatus.value = '正在启动运行环境…'
+        } else if (event.type === 'session') {
           convSessions.set(sessionKey, event.sessionId)
         } else if (event.type === 'status') {
-          if (event.phase === 'thinking') runStatus.value = `思考中 · ${event.chars ?? 0} 字`
+          if (event.phase === 'initializing') runStatus.value = event.message ?? '正在启动运行环境…'
+          else if (event.phase === 'thinking') runStatus.value = `思考中 · ${event.chars ?? 0} 字`
           else if (event.phase === 'tool') runStatus.value = `调用工具 ${event.tool ?? ''}`
           else runStatus.value = '正在生成结果…'
         } else if (event.type === 'text') {
@@ -273,6 +293,7 @@ async function runReal(text: string, slug: string, skill: Skill | undefined) {
     }
     msg.done = true
   } finally {
+    endRun()
     if (msg.done) {
       sending.value = false
       syncToConv()
@@ -296,6 +317,7 @@ function send(raw?: string) {
   textarea.value = ''
   sending.value = true
   runStatus.value = ''
+  elapsedMs.value = 0
 
   const demo = matchDemo(text)
   const skill = demo ? bySlug.get(demo.slug) : undefined
@@ -329,6 +351,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   if (streamTimer) clearInterval(streamTimer)
+  endRun()
 })
 </script>
 
@@ -388,7 +411,7 @@ onBeforeUnmount(() => {
               </span>
               <template v-if="!msg.done">
                 <span class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
-                <span v-if="runStatus" class="exp-run-status">{{ runStatus }}</span>
+                <span v-if="runStatus" class="exp-run-status">{{ runStatus }} · {{ formatElapsed(elapsedMs) }}</span>
               </template>
               <span v-else class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
             </div>

@@ -362,15 +362,16 @@ export class PiRunner extends AgentRunner {
     if (!isFirstTurn) return latest.content
     if (INSTALLED_SKILLS.has(skill)) {
       /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
-         MVP 直出模式：不写文件、不跑脚本，报告全文作为最终回复直接输出——
-         内容 token 只花一遍，write/bash 全省；结构校验由 reportParse 兜底 */
+         正式报告模式：允许读取附件、岗位库和 Skill 参考资料；最终正文与开发侧
+         report-meta 分轨输出，服务端负责剥离、校验和落盘。 */
       const direct =
         `/skill:${skill} ${latest.content}\n\n` +
-        '（MVP 直出模式：不要写任何文件、不要运行校验或渲染脚本；' +
-        '严格按技能模板的用户报告结构，把完整报告作为你的最终回复直接输出：' +
-        '先给可执行结论，再给必要限制和行动；只输出面向用户的整理结果。' +
+        '（正式报告模式：先读取用户附件和 Skill 参考资料；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+        '把完整用户报告作为最终回复输出，至少包含：结论、岗位需求分析、岗位匹配、简历修改建议、行动计划。' +
+        '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和结构图表；数据不足登记到开发侧 report-meta，不要编造。' +
+        '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
         '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、原始 JSON 或文件/执行过程说明。' +
-        '事实、判断和建议用自然语言表达，必要时保留来源编号，但不要把内部角色标签或推理草稿原样展示。）'
+        '事实、判断和建议用自然语言表达；开发侧缺口、风险、证据对应关系放入 report-meta，不在正文单列“缺口与风险”章节。）'
       /* report-meta 侧车：报告尾部附机器校验块（服务端剥离，见 lib/reportMeta.ts） */
       return SIDECAR_SKILLS.has(skill) ? `${direct}\n\n${sidecarInstruction(skill)}` : direct
     }
