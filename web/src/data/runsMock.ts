@@ -8,6 +8,22 @@
 
 export type RunOutcome = 'success' | 'timeout' | 'aborted' | 'error' | 'historical'
 
+export type ReportChart = {
+  id: string
+  type: 'bar' | 'stackedBar' | 'histogram' | 'line' | 'map'
+  title: string
+  data: Array<Record<string, unknown>>
+  sourceIds: string[]
+  unit?: string
+  snapshotDate?: string
+  region?: string
+  caveat?: string
+  altText?: string
+  insight?: string
+  xAxis?: { name?: string; unit?: string }
+  yAxis?: { name?: string; unit?: string }
+}
+
 export interface RunListItem {
   runId: string
   ts: string
@@ -22,13 +38,23 @@ export interface RunListItem {
     outputTokens?: number
     cacheReadTokens?: number
     totalTokens?: number
+    /** 本次运行花费（美元，pi 专属） */
+    costUsd?: number
   }
   toolCallCount?: number
+  /** Agent 与环境快照（历史记录缺省 → 详情页整块隐藏） */
+  agentEnv?: {
+    agentVersion?: string
+    model?: string
+    thinking?: string
+    node?: string
+    os?: string
+  }
   /** MVP 直出模式的报告解析摘要（pi 运行才有） */
   report?: {
-    structurePass: boolean
+    structurePass?: boolean
     missingSections?: string[]
-    stats: {
+    stats?: {
       sections: number
       facts: number
       inferences: number
@@ -36,6 +62,20 @@ export interface RunListItem {
       gaps: number
       sources: number
       chars: number
+    }
+    /** report-meta 侧车校验摘要（来源/指标/结论分级） */
+    meta?: {
+      pass: boolean
+      errors: string[]
+      counts: {
+        sources: number
+        metrics: number
+        facts: number
+        inferences: number
+        recommendations: number
+        charts: number
+      }
+      charts?: ReportChart[]
     }
   }
   /** 原始文件路径（真实数据才有；演示数据无） */
@@ -79,6 +119,8 @@ export const RUNS_MOCK: RunListItem[] = [
     durationMs: 712_000,
     usage: { inputTokens: 486_210, outputTokens: 12_450, cacheReadTokens: 452_180, totalTokens: 498_660 },
     toolCallCount: 14,
+    engine: 'zcode',
+    agentEnv: { agentVersion: '0.16.9', model: 'glm-5.3 (GLM Coding Plan)', node: 'v24.20.0', os: 'darwin arm64' },
   },
   {
     runId: 'backfill-sess_c7c6bbb5',
@@ -97,8 +139,10 @@ export const RUNS_MOCK: RunListItem[] = [
     promptDigest: '只回复两个字：记录成功',
     outcome: 'success',
     durationMs: 5_764,
-    usage: { inputTokens: 16_375, outputTokens: 13, cacheReadTokens: 0, totalTokens: 16_388 },
+    usage: { inputTokens: 16_375, outputTokens: 13, cacheReadTokens: 0, totalTokens: 16_388, costUsd: 0.0011 },
     toolCallCount: 0,
+    engine: 'pi',
+    agentEnv: { agentVersion: '0.85.1', model: 'deepseek/deepseek-flash', thinking: 'low', node: 'v24.20.0', os: 'darwin arm64' },
   },
   {
     runId: '20260917-032109-yw0m',

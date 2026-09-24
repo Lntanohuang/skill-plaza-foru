@@ -13,7 +13,10 @@ import { accessSync, constants, writeFileSync } from 'node:fs'
 import { join, delimiter } from 'node:path'
 import { AgentRunner, JsonlChannel, type EngineName } from './runner.ts'
 import type { SessionTrace, UsageSummary } from './traceExport.ts'
-import { SKILL_PROMPTS, INSTALLED_SKILLS, skillDir } from './skills.ts'
+import type { AgentEnvInfo } from './traceExport.ts'
+import { piCliVersion } from './agentEnv.ts'
+import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, skillDir } from './skills.ts'
+import { sidecarInstruction } from './reportMeta.ts'
 import { loadLocalEnv } from './env.ts'
 
 /* pi CLI 定位：PI_CLI 配置 → PATH；找不到由调用方给配置指引 */
@@ -62,26 +65,30 @@ export function piThinkingLevel(): string {
   return raw
 }
 
-/* pi usage → 统一 UsageSummary */
+/* pi usage → 统一 UsageSummary（cost.total 为该次调用的美元花费） */
 function normUsage(u: any): UsageSummary | undefined {
   if (!u) return undefined
+  const cost = u.cost?.total
   return {
     inputTokens: u.input,
     outputTokens: u.output,
     cacheReadTokens: u.cacheRead,
     totalTokens: u.totalTokens ?? u.total,
+    costUsd: typeof cost === 'number' ? cost : undefined,
   }
 }
 
-/** 两段已归一化的 usage 相加（缺省按 0），不落账 */
+/** 两段已归一化的 usage 相加（缺省按 0；cost 双方都缺省时保持缺省），不落账 */
 function sumUsage(prev?: UsageSummary, add?: UsageSummary): UsageSummary {
   const a = add ?? {}
   const base = prev ?? {}
+  const noCost = base.costUsd === undefined && a.costUsd === undefined
   return {
     inputTokens: (base.inputTokens ?? 0) + (a.inputTokens ?? 0),
     outputTokens: (base.outputTokens ?? 0) + (a.outputTokens ?? 0),
     cacheReadTokens: (base.cacheReadTokens ?? 0) + (a.cacheReadTokens ?? 0),
     totalTokens: (base.totalTokens ?? 0) + (a.totalTokens ?? 0),
+    costUsd: noCost ? undefined : (base.costUsd ?? 0) + (a.costUsd ?? 0),
   }
 }
 
@@ -103,6 +110,8 @@ export class PiRunner extends AgentRunner {
   private turnUsage = new Map<string, UsageSummary>()
   /** 当前 LLM 调用最近一次流式 usage（message_end 全零时的回落值，DeepSeek 实测如此） */
   private callUsage = new Map<string, UsageSummary>()
+  /** 引擎会话 id → 思考进度（累计字数 + 上次上报时间，agent_start 重置） */
+  private thinkState = new Map<string, { chars: number; at: number }>()
 
   private readonly model: { provider: string; modelId: string }
   private readonly cli: string | null
@@ -119,6 +128,15 @@ export class PiRunner extends AgentRunner {
     const known: Record<string, string> = { deepseek: 'DeepSeek', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google' }
     const p = known[this.model.provider] ?? this.model.provider
     return `${this.model.modelId} (${p} · pi)`
+  }
+
+  /** 运行环境快照：模型引用/思考档位/CLI 版本（run 记录落盘用） */
+  envInfo(): Partial<AgentEnvInfo> {
+    return {
+      model: `${this.model.provider}/${this.model.modelId}`,
+      thinking: this.thinking,
+      agentVersion: piCliVersion(this.cli),
+    }
   }
 
   /* 每会话一个 RPC 进程；不存在或已退出即视为坏会话（不隐式重启，
@@ -146,6 +164,10 @@ export class PiRunner extends AgentRunner {
       const ev = msg.assistantMessageEvent
       if (ev?.type === 'text_delta' && ev.delta)
         this.emit(sid, { kind: 'text_delta', delta: ev.delta })
+      else if (ev?.type === 'thinking_delta' && ev.delta) this.emitThinking(sid, ev.delta.length)
+      else if (ev?.type === 'toolcall_start' && ev.toolName)
+        this.emit(sid, { kind: 'status', phase: 'tool', tool: ev.toolName })
+      else if (ev?.type === 'text_start') this.emit(sid, { kind: 'status', phase: 'text' })
       if (msg.usage) {
         /* usage 逐 delta 都会带（单次调用内的累计值），先记账最新值 */
         this.callUsage.set(sid, normUsage(msg.usage) ?? {})
@@ -172,6 +194,7 @@ export class PiRunner extends AgentRunner {
     } else if (type === 'agent_start') {
       this.turnUsage.delete(sid)
       this.callUsage.delete(sid)
+      this.thinkState.delete(sid)
     } else if (type === 'agent_settled') {
       /* 权威收尾：拉最终文本后发 terminal（失败经 error 收尾） */
       void this.finishTurn(sid)
@@ -185,6 +208,19 @@ export class PiRunner extends AgentRunner {
     } else if (type === 'extension_error') {
       this.emit(sid, { kind: 'error', message: `pi 扩展错误：${msg.error}` })
     }
+  }
+
+  /** 思考期进度节流上报（≥700ms 一次，给前端"正在推进"的体感；
+      正文/工具事件本身稀疏，不走这里） */
+  private emitThinking(sid: string, add: number) {
+    const now = Date.now()
+    const st = this.thinkState.get(sid) ?? { chars: 0, at: 0 }
+    st.chars += add
+    if (now - st.at >= 700) {
+      this.emit(sid, { kind: 'status', phase: 'thinking', chars: st.chars })
+      st.at = now
+    }
+    this.thinkState.set(sid, st)
   }
 
   private async finishTurn(sid: string) {
@@ -241,6 +277,7 @@ export class PiRunner extends AgentRunner {
     this.sessions.delete(sessionId)
     this.turnUsage.delete(sessionId)
     this.callUsage.delete(sessionId)
+    this.thinkState.delete(sessionId)
     s.channel.kill()
     this.dropSessionBookkeeping(sessionId)
   }
@@ -251,6 +288,7 @@ export class PiRunner extends AgentRunner {
     this.sessions.delete(sid)
     this.turnUsage.delete(sid)
     this.callUsage.delete(sid)
+    this.thinkState.delete(sid)
     for (const [id, p] of this.pending) {
       if (p.sid === sid) {
         this.pending.delete(id)
@@ -326,13 +364,15 @@ export class PiRunner extends AgentRunner {
       /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
          MVP 直出模式：不写文件、不跑脚本，报告全文作为最终回复直接输出——
          内容 token 只花一遍，write/bash 全省；结构校验由 reportParse 兜底 */
-      return (
+      const direct =
         `/skill:${skill} ${latest.content}\n\n` +
         '（MVP 直出模式：不要写任何文件、不要运行校验或渲染脚本；' +
-        '严格按技能模板的章节结构，把完整报告作为你的最终回复直接输出：' +
-        'Markdown 原样，章节标题照模板使用，保留证据编号与事实/推断/建议分级；' +
-        '不要附加文件清单或执行过程说明。）'
-      )
+        '严格按技能模板的用户报告结构，把完整报告作为你的最终回复直接输出：' +
+        '先给可执行结论，再给必要限制和行动；只输出面向用户的整理结果。' +
+        '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、原始 JSON 或文件/执行过程说明。' +
+        '事实、判断和建议用自然语言表达，必要时保留来源编号，但不要把内部角色标签或推理草稿原样展示。）'
+      /* report-meta 侧车：报告尾部附机器校验块（服务端剥离，见 lib/reportMeta.ts） */
+      return SIDECAR_SKILLS.has(skill) ? `${direct}\n\n${sidecarInstruction(skill)}` : direct
     }
     return `${SKILL_PROMPTS[skill]}\n\n${latest.content}`
   }

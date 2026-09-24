@@ -13,6 +13,9 @@ const apiProxy = {
 
 export default defineConfig({
   plugins: [vue()],
+  /* PLAZA_ 前缀与 VITE_ 同等暴露给 import.meta.env（PLAZA_ENV=test|prod，
+     前后端共用一个环境标识；后端经 loadLocalEnv 读 process.env.PLAZA_ENV） */
+  envPrefix: ['VITE_', 'PLAZA_'],
   server: {
     host: '127.0.0.1',
     port: 4188,

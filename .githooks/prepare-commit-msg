@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+msg_file=$1
+repo_root=$(git rev-parse --show-toplevel)
+issue_file="$repo_root/.git/task-issue"
+[[ -s "$issue_file" ]] || exit 0
+issue_number=$(tr -d '[:space:]' < "$issue_file")
+[[ "$issue_number" =~ ^[0-9]+$ ]] || exit 0
+if ! grep -qE '^Task-Issue: #[0-9]+$' "$msg_file"; then
+  printf '\nTask-Issue: #%s\n' "$issue_number" >> "$msg_file"
+fi

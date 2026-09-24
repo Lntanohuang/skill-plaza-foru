@@ -1,0 +1,10 @@
+grp	sal_form	cnt
+above	NULL	5401
+above	numeric	2455813
+above	zero	1023
+core	NULL	1799
+core	numeric	2675827
+core	zero	965
+wide_rest	NULL	1132
+wide_rest	numeric	4459048
+wide_rest	zero	15991

@@ -5,6 +5,7 @@ import Icon from '../components/Icon.vue'
 import { bySlug } from '../data/skills'
 import { OUTCOME_LABEL, type RunDetail, type RunListItem, type RunToolPart } from '../data/runsMock'
 import { fetchRunDetail, runFileUrl } from '../api/runsApi'
+import ReportChart from '../components/ReportChart.vue'
 
 /* 运行详情：概要 + 用量条 + 工具执行时间线（可展开入参/输出）+ 对话流。
    数据来自 GET /api/runs/:runId（item = 索引记录，trace = 权威导出）；
@@ -67,6 +68,9 @@ function fmtTokens(n?: number): string {
   if (!n) return '0'
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
+function fmtCost(v?: number): string {
+  return v === undefined ? '' : `$${v.toFixed(4)}`
+}
 function fmtTime(ts?: string): string {
   return ts ? ts.slice(11, 19) : '-'
 }
@@ -90,6 +94,20 @@ const usagePct = computed(() => {
 })
 
 const hasData = computed(() => Boolean(item.value && trace.value))
+
+/* Agent 与环境快照：缺项显示 —；整块缺省（历史记录）则隐藏 */
+const envRows = computed(() => {
+  const env = item.value?.agentEnv
+  if (!env) return []
+  const dash = (v?: string) => (v ? v : '—')
+  return [
+    { label: 'Agent 版本', value: dash(env.agentVersion) },
+    { label: '模型', value: dash(env.model) },
+    { label: '思考档位', value: dash(env.thinking) },
+    { label: 'Node', value: dash(env.node) },
+    { label: '系统', value: dash(env.os) },
+  ]
+})
 </script>
 
 <template>
@@ -117,6 +135,13 @@ const hasData = computed(() => Boolean(item.value && trace.value))
           </span>
         </header>
 
+        <dl v-if="envRows.length" class="rd-env">
+          <div v-for="row in envRows" :key="row.label" class="rd-env-item">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
         <div class="rd-usage">
           <div class="rd-usage-bar" aria-hidden="true">
             <i class="rd-seg-cache" :style="{ width: usagePct.cache + '%' }"></i>
@@ -128,10 +153,11 @@ const hasData = computed(() => Boolean(item.value && trace.value))
             <span><i class="rd-seg-input"></i>输入 {{ fmtTokens((item.usage?.inputTokens ?? 0) - (item.usage?.cacheReadTokens ?? 0)) }}</span>
             <span><i class="rd-seg-output"></i>输出 {{ fmtTokens(item.usage?.outputTokens) }}</span>
             <b>合计 {{ fmtTokens(item.usage?.totalTokens) }} tokens</b>
+            <b v-if="fmtCost(item.usage?.costUsd)">≈ {{ fmtCost(item.usage?.costUsd) }}</b>
           </div>
         </div>
 
-        <div v-if="item.report" class="rd-parse" :class="{ 'is-fail': !item.report.structurePass }">
+        <div v-if="item.report && item.skill === 'industry-education-report'" class="rd-parse" :class="{ 'is-fail': !item.report.structurePass }">
           <div class="rd-parse-head">
             <h2>报告解析</h2>
             <em class="runs-outcome" :class="item.report.structurePass ? 'is-success' : 'is-error'">
@@ -139,17 +165,42 @@ const hasData = computed(() => Boolean(item.value && trace.value))
             </em>
           </div>
           <ul class="rd-parse-stats">
-            <li><b>{{ item.report.stats.sections }}</b><span>章节</span></li>
-            <li><b>{{ item.report.stats.facts }}</b><span>事实</span></li>
-            <li><b>{{ item.report.stats.inferences }}</b><span>推断</span></li>
-            <li><b>{{ item.report.stats.recommendations }}</b><span>建议</span></li>
-            <li><b>{{ item.report.stats.gaps }}</b><span>缺口</span></li>
-            <li><b>{{ item.report.stats.sources }}</b><span>来源</span></li>
+            <li><b>{{ item.report.stats?.sections }}</b><span>章节</span></li>
+            <li><b>{{ item.report.stats?.facts }}</b><span>事实</span></li>
+            <li><b>{{ item.report.stats?.inferences }}</b><span>推断</span></li>
+            <li><b>{{ item.report.stats?.recommendations }}</b><span>建议</span></li>
+            <li><b>{{ item.report.stats?.gaps }}</b><span>缺口</span></li>
+            <li><b>{{ item.report.stats?.sources }}</b><span>来源</span></li>
           </ul>
           <p v-if="item.report.missingSections?.length" class="rd-parse-missing">
             缺失：{{ item.report.missingSections.join('、') }}
           </p>
           <a v-if="item.files?.report" class="rd-parse-dl" :href="runFileUrl(runId, 'report')" target="_blank" rel="noopener">下载解析结果（JSON）</a>
+        </div>
+
+        <div v-if="item.report?.meta" class="rd-parse" :class="{ 'is-fail': !item.report.meta.pass }">
+          <div class="rd-parse-head">
+            <h2>来源校验</h2>
+            <em class="runs-outcome" :class="item.report.meta.pass ? 'is-success' : 'is-error'">
+              {{ item.report.meta.pass ? '校验通过' : `${item.report.meta.errors.length} 处问题` }}
+            </em>
+          </div>
+          <ul class="rd-parse-stats">
+            <li><b>{{ item.report.meta.counts.sources }}</b><span>数据来源</span></li>
+            <li><b>{{ item.report.meta.counts.metrics }}</b><span>关键指标</span></li>
+            <li><b>{{ item.report.meta.counts.facts }}</b><span>事实</span></li>
+            <li><b>{{ item.report.meta.counts.inferences }}</b><span>推断</span></li>
+            <li><b>{{ item.report.meta.counts.recommendations }}</b><span>建议</span></li>
+            <li><b>{{ item.report.meta.counts.charts }}</b><span>图表</span></li>
+          </ul>
+          <p v-if="item.report.meta.errors.length" class="rd-parse-missing">
+            {{ item.report.meta.errors.slice(0, 5).join('；') }}{{ item.report.meta.errors.length > 5 ? ' 等' : '' }}
+          </p>
+          <div v-if="item.report.meta.charts?.length" class="rd-charts">
+            <h3>数据图表</h3>
+            <ReportChart v-for="chart in item.report.meta.charts" :key="chart.id" :chart="chart" />
+          </div>
+          <a v-if="item.files?.report" class="rd-parse-dl" :href="runFileUrl(runId, 'report')" target="_blank" rel="noopener">下载侧车数据（JSON）</a>
         </div>
 
         <div class="rd-layout">

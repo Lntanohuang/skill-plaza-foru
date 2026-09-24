@@ -1,0 +1,25 @@
+name: Close task issue after push
+
+on:
+  push:
+    branches: ['**']
+
+permissions:
+  issues: write
+
+jobs:
+  close-task-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close issues referenced by pushed commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_MESSAGES: ${{ toJSON(github.event.commits.*.message) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t issue_numbers < <(printf '%s' "$COMMIT_MESSAGES" | grep -oE 'Task-Issue: #[0-9]+' | grep -oE '[0-9]+' | sort -u || true)
+          for issue_number in "${issue_numbers[@]}"; do
+            gh issue close "$issue_number" --repo "$GH_REPO" --comment "对应开发计划已成功推送。"
+          done

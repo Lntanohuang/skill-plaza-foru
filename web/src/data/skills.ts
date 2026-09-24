@@ -171,6 +171,41 @@ export const SKILLS: Skill[] = [
     repositoryLabel: 'Lntanohuang/ai-interview-skill',
   },
   {
+    slug: 'career-guidance',
+    name: '就业指导',
+    identifier: 'career-guidance',
+    categoryId: 'career',
+    audiences: ['student'],
+    summary: '基于目标、经历、岗位要求和现实约束，制定可执行的职业定位与求职行动方案。',
+    tags: ['职业定位', '岗位匹配', '求职计划'],
+    compatibility: ['Codex', 'Claude Code', 'Cursor', 'WorkBuddy', '豆包'],
+    preconditions: '目标岗位或方向 + 简历、经历摘要',
+    outputs: [
+      '职业定位或岗位匹配证据表',
+      '简历与求职材料改进建议',
+      '按周拆分的求职行动计划',
+      'offer 比较矩阵与核实问题',
+    ],
+    dependencies: [
+      '目标岗位或职业方向',
+      '简历、经历摘要或其他可核验材料',
+    ],
+    limitations: [
+      '建议基于用户提供的事实和岗位信息，不承诺录用结果。',
+      '最新招聘状态、薪资行情和劳动法规需要按时间、地区和来源重新核实。',
+    ],
+    installation: [
+      '从公开 GitHub 仓库获取完整目录。',
+      '安装时保留 SKILL.md、agents 和 references 等配套文件。',
+    ],
+    installPrompt:
+      '请从 https://github.com/Lntanohuang/career-guidance-skill.git 安装 career-guidance SKILL，保留仓库完整目录，并在安装后检查依赖、说明调用方式。',
+    minimalInput:
+      '使用 $career-guidance，目标是 Java 后端实习，请根据我的匿名简历和岗位描述列出匹配证据、关键缺口和 30 天行动计划。',
+    repository: 'https://github.com/Lntanohuang/career-guidance-skill',
+    repositoryLabel: 'Lntanohuang/career-guidance-skill',
+  },
+  {
     slug: 'training-data-qa',
     name: '训练样本构造与标注质检',
     identifier: 'training-data-qa',
@@ -207,7 +242,7 @@ export const SKILLS: Skill[] = [
   },
 ]
 
-/* 智能体矩阵：23 个智能体按 4 大分类归组。
+/* 智能体矩阵：24 个智能体按 4 大分类归组。
    skillSlug 指向已上线的 SKILL；未上线的标 audiences 供筛选使用，卡片置灰。 */
 export interface Agent {
   code: string
@@ -236,6 +271,7 @@ export const AGENTS: Agent[] = [
   { code: 'T13', name: '岗位智能匹配智能体', categoryId: 'career', audiences: ['student'] },
   { code: 'T14', name: '简历优化智能体', categoryId: 'career', audiences: ['student'] },
   { code: 'T15', name: 'AI 面试智能体', categoryId: 'career', audiences: ['teacher', 'student'], skillSlug: 'ai-interview' },
+  { code: 'T24', name: '就业指导智能体', categoryId: 'career', audiences: ['student'], skillSlug: 'career-guidance' },
   /* 数据治理与模型底座 */
   { code: 'T16', name: '数据资产治理与质量智能体', categoryId: 'data', audiences: ['data'] },
   { code: 'T17', name: 'JD 解析、聚类与统计智能体', categoryId: 'data', audiences: ['data'] },

@@ -34,6 +34,16 @@ export interface KnowledgeItem {
   default?: boolean
 }
 
+/** 附件上传位：声明后工作台/对话输入栏出现上传入口（后端 /api/upload） */
+export interface UploadField {
+  id: string
+  label: string
+  accept: string
+  help?: string
+  /** 内置演示附件（demoFiles.ts 的 key）：后端就绪后自动上传，可移除 */
+  demoFile?: string
+}
+
 export interface UseTaskConfig {
   slug: string
   eyebrow: string
@@ -44,6 +54,8 @@ export interface UseTaskConfig {
   /** 进入页面时自动带入 example 作为默认值（方便直接运行测试） */
   autoFillExample?: boolean
   knowledge: KnowledgeItem[]
+  /** 可选附件上传位（当前仅就业指导声明简历上传） */
+  uploads?: UploadField[]
 }
 
 export const USE_TASK_CONFIGS: UseTaskConfig[] = [
@@ -59,7 +71,7 @@ export const USE_TASK_CONFIGS: UseTaskConfig[] = [
         description: '先明确服务对象、研究地区与时间口径。',
         fields: [
           { id: 'audience', label: '服务对象', type: 'choice', required: true, options: ['院校管理者', '政府部门', '产业园区'] },
-          { id: 'region', label: '目标地区', type: 'text', required: true, placeholder: '例如：广东省佛山市' },
+          { id: 'region', label: '目标地区', type: 'text', required: true, placeholder: '例如：广东省（当前数据快照为省级切片）' },
           { id: 'baseline', label: '报告基期', type: 'select', required: true, options: ['2026 年', '2025 年', '2024 年', '2023 年'] },
           { id: 'purpose', label: '报告用途', type: 'select', required: true, options: ['专业建设与调整', '区域产教融合规划', '产业招商与人才研判', '项目申报与评审'] },
         ],
@@ -70,17 +82,18 @@ export const USE_TASK_CONFIGS: UseTaskConfig[] = [
         description: '可多选；SKILL 会按选择组织报告章节与证据清单。',
         fields: [
           { id: 'topics', label: '重点专题', type: 'multi', required: true, span: 'full', options: ['区域产业链', '岗位人才需求', '重点企业', '专业与课程', '就业去向', '招商建议'] },
-          { id: 'context', label: '已有材料或特别要求', type: 'textarea', span: 'full', placeholder: '例如：已有学校专业目录，希望重点比较新能源汽车与智能网联方向……', help: '可以先写资料名称，后续再补充附件。' },
+          { id: 'context', label: '已有材料或特别要求', type: 'textarea', span: 'full', placeholder: '例如：希望聚焦人工智能产业的岗位结构与薪酬分化，并对应本地产业布局……', help: '可以先写资料名称，后续再补充附件。' },
         ],
       },
     ],
     example: {
-      audience: '院校管理者',
-      region: '广东省佛山市',
-      baseline: '2024 年',
-      purpose: '专业建设与调整',
-      topics: ['区域产业链', '岗位人才需求', '专业与课程', '就业去向'],
-      context: '为某高职院校论证新能源汽车专业建设方向，结论需要区分事实、推断和建议。',
+      audience: '政府部门',
+      region: '广东省',
+      baseline: '2026 年',
+      purpose: '产业招商与人才研判',
+      topics: ['区域产业链', '岗位人才需求'],
+      context:
+        '基于技能内置的广东在招岗位数据快照（2026-06~07 导入批次，人工智能 AI 切片 v1）生成《广东省人工智能产业人才需求观察报告》；快照未覆盖的统计逐项登记缺口，不得外推或编造；结论区分事实、推断和建议。',
     },
     autoFillExample: true,
     knowledge: [
@@ -176,6 +189,58 @@ export const USE_TASK_CONFIGS: UseTaskConfig[] = [
       { id: 'interview-rubric', title: '结构化面试评价标准', meta: '评分维度与行为锚点 · 18 份', tag: '评价', default: true },
       { id: 'question-bank', title: '企业面试题样例库', meta: '匿名真题与追问 · 326 题', tag: '题库' },
       { id: 'resume-evidence', title: '简历证据识别规则', meta: '项目与经历核验规则 · 12 份', tag: '规则' },
+    ],
+  },
+  {
+    slug: 'career-guidance',
+    eyebrow: '就业指导工作台',
+    lead: '说明求职目标、自身条件和现实约束，SKILL 会先建立证据表，再给出有优先级的求职动作。',
+    output: '岗位匹配证据表、简历改进建议与求职行动计划',
+    sections: [
+      {
+        number: '01',
+        title: '设定求职目标',
+        description: '目标越具体，方向判断和证据表越贴近真实投递。',
+        fields: [
+          { id: 'goal', label: '目标岗位或方向', type: 'text', required: true, placeholder: '例如：Java 后端实习' },
+          { id: 'stage', label: '当前阶段', type: 'select', required: true, options: ['在校找实习', '应届校招', '社招转岗', '在职转型'] },
+          { id: 'task', label: '本次任务', type: 'choice', required: true, span: 'full', options: ['职业定位', '岗位匹配', '简历改进', '求职行动计划', 'Offer 评估'] },
+        ],
+      },
+      {
+        number: '02',
+        title: '补充条件与约束',
+        description: '约束决定建议的可行性，缺项会标注为假设。',
+        fields: [
+          { id: 'region', label: '目标地区', type: 'text', placeholder: '例如：广州（留空表示不限）' },
+          { id: 'time', label: '每周可投入时间', type: 'select', options: ['5 小时以内', '5–10 小时', '10–20 小时', '20 小时以上'] },
+          { id: 'context', label: '匿名经历摘要', type: 'textarea', required: true, span: 'full', placeholder: '简述教育背景、项目、实习与技能；请删除姓名、电话等敏感信息。' },
+        ],
+      },
+    ],
+    example: {
+      goal: 'Java 后端实习',
+      stage: '在校找实习',
+      task: '岗位匹配',
+      region: '广州',
+      time: '5–10 小时',
+      context: '计算机相关专业，完成过 Spring Boot 校园二手交易平台项目，负责接口设计与 MySQL 建模；暂无实习经历。',
+    },
+    autoFillExample: true,
+    uploads: [
+      {
+        id: 'resume',
+        label: '上传简历',
+        accept: '.pdf,.docx,.doc,.md,.txt',
+        help: 'PDF / Word / Markdown / 纯文本，单个 ≤6MB；请先删除身份证号、住址等敏感信息。已为你附带测试简历，可移除后换自己的。',
+        demoFile: 'resume',
+      },
+    ],
+    knowledge: [
+      { id: 'industry-data', title: '产业与就业数据文档', meta: '就业大盘、薪酬行情、职教政策 · 内置快照', tag: '产业', default: true },
+      { id: 'job-snapshot', title: '高职岗位库切片文档', meta: '岗位量级与分布口径 · 内置快照', tag: '岗位', default: true },
+      { id: 'output-schemas', title: '匹配表与行动计划模板', meta: '输出结构模板 · 3 份', tag: '模板' },
+      { id: 'evidence-writing', title: '经历成果化改写指南', meta: '证据表达规则 · 1 份', tag: '写作' },
     ],
   },
   {

@@ -170,6 +170,17 @@ npm run build   # vue-tsc 类型检查 + vite build，产物在 web/dist/
 
 ---
 
+更新：2026-09-21 — 在线运行页新增表单/对话双模式（同一技能共用会话与附件）与简历附件上传：`POST /api/upload` 落会话沙箱 `server/workspace/<sessionId>/uploads/`，`/api/chat` 支持 attachments（md/txt 内联、其余指示引擎读工作目录，路径校验防穿越，运行记录留附件名）；career-guidance 注册进服务端 SKILL_PROMPTS 并按已安装技能真实加载。新增环境标识 `PLAZA_ENV`（web/.env，test|prod，前后端共用：后端直接读、前端经 vite envPrefix 暴露）：test 时工作台自动带入示例并附带测试简历（`test-data/测试简历-Java后端实习.md`，一键运行测试），prod 不预填。
 更新：2026-09-20 — 技能组织模式改为父子仓库：每个技能独立仓库为父，广场以 submodule 挂载 `.agents/skills/`；industry-education-report 更新为 02 模板+05 快照离线版，foru-web-ui 迁入新仓库 foru-web-ui-skill。
 更新：2026-09-18 — 双引擎落地：AgentRunner 抽象 + PiRunner（pi --mode rpc · DeepSeek，默认）+ ZcodeRunner 保留；前端可切换引擎。
 更新：2026-09-17 — README 重写，对齐 zcode 无头后端 + 运行记录页的当前架构。
+
+## 开发任务 Issue 流程
+
+本仓库要求每次开发先把总结后的计划写入 GitHub issue，再开始提交代码：
+
+```bash
+scripts/start-task.sh "计划标题" /path/to/plan.md
+```
+
+该命令会创建并绑定活动 issue。提交和推送没有活动 issue 时会被 hook 阻止；提交信息会带上 `Task-Issue: #编号`，GitHub Actions 在 push 成功到达仓库后自动关闭绑定 issue。首次检出仓库或更换环境后执行 `scripts/install-task-hooks.sh` 启用本地 hook。创建 issue 依赖已认证的 GitHub CLI（`gh auth login -h github.com`）。

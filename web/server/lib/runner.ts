@@ -12,7 +12,7 @@
    ============================================================ */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import type { UsageSummary } from './traceExport.ts'
+import type { AgentEnvInfo, UsageSummary } from './traceExport.ts'
 
 export type EngineName = 'zcode' | 'pi'
 
@@ -22,6 +22,7 @@ export type TapFn = (dir: 'out' | 'in', msg: any) => void
 /** 归一后的引擎事件；index.ts 统一映射成 SSE，前端协议不感知引擎 */
 export type RunnerEvent =
   | { kind: 'text_delta'; delta: string }
+  | { kind: 'status'; phase: 'thinking' | 'tool' | 'text'; chars?: number; tool?: string }
   | { kind: 'usage'; usage?: UsageSummary; content?: string }
   | { kind: 'terminal'; response: string; resultType: string; usage?: UsageSummary }
   | { kind: 'error'; message: string }
@@ -88,6 +89,10 @@ export abstract class AgentRunner {
   abstract readonly name: EngineName
   /** 健康描述（/api/health 的 model 字段与启动日志） */
   abstract describe(): string
+  /** 运行环境快照（run 记录落盘用）；子类补充版本/思考档位等引擎特有字段 */
+  envInfo(): Partial<AgentEnvInfo> {
+    return { model: this.describe() }
+  }
 
   private nextId = 1
   protected pending = new Map<

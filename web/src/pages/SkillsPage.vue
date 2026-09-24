@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { AGENTS, AUDIENCES, CATEGORIES, SKILLS, bySlug, type Skill } from '../data/skills'
 import SkillCard from '../components/SkillCard.vue'
 
-/* 列表 = 23 个智能体：已上线的渲染真实 SKILL 卡，未上线的置灰占位 */
+/* 列表 = 24 个智能体：已上线的渲染真实 SKILL 卡，未上线的置灰占位 */
 interface Entry {
   kind: 'skill' | 'ghost'
   code: string

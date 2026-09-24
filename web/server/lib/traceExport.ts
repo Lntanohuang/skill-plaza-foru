@@ -22,6 +22,22 @@ export interface UsageSummary {
   outputTokens?: number
   cacheReadTokens?: number
   totalTokens?: number
+  /** 本次运行花费（美元）；pi 的 usage 事件自带 cost.total，按轮累计 */
+  costUsd?: number
+}
+
+/** Agent 与环境快照（随运行落盘：升级 CLI/换模型不影响旧记录的复现对比） */
+export interface AgentEnvInfo {
+  /** Agent CLI 版本（--version / package.json 探测；失败省略，界面显示 —） */
+  agentVersion?: string
+  /** 模型标识（pi：provider/modelId；zcode：服务端描述串） */
+  model?: string
+  /** 思考档位（pi 专属） */
+  thinking?: string
+  /** 服务端 Node 版本（process.version） */
+  node?: string
+  /** 操作系统（平台 + 架构，如 darwin arm64） */
+  os?: string
 }
 
 export type RunOutcome = 'success' | 'timeout' | 'error' | 'aborted' | 'historical'
@@ -40,11 +56,16 @@ export interface RunRecord {
   durationMs: number
   usage?: UsageSummary
   toolCallCount?: number
+  /** 本次运行随消息上传的附件文件名（文件在会话沙箱 uploads/ 下） */
+  attachments?: string[]
+  /** Agent 与环境快照（版本/模型/系统等；历史记录缺省） */
+  agentEnv?: AgentEnvInfo
   /** MVP 直出模式的报告解析摘要（pi 专属；全文见 files.report） */
   report?: {
-    structurePass: boolean
-    missingSections: string[]
-    stats: {
+    /** industry-education-report 章节校验（reportParse） */
+    structurePass?: boolean
+    missingSections?: string[]
+    stats?: {
       sections: number
       facts: number
       inferences: number
@@ -53,15 +74,31 @@ export interface RunRecord {
       sources: number
       chars: number
     }
+    /** report-meta 侧车校验摘要（SIDECAR_SKILLS；见 lib/reportMeta.ts） */
+    meta?: {
+      pass: boolean
+      errors: string[]
+      counts: {
+        sources: number
+        metrics: number
+        facts: number
+        inferences: number
+        recommendations: number
+        charts: number
+      }
+      /** 已通过侧车校验的图表规格，供运行详情页渲染。 */
+      charts?: Array<Record<string, unknown>>
+    }
   }
   files: { events?: string; trace?: string; report?: string }
 }
 
-export function newRunId(): string {
+/** 时间可读 id：YYYYMMDD-HHMMSS-xxxx；prefix 用于区分用途（runId 无前缀，会话 id 传 'sess-'） */
+export function newRunId(prefix = ''): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   const rand = Math.random().toString(36).slice(2, 6)
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${rand}`
+  return `${prefix}${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${rand}`
 }
 
 export function appendIndex(rec: RunRecord): void {

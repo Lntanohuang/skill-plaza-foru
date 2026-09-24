@@ -1,0 +1,4 @@
+interface:
+  display_name: "仓库协作初始化"
+  short_description: "初始化开发手记、任务 Issue hooks 和项目级协作约定"
+  default_prompt: "请在当前 Git 仓库初始化开发手记 Skill、GitHub Issue 任务生命周期 hooks、push 后关闭 Issue 的 Actions，以及项目级 AGENTS.md 协作约定。先检查已有配置，不要覆盖。"

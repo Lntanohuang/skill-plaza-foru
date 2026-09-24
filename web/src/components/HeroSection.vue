@@ -98,7 +98,7 @@ function catName(id: string) { return catOf(id).name }
         <br aria-hidden="true">
         <span aria-hidden="true"><span v-for="(ch, i) in chars2" :key="'b' + i" class="hero-char" :style="{ animationDelay: `${line2Start + i * 26}ms` }">{{ nb(ch) }}</span></span><span class="hero-emoji" :style="{ animationDelay: `${emojiDelay}ms` }" aria-hidden="true">🧩</span>
       </h1>
-      <p class="hero-sub">{{ SKILLS.length }} 个免费公开的 SKILL，帮你搞定课程答疑、课堂练习、模拟面试和数据实践。装进你的 AI 工具，随装随用。</p>
+      <p class="hero-sub">{{ SKILLS.length }} 个免费公开的 SKILL，帮你搞定课程答疑、课堂练习、模拟面试、就业指导和数据实践。装进你的 AI 工具，随装随用。</p>
       <div class="hero-actions">
         <RouterLink class="btn btn-primary" to="/use">在线运行 SKILL<Icon name="arrow" :size="15" /></RouterLink>
         <RouterLink class="btn btn-quiet" to="/skills">浏览全部 SKILL</RouterLink>

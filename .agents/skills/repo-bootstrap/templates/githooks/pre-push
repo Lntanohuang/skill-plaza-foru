@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root=$(git rev-parse --show-toplevel)
+issue_file="$repo_root/.git/task-issue"
+if [[ ! -s "$issue_file" ]]; then
+  echo "推送前需要活动 GitHub issue。请先执行: scripts/start-task.sh '<计划标题>' <计划文件>" >&2
+  exit 1
+fi
+issue_number=$(tr -d '[:space:]' < "$issue_file")
+[[ "$issue_number" =~ ^[0-9]+$ ]] || { echo "活动 issue 编号无效: $issue_number" >&2; exit 1; }

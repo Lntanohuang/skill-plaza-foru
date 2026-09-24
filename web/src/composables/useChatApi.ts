@@ -35,6 +35,7 @@ export interface HealthResult {
 /* SSE 事件（与 server/index.ts 的输出一一对应） */
 export type ChatEvent =
   | { type: 'session'; sessionId: string }
+  | { type: 'status'; phase: 'thinking' | 'tool' | 'text'; chars?: number; tool?: string }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Record<string, number | string> }
   | { type: 'done'; content: string; resultType?: string }
@@ -54,6 +55,13 @@ export async function checkHealth(): Promise<HealthResult> {
   }
 }
 
+export interface ChatAttachment {
+  /** 展示名（原始文件名） */
+  name: string
+  /** 相对会话沙箱目录的路径（由 /api/upload 返回，如 uploads/resume.pdf） */
+  path: string
+}
+
 export interface StreamChatOptions {
   skill: string
   messages: ChatMessage[]
@@ -61,17 +69,19 @@ export interface StreamChatOptions {
   sessionId?: string
   /** 执行引擎；缺省用后端默认引擎（AGENT_RUNNER） */
   engine?: EngineId
+  /** 本次消息随带的附件（已上传到会话沙箱） */
+  attachments?: ChatAttachment[]
   onEvent: (event: ChatEvent) => void
   signal?: AbortSignal
 }
 
 /** 流式对话：消费 /api/chat 的 SSE，逐事件回调。 */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { skill, messages, sessionId, engine, onEvent, signal } = options
+  const { skill, messages, sessionId, engine, attachments, onEvent, signal } = options
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ skill, messages, sessionId, engine }),
+    body: JSON.stringify({ skill, messages, sessionId, engine, attachments }),
     signal,
   })
   if (!response.ok || !response.body) {

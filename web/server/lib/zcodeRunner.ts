@@ -9,7 +9,9 @@
    ============================================================ */
 
 import { AgentRunner, JsonlChannel, type EngineName } from './runner.ts'
+import type { AgentEnvInfo } from './traceExport.ts'
 import type { ZcodeCli } from './zcodeCli.ts'
+import { zcodeCliVersion } from './agentEnv.ts'
 import { exportSessionTrace } from './traceExport.ts'
 import { SKILL_PROMPTS, INSTALLED_SKILLS } from './skills.ts'
 
@@ -25,6 +27,11 @@ export class ZcodeRunner extends AgentRunner {
 
   describe(): string {
     return 'glm-5.3 (GLM Coding Plan)'
+  }
+
+  /** 运行环境快照：zcode 侧模型为服务端标识串，无思考档位与花费数据 */
+  envInfo(): Partial<AgentEnvInfo> {
+    return { model: this.describe(), agentVersion: zcodeCliVersion(this.cli) }
   }
 
   /* 全部会话共享一个 app-server 进程（缓存友好） */
@@ -56,6 +63,12 @@ export class ZcodeRunner extends AgentRunner {
       const p = msg.params?.payload
       if (p?.kind === 'text_delta') {
         if (p.delta) this.emit(sid, { kind: 'text_delta', delta: p.delta })
+      } else if (p?.error) {
+        // 会话级错误（如模型未配置）：必须上抛，否则前端只会看到心跳直到超时
+        this.emit(sid, {
+          kind: 'error',
+          message: `zcode 会话错误：${p.error.message || p.error.type || '未知错误'}`,
+        })
       } else if (p?.response !== undefined && p?.resultType !== undefined) {
         // 终止事件：{response, resultType, tokenCount, usage, ...}
         this.emit(sid, {

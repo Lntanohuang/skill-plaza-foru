@@ -33,6 +33,11 @@ const DEMOS: Demo[] = [
     reply: `【演示输出 · AI 面试练习】\n\n■ 面试报告摘要\n· 覆盖题目 6 道：项目深挖 2 / 情景应对 2 / 岗位认知 2\n· 每道题支持追问与重答，回答均保留原话引用\n\n■ 能力地图\n· 表达结构：良好｜岗位认知：待加强｜项目量化：待补充\n\n■ 待验证项\n· "用户增长 30%" 缺少口径说明，已标记为待核实\n\n——以上为演示摘要。完整逐题问答与重练请在本地 AI 工具中运行获得。`,
   },
   {
+    slug: 'career-guidance',
+    question: '判断这个 Java 后端实习岗位我合不合适，再给一份行动计划',
+    reply: `【演示输出 · 就业指导】\n\n■ 岗位匹配证据表\n· 已证明：Spring Boot 接口开发（校园项目可佐证）\n· 部分证明：MySQL 数据建模（有实践、缺规模）\n· 关键缺口：分布式与中间件经验（岗位标注"优先"）\n\n■ 30 天行动建议\n· 第 1 周：补消息队列入门，产出学习笔记\n· 第 2–3 周：项目补并发场景改造，重写简历项目段\n· 第 4 周：按每周 5 家投递并复盘\n\n■ 待核实\n· 岗位"转正后 8–12K"的口径与绩效占比\n\n——以上为演示摘要。完整证据表与周计划请在本地 AI 工具中运行获得。`,
+  },
+  {
     slug: 'training-data-qa',
     question: '构造一批客服领域的训练样本并做质检',
     reply: `【演示输出 · 训练样本构造与标注质检】\n\n■ 样本构造\n· 四类划分：指令跟随 / 事实问答 / 拒答 / 边界探索\n· 本批生成 200 条候选样本，机器质检通过率 86%\n\n■ 质检说明\n· 候选结果 ≠ 专家确认，全部样本待人工抽检\n· 全程保留来源与谱系，可追溯\n\n——以上为演示摘要。完整样本集与质检台账请在本地 AI 工具中运行获得。`,
@@ -43,6 +48,8 @@ const FALLBACK = `这个问题需要在本地 AI 工具中调用对应的 SKILL 
 
 const textarea = ref('')
 const sending = ref(false)
+/* 真实运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文 */
+const runStatus = ref('')
 const messages = ref<Msg[]>([])
 const activeId = ref<number | null>(null)
 const conversations = ref<Conv[]>([])
@@ -240,6 +247,10 @@ async function runReal(text: string, slug: string, skill: Skill | undefined) {
       onEvent: event => {
         if (event.type === 'session') {
           convSessions.set(sessionKey, event.sessionId)
+        } else if (event.type === 'status') {
+          if (event.phase === 'thinking') runStatus.value = `思考中 · ${event.chars ?? 0} 字`
+          else if (event.phase === 'tool') runStatus.value = `调用工具 ${event.tool ?? ''}`
+          else runStatus.value = '正在生成结果…'
         } else if (event.type === 'text') {
           msg.text += event.delta
           scrollTop()
@@ -284,6 +295,7 @@ function send(raw?: string) {
   messages.value.push({ role: 'user', text, done: true })
   textarea.value = ''
   sending.value = true
+  runStatus.value = ''
 
   const demo = matchDemo(text)
   const skill = demo ? bySlug.get(demo.slug) : undefined
@@ -374,7 +386,10 @@ onBeforeUnmount(() => {
               <span class="exp-ai-badge" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
                 {{ msg.skill ? skillCat(msg.skill.slug) : (msg.real ? '在线' : '演示') }}
               </span>
-              <span v-if="!msg.done" class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
+              <template v-if="!msg.done">
+                <span class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
+                <span v-if="runStatus" class="exp-run-status">{{ runStatus }}</span>
+              </template>
               <span v-else class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
             </div>
             <pre class="exp-ai-text">{{ msg.text }}<span v-if="!msg.done" class="exp-caret">▌</span></pre>

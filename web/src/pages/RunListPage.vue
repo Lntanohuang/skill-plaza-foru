@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import Icon from '../components/Icon.vue'
 import { bySlug } from '../data/skills'
-import { OUTCOME_LABEL, type RunOutcome } from '../data/runsMock'
+import { OUTCOME_LABEL, type RunListItem, type RunOutcome } from '../data/runsMock'
 import { fetchRuns } from '../api/runsApi'
 
 /* 运行记录：每次在线运行的 outcome / 用量 / 工具调用一览。
@@ -68,6 +68,13 @@ function fmtTime(ts: string): string {
 function outcomeRuns(o: RunOutcome): number {
   return runs.value.filter(r => r.outcome === o).length
 }
+
+/* 引擎徽标悬停提示：版本 · 模型 · 思考档位（无环境快照则不提示） */
+function engineTitle(run: RunListItem): string | undefined {
+  const env = run.agentEnv
+  if (!env) return undefined
+  return [env.agentVersion, env.model, env.thinking].filter(Boolean).join(' · ') || undefined
+}
 </script>
 
 <template>
@@ -117,7 +124,7 @@ function outcomeRuns(o: RunOutcome): number {
           v-for="run in filtered" :key="run.runId" class="runs-row" role="row"
           :to="{ name: 'runDetail', params: { runId: run.runId } }">
           <span class="runs-cell-time">{{ fmtTime(run.ts) }}</span>
-          <span>{{ skillName(run.skill) }}<em v-if="run.engine" class="runs-engine" :class="`is-${run.engine}`">{{ run.engine }}</em></span>
+          <span>{{ skillName(run.skill) }}<em v-if="run.engine" class="runs-engine" :class="`is-${run.engine}`" :title="engineTitle(run)">{{ run.engine }}</em></span>
           <span class="runs-cell-task" :title="run.promptDigest">{{ run.promptDigest }}</span>
           <span><em class="runs-outcome" :class="`is-${run.outcome}`">{{ OUTCOME_LABEL[run.outcome] }}</em></span>
           <span>{{ fmtDuration(run.durationMs) }}</span>
