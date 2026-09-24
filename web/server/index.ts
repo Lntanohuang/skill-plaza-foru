@@ -329,7 +329,8 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
 /** GET /api/reports/:runId：返回就业指导 Agent 直接生成的独立 HTML 报告。 */
 function handleHtmlReport(_req: any, res: any, runId: string) {
   const record = readIndex().find(r => r.runId === runId)
-  const file = record?.files.html
+  /* done 事件先于异步 appendIndex 到达，直接按 runId 回退查找可避免用户点击瞬间竞态。 */
+  const file = record?.files.html ?? traceFilePath(runId, 'html')
   if (!file || !existsSync(file)) {
     sendJson(res, 404, { error: 'HTML 报告不存在。' })
     return
