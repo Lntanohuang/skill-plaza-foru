@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * 岗位市场白名单查询工具：Agent 只能选择 queryId 并填写 JSON 参数。
- * 原始 SQL 不从命令行进入；并行批次默认最多 3 个轻量查询。
+ * 原始 SQL 不从命令行进入；并行批次受控，避免重查询同时压垮岗位库。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -13,9 +13,10 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const QUERY_DIR = join(HERE, 'career-market-queries')
 const QUERY_IDS = new Set(['cohort-summary', 'education-distribution', 'experience-distribution', 'salary-distribution', 'title-top', 'source-distribution'])
 const CFG_KEYS = ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE']
-const DEFAULT_TIMEOUT_MS = 30_000
-const MAX_TIMEOUT_MS = 60_000
-const MAX_PARALLEL = 3
+const DEFAULT_TIMEOUT_MS = 120_000
+const MAX_TIMEOUT_MS = 180_000
+const MAX_PARALLEL = 2
+const CLIENT_PROBE_TIMEOUT_MS = 5_000
 
 function usage() {
   return `用法：\n  node scripts/career-market-query.mjs --query education-distribution --params '{"city":"广州市","keywords":["Java"]}'\n  node scripts/career-market-query.mjs --parallel '[{"query":"education-distribution","params":{}}]'\n\n允许 query：${[...QUERY_IDS].join(', ')}\n参数：city、keywords、roleTerms、internship、limit、timeoutMs`
@@ -116,29 +117,36 @@ function spawnMysql(bin, sql, cfg, timeoutMs) {
   })
 }
 
-/* mysql 9.x 客户端缺 mysql_native_password 插件时回落到本机 8.x 客户端（见 mysql-client.mjs） */
-async function execute(sql, cfg, timeoutMs, maxRows) {
+/* 运行开始时只探测一次客户端，避免每条查询都重复触发 9.x 认证失败再回落。 */
+async function selectMysqlBin(cfg, timeoutMs) {
   const bins = mysqlBinCandidates()
   let lastError
   for (const bin of bins) {
     try {
-      const { stdout, elapsedMs } = await spawnMysql(bin, sql, cfg, timeoutMs)
-      return { ...parseTabular(stdout, maxRows), elapsedMs, mysqlBin: bin }
+      await spawnMysql(bin, 'SELECT 1 AS mysql_client_probe', cfg, Math.min(timeoutMs, CLIENT_PROBE_TIMEOUT_MS))
+      return bin
     } catch (error) {
       lastError = error
-      if (!isAuthPluginError(error.message) || bin === bins[bins.length - 1]) throw error
+      const retryable = isAuthPluginError(error.message) || error.code === 'ENOENT'
+      if (!retryable || bin === bins[bins.length - 1]) throw error
     }
   }
   throw lastError
 }
 
-async function runOne(item, cfg) {
+async function execute(sql, cfg, timeoutMs, maxRows, mysqlBin) {
+  const bin = mysqlBin || await selectMysqlBin(cfg, timeoutMs)
+  const { stdout, elapsedMs } = await spawnMysql(bin, sql, cfg, timeoutMs)
+  return { ...parseTabular(stdout, maxRows), elapsedMs, mysqlBin: bin }
+}
+
+async function runOne(item, cfg, mysqlBin) {
   const queryId = item.query
   const params = validateParams(item.params)
   const sql = buildSql(queryId, params)
   const started = Date.now()
   try {
-    const result = addRatios(queryId, await execute(sql, cfg, params.timeoutMs, params.limit))
+    const result = addRatios(queryId, await execute(sql, cfg, params.timeoutMs, params.limit, mysqlBin))
     return { ok: true, queryId, params, ...result, snapshotDate: new Date().toISOString().slice(0, 10) }
   } catch (error) {
     return { ok: false, queryId, params, elapsedMs: Date.now() - started, error: String(error.message || error) }
@@ -149,15 +157,16 @@ async function runParallel(items, cfg) {
   if (!Array.isArray(items) || items.length < 1 || items.length > 8) throw new Error('parallel 必须包含 1-8 个查询')
   const results = Array(items.length)
   const started = Date.now()
+  const mysqlBin = await selectMysqlBin(cfg, Math.max(...items.map(item => validateParams(item.params).timeoutMs)))
   let cursor = 0
   async function worker() {
     while (cursor < items.length) {
       const index = cursor++
-      results[index] = await runOne(items[index], cfg)
+      results[index] = await runOne(items[index], cfg, mysqlBin)
     }
   }
   await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, items.length) }, worker))
-  return { ok: results.every(r => r.ok), parallel: true, results, failed: results.filter(r => !r.ok).map(r => r.queryId), elapsedMs: Date.now() - started }
+  return { ok: results.every(r => r.ok), parallel: true, maxParallel: MAX_PARALLEL, mysqlBin, results, failed: results.filter(r => !r.ok).map(r => r.queryId), elapsedMs: Date.now() - started }
 }
 
 async function main() {

@@ -52,3 +52,8 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 014 | 流式 Markdown 渲染批处理 | 已实现（浏览器长报告体验待回归） | [014-stream-render-batching.md](references/014-stream-render-batching.md) |
 | 015 | 就业指导 HTML 报告与内联 SVG 绘图 Skill | 已实现（真实 HTML Agent 输出待回归） | [015-career-guidance-html-report.md](references/015-career-guidance-html-report.md) |
 | 016 | 岗位库查询客户端的 mysql_native_password 回落 | 已实现（2026-09-28 实测） | [016-mysql-client-native-password-fallback.md](references/016-mysql-client-native-password-fallback.md) |
+
+| 017 | 岗位统计查询 EXPLAIN 实测 | 已完成计划检查（优化待验证） | [017-career-query-explain.md](references/017-career-query-explain.md) |
+| 018 | 就业指导比例展示与来源文案 | 已实现（真实报告待回归） | [018-career-proportion-source-display.md](references/018-career-proportion-source-display.md) |
+| 019 | 岗位名 FULLTEXT 替代 LIKE 试验 | 试验完成（不能直接替换） | [019-fulltext-match-trial.md](references/019-fulltext-match-trial.md) |
+| 020 | 岗位查询客户端预探测与受控并行 | 已实现（真实岗位库验证通过） | [020-career-query-client-probe-parallel.md](references/020-career-query-client-probe-parallel.md) |

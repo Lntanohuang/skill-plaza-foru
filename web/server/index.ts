@@ -146,7 +146,7 @@ function sandboxAgentsMd(): string {
       `用 bash 执行白名单工具：\`node "${CAREER_MARKET_QUERY_TOOL}" --query <queryId> --params '<JSON>'\`。`,
       'Agent 只能选择 queryId 并填写 city、keywords、roleTerms、internship、limit、timeoutMs；不得传原始 SQL。',
       '可用 queryId：cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution。',
-      `多个独立查询使用 \`node "${CAREER_MARKET_QUERY_TOOL}" --parallel '<JSON数组>'\`，工具内部最多并发 3 个查询；单查询默认 30 秒、最长 60 秒。`,
+      `多个独立查询使用 \`node "${CAREER_MARKET_QUERY_TOOL}" --parallel '<JSON数组>'\`，工具内部最多并发 2 个查询；单查询默认 120 秒、最长 180 秒。工具会在批次开始时选择兼容的 MySQL 客户端并复用。`,
       '涉及具体城市、岗位、实习/应届或学历门槛的问题，必须优先调用该工具；查询结果用于 report-meta 的 sources/metrics/charts，查询失败时把原因写入开发侧 gaps/risks。',
     )
   }
