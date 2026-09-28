@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import { isAuthPluginError, mysqlBinCandidates } from './mysql-client.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const QUERY_DIR = join(HERE, 'career-market-queries')
@@ -93,9 +94,9 @@ function addRatios(queryId, result) {
   return { ...result, rows: result.rows.map(row => ({ ...row, ratio: Number((Number(row.count || 0) / total * 100).toFixed(2)) })) }
 }
 
-function execute(sql, cfg, timeoutMs, maxRows) {
+function spawnMysql(bin, sql, cfg, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.env.MYSQL_BIN || 'mysql', [
+    const child = spawn(bin, [
       '-h', cfg.MYSQL_HOST, '-P', String(cfg.MYSQL_PORT || 3306), '-u', cfg.MYSQL_USER,
       '--default-character-set=utf8mb4', '-D', cfg.MYSQL_DATABASE, '-B',
       '--execute', `SET NAMES utf8mb4 COLLATE utf8mb4_general_ci; SET SESSION max_execution_time=${timeoutMs}; ${sql}`,
@@ -110,9 +111,25 @@ function execute(sql, cfg, timeoutMs, maxRows) {
       clearTimeout(timer)
       const elapsedMs = Date.now() - started
       if (code !== 0) return reject(new Error(stderr.trim() || `mysql 退出码 ${code}`))
-      resolve({ ...parseTabular(stdout, maxRows), elapsedMs })
+      resolve({ stdout, elapsedMs })
     })
   })
+}
+
+/* mysql 9.x 客户端缺 mysql_native_password 插件时回落到本机 8.x 客户端（见 mysql-client.mjs） */
+async function execute(sql, cfg, timeoutMs, maxRows) {
+  const bins = mysqlBinCandidates()
+  let lastError
+  for (const bin of bins) {
+    try {
+      const { stdout, elapsedMs } = await spawnMysql(bin, sql, cfg, timeoutMs)
+      return { ...parseTabular(stdout, maxRows), elapsedMs, mysqlBin: bin }
+    } catch (error) {
+      lastError = error
+      if (!isAuthPluginError(error.message) || bin === bins[bins.length - 1]) throw error
+    }
+  }
+  throw lastError
 }
 
 async function runOne(item, cfg) {

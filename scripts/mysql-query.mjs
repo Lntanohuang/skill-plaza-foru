@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isAuthPluginError, mysqlBinCandidates } from './mysql-client.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -154,25 +155,36 @@ function main() {
   }
 
   const prelude = `SET NAMES utf8mb4 COLLATE utf8mb4_general_ci; SET SESSION max_execution_time=${opt.timeoutMs};`
+  const args = (bin) => [
+    '-h', cfg.MYSQL_HOST,
+    '-P', String(cfg.MYSQL_PORT || 3306),
+    '-u', cfg.MYSQL_USER,
+    '--default-character-set=utf8mb4',
+    '-D', cfg.MYSQL_DATABASE,
+    '-B',
+    '--execute', `${prelude} ${sql}`,
+  ]
+  const bins = mysqlBinCandidates(opt.mysqlBin)
   const started = Date.now()
-  const r = spawnSync(
-    opt.mysqlBin,
-    [
-      '-h', cfg.MYSQL_HOST,
-      '-P', String(cfg.MYSQL_PORT || 3306),
-      '-u', cfg.MYSQL_USER,
-      '--default-character-set=utf8mb4',
-      '-D', cfg.MYSQL_DATABASE,
-      '-B',
-      '--execute', `${prelude} ${sql}`,
-    ],
-    {
-      encoding: 'utf8',
-      timeout: opt.timeoutMs + 30_000,
-      maxBuffer: 32 * 1024 * 1024,
-      env: { ...process.env, MYSQL_PWD: cfg.MYSQL_PASSWORD },
-    },
-  )
+  let r
+  let usedBin = bins[0]
+  for (let i = 0; i < bins.length; i++) {
+    usedBin = bins[i]
+    r = spawnSync(
+      usedBin,
+      args(usedBin),
+      {
+        encoding: 'utf8',
+        timeout: opt.timeoutMs + 30_000,
+        maxBuffer: 32 * 1024 * 1024,
+        env: { ...process.env, MYSQL_PWD: cfg.MYSQL_PASSWORD },
+      },
+    )
+    const failure = r.error ? String(r.error.message || r.error) : String(r.stderr || '')
+    if (r.error && r.error.code === 'ENOENT') continue
+    if (!r.error && r.status === 0) break
+    if (!isAuthPluginError(failure) || i === bins.length - 1) break
+  }
   const elapsedMs = Date.now() - started
 
   if (r.error) {
@@ -185,7 +197,10 @@ function main() {
     fail(`mysql 执行失败：${hint}`)
   }
   if (r.signal) fail(`mysql 客户端被信号 ${r.signal} 终止（疑似超时 ${opt.timeoutMs + 30_000}ms）`)
-  if (r.status !== 0) fail(String(r.stderr || r.stdout || '').trim() || `mysql 退出码 ${r.status}`)
+  if (r.status !== 0) {
+    const detail = String(r.stderr || r.stdout || '').trim() || `mysql 退出码 ${r.status}`
+    fail(isAuthPluginError(detail) ? `${detail}（当前客户端 ${usedBin} 缺 mysql_native_password 插件，用 --mysql-bin 指定 8.x 客户端）` : detail)
+  }
 
   /* SET 前置语句不产生输出行；首行即结果列头 */
   const lines = r.stdout.split('\n').filter((l) => l !== '')
