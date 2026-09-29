@@ -12,7 +12,13 @@
    ============================================================ */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import type { AgentEnvInfo, UsageSummary } from './traceExport.ts'
+import type {
+  AgentEnvInfo,
+  ModelContextInfo,
+  TraceExportOptions,
+  UsageRound,
+  UsageSummary,
+} from './traceExport.ts'
 
 export type EngineName = 'zcode' | 'pi'
 
@@ -23,8 +29,21 @@ export type TapFn = (dir: 'out' | 'in', msg: any) => void
 export type RunnerEvent =
   | { kind: 'text_delta'; delta: string }
   | { kind: 'status'; phase: 'thinking' | 'tool' | 'text'; chars?: number; tool?: string }
-  | { kind: 'usage'; usage?: UsageSummary; content?: string }
-  | { kind: 'terminal'; response: string; resultType: string; usage?: UsageSummary }
+  | {
+      kind: 'usage'
+      usage?: UsageSummary
+      content?: string
+      round?: UsageRound
+      context?: ModelContextInfo
+    }
+  | {
+      kind: 'terminal'
+      response: string
+      resultType: string
+      usage?: UsageSummary
+      rounds?: UsageRound[]
+      context?: ModelContextInfo
+    }
   | { kind: 'error'; message: string }
 
 /** 单个 JSONL over stdio 的子进程通道 */
@@ -122,13 +141,29 @@ export abstract class AgentRunner {
 
   abstract createSession(workspaceDir: string, opts?: { skill?: string }): Promise<string>
   abstract send(sessionId: string, content: string): Promise<void>
+  /** 新一轮运行开始；无状态引擎可保持默认空操作。 */
+  beginTurn(_sessionId: string): void {}
   /** 停止当前执行（超时/断连用）；尽力而为，不抛错 */
   abstract stop(sessionId: string): void
   /** 会话终态 trace 导出（写入 outFile，返回 toolCallCount；导不出返回 null） */
   abstract exportTrace(
     sessionId: string,
     outFile: string,
+    options?: TraceExportOptions,
   ): Promise<{ toolCallCount: number } | null>
+  /** 可在 runStart 阶段取得的模型标识；上下文窗口未知时必须明确返回 unavailable。 */
+  modelInfo(): ModelContextInfo {
+    return {
+      model: this.envInfo().model ?? null,
+      provider: null,
+      contextWindowTokens: null,
+      contextWindowSource: 'provider_metadata_unavailable',
+    }
+  }
+  /** 会话创建后可返回 provider/model 配置中的上下文窗口。 */
+  modelInfoForSession(_sessionId: string): ModelContextInfo {
+    return this.modelInfo()
+  }
   /** 首轮提示词拼装（各引擎的技能接法不同） */
   abstract buildPrompt(skill: string, messages: any[], isFirstTurn: boolean): string
   /** 会话资源回收（pi：杀子进程）；无持久资源者默认空操作 */

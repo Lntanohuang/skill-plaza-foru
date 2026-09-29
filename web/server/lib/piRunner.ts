@@ -12,10 +12,17 @@ import { randomUUID } from 'node:crypto'
 import { accessSync, constants, writeFileSync } from 'node:fs'
 import { join, delimiter } from 'node:path'
 import { AgentRunner, JsonlChannel, type EngineName } from './runner.ts'
-import type { SessionTrace, UsageSummary } from './traceExport.ts'
-import type { AgentEnvInfo } from './traceExport.ts'
+import type {
+  AgentEnvInfo,
+  ModelContextInfo,
+  SessionTrace,
+  TraceExportOptions,
+  UsageRound,
+  UsageSummary,
+} from './traceExport.ts'
+import { tokenUsageFrom } from './traceExport.ts'
 import { piCliVersion } from './agentEnv.ts'
-import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, skillDir } from './skills.ts'
+import { CAREER_GUIDANCE_FILE_PROTOCOL, SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, skillDir } from './skills.ts'
 import { sidecarInstruction } from './reportMeta.ts'
 import { loadLocalEnv } from './env.ts'
 
@@ -66,14 +73,27 @@ export function piThinkingLevel(): string {
 }
 
 /* pi usage → 统一 UsageSummary（cost.total 为该次调用的美元花费） */
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function normUsage(u: any): UsageSummary | undefined {
   if (!u) return undefined
+  const inputTokens = numberOrUndefined(u.input ?? u.inputTokens)
+  const outputTokens = numberOrUndefined(u.output ?? u.outputTokens)
+  const cacheReadTokens = numberOrUndefined(u.cacheRead ?? u.cacheReadTokens)
+  const reportedTotal = numberOrUndefined(u.totalTokens ?? u.total)
+  const totalTokens =
+    reportedTotal ??
+    (inputTokens !== undefined || outputTokens !== undefined || cacheReadTokens !== undefined
+      ? (inputTokens ?? 0) + (outputTokens ?? 0) + (cacheReadTokens ?? 0)
+      : undefined)
   const cost = u.cost?.total
   return {
-    inputTokens: u.input,
-    outputTokens: u.output,
-    cacheReadTokens: u.cacheRead,
-    totalTokens: u.totalTokens ?? u.total,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    totalTokens,
     costUsd: typeof cost === 'number' ? cost : undefined,
   }
 }
@@ -100,6 +120,8 @@ interface PiSession {
   lastUsed: number
   /** pi 自己的会话标识（get_state 返回，trace 导出用） */
   piSessionId?: string
+  /** 从 pi model 配置 / get_session_stats 得到的上下文元数据。 */
+  modelInfo: ModelContextInfo
 }
 
 export class PiRunner extends AgentRunner {
@@ -108,6 +130,9 @@ export class PiRunner extends AgentRunner {
   private sweeper: ReturnType<typeof setInterval> | null = null
   /** 引擎会话 id → 本轮累计 usage（agent_start 重置） */
   private turnUsage = new Map<string, UsageSummary>()
+  /** 引擎会话 id → 本轮每次实际模型请求的 usage。 */
+  private turnRounds = new Map<string, UsageRound[]>()
+  private turnRoundNo = new Map<string, number>()
   /** 当前 LLM 调用最近一次流式 usage（message_end 全零时的回落值，DeepSeek 实测如此） */
   private callUsage = new Map<string, UsageSummary>()
   /** 引擎会话 id → 思考进度（累计字数 + 上次上报时间，agent_start 重置） */
@@ -116,6 +141,15 @@ export class PiRunner extends AgentRunner {
   private readonly model: { provider: string; modelId: string }
   private readonly cli: string | null
   private readonly thinking: string
+
+  modelInfo(): ModelContextInfo {
+    return {
+      model: this.model.modelId,
+      provider: this.model.provider,
+      contextWindowTokens: null,
+      contextWindowSource: 'provider_metadata_unavailable',
+    }
+  }
 
   constructor(model?: { provider: string; modelId: string }, cli?: string | null) {
     super()
@@ -128,6 +162,45 @@ export class PiRunner extends AgentRunner {
     const known: Record<string, string> = { deepseek: 'DeepSeek', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google' }
     const p = known[this.model.provider] ?? this.model.provider
     return `${this.model.modelId} (${p} · pi)`
+  }
+
+  private updateModelInfo(sid: string, patch: ModelContextInfo) {
+    const session = this.sessions.get(sid)
+    if (!session) return
+    const contextWindowTokens =
+      typeof patch.contextWindowTokens === 'number' && Number.isFinite(patch.contextWindowTokens) && patch.contextWindowTokens > 0
+        ? patch.contextWindowTokens
+        : session.modelInfo.contextWindowTokens
+    session.modelInfo = {
+      ...session.modelInfo,
+      ...patch,
+      model: patch.model ?? session.modelInfo.model ?? this.model.modelId,
+      provider: patch.provider ?? session.modelInfo.provider ?? this.model.provider,
+      contextWindowTokens,
+      contextWindowSource:
+        contextWindowTokens !== null && contextWindowTokens !== undefined
+          ? patch.contextWindowSource ?? session.modelInfo.contextWindowSource ?? 'model_config'
+          : patch.contextWindowSource ?? session.modelInfo.contextWindowSource ?? 'provider_metadata_unavailable',
+    }
+  }
+
+  modelInfoForSession(sessionId: string): ModelContextInfo {
+    return this.modelInfoOf(sessionId)
+  }
+
+  private modelInfoOf(sid: string): ModelContextInfo {
+    return this.sessions.get(sid)?.modelInfo ?? this.modelInfo()
+  }
+
+  private modelInfoFromState(state: any): ModelContextInfo {
+    const model = state?.model
+    const contextWindowTokens = numberOrUndefined(model?.contextWindow)
+    return {
+      model: typeof model?.id === 'string' ? model.id : this.model.modelId,
+      provider: typeof model?.provider === 'string' ? model.provider : this.model.provider,
+      contextWindowTokens: contextWindowTokens ?? null,
+      contextWindowSource: contextWindowTokens !== undefined ? 'model_config' : 'provider_metadata_unavailable',
+    }
   }
 
   /** 运行环境快照：模型引用/思考档位/CLI 版本（run 记录落盘用） */
@@ -183,17 +256,40 @@ export class PiRunner extends AgentRunner {
          部分供应商（DeepSeek）message_end 不带细分，回落流式最后上报值 */
       const u = normUsage(msg.message?.usage)
       const hasBreakdown = (x?: UsageSummary) =>
-        Boolean(x && (x.inputTokens || x.outputTokens || x.cacheReadTokens))
+        Boolean(x && (x.inputTokens !== undefined || x.outputTokens !== undefined || x.cacheReadTokens !== undefined))
       const final = hasBreakdown(u) ? u : this.callUsage.get(sid)
       this.callUsage.delete(sid)
       if (final && hasBreakdown(final)) {
+        const roundNo = (this.turnRoundNo.get(sid) ?? 0) + 1
+        this.turnRoundNo.set(sid, roundNo)
+        const messageModel = typeof msg.message?.model === 'string' ? msg.message.model : undefined
+        const messageProvider = typeof msg.message?.provider === 'string' ? msg.message.provider : undefined
+        const context = this.modelInfoOf(sid)
+        const round: UsageRound = {
+          round: roundNo,
+          model: messageModel ?? context.model ?? null,
+          provider: messageProvider ?? context.provider ?? null,
+          inputTokens: final.inputTokens ?? null,
+          outputTokens: final.outputTokens ?? null,
+          cacheReadTokens: final.cacheReadTokens ?? null,
+          totalTokens: final.totalTokens ?? null,
+          contextTokens: null,
+          contextWindowTokens: context.contextWindowTokens ?? null,
+          contextWindowSource: context.contextWindowSource ?? 'provider_metadata_unavailable',
+        }
+        const rounds = this.turnRounds.get(sid) ?? []
+        rounds.push(round)
+        this.turnRounds.set(sid, rounds)
         const total = sumUsage(this.turnUsage.get(sid), final)
         this.turnUsage.set(sid, total)
-        this.emit(sid, { kind: 'usage', usage: total })
+        this.emit(sid, { kind: 'usage', usage: total, round, context })
       }
     } else if (type === 'agent_start') {
       this.turnUsage.delete(sid)
       this.callUsage.delete(sid)
+      this.updateModelInfo(sid, { peakContextTokens: null })
+      this.turnRounds.delete(sid)
+      this.turnRoundNo.delete(sid)
       this.thinkState.delete(sid)
     } else if (type === 'agent_settled') {
       /* 权威收尾：拉最终文本后发 terminal（失败经 error 收尾） */
@@ -225,12 +321,47 @@ export class PiRunner extends AgentRunner {
 
   private async finishTurn(sid: string) {
     try {
-      const last = await this.request({ type: 'get_last_assistant_text' }, sid)
+      const [last, stats] = await Promise.all([
+        this.request({ type: 'get_last_assistant_text' }, sid),
+        this.request({ type: 'get_session_stats' }, sid).catch(() => null),
+      ])
+      const session = this.sessions.get(sid)
+      const statsContextWindow = numberOrUndefined(stats?.contextUsage?.contextWindow)
+      const statsPeak = numberOrUndefined(stats?.contextUsage?.tokens)
+      if (statsContextWindow !== undefined || statsPeak !== undefined) {
+        this.updateModelInfo(sid, {
+          contextWindowTokens: statsContextWindow,
+          contextWindowSource: statsContextWindow !== undefined ? 'provider_metadata' : undefined,
+          peakContextTokens: statsPeak ?? null,
+        })
+      }
+      const rounds = this.turnRounds.get(sid) ?? []
+      if (statsPeak !== undefined && rounds.length) {
+        /* get_session_stats.contextUsage 是 pi 对当前请求的真实上下文占用；
+           归属于本轮最后一个请求，避免把累计 tokens 当作单轮上下文。 */
+        rounds[rounds.length - 1] = { ...rounds[rounds.length - 1], contextTokens: statsPeak }
+      }
+      const context = this.modelInfoOf(sid)
+      for (let i = 0; i < rounds.length; i++) {
+        rounds[i] = {
+          ...rounds[i],
+          contextWindowTokens: rounds[i].contextWindowTokens ?? context.contextWindowTokens ?? null,
+          contextWindowSource: context.contextWindowSource ?? rounds[i].contextWindowSource,
+        }
+      }
+      const peakContextTokens =
+        context.peakContextTokens ??
+        rounds.reduce<number | null>(
+          (peak, round) => round.contextTokens === null ? peak : Math.max(peak ?? 0, round.contextTokens),
+          null,
+        )
       this.emit(sid, {
         kind: 'terminal',
         response: String(last?.text ?? ''),
         resultType: 'success',
         usage: this.turnUsage.get(sid),
+        rounds: rounds.map((round) => ({ ...round })),
+        context: { ...context, peakContextTokens },
       })
     } catch (exc: any) {
       this.emit(sid, { kind: 'error', message: exc?.message || 'pi 收尾失败' })
@@ -253,13 +384,21 @@ export class PiRunner extends AgentRunner {
     ]
     if (opts.skill && INSTALLED_SKILLS.has(opts.skill)) args.push('--skill', skillDir(opts.skill))
     const channel = new JsonlChannel(this.cli, args, { cwd: workspaceDir })
-    this.sessions.set(sid, { channel, workspaceDir, lastUsed: Date.now() })
+    this.sessions.set(sid, {
+      channel,
+      workspaceDir,
+      lastUsed: Date.now(),
+      modelInfo: this.modelInfo(),
+    })
     this.wireChannel(channel)
     this.startSweeper()
     /* 就绪确认：pi 启动完成才会应答；spawn 失败（命令不存在等）在这里暴露 */
     const state = await this.request({ type: 'get_state' }, sid)
     const s = this.sessions.get(sid)
-    if (s && state?.sessionId) s.piSessionId = String(state.sessionId)
+    if (s) {
+      if (state?.sessionId) s.piSessionId = String(state.sessionId)
+      this.updateModelInfo(sid, this.modelInfoFromState(state))
+    }
     return sid
   }
 
@@ -277,6 +416,8 @@ export class PiRunner extends AgentRunner {
     this.sessions.delete(sessionId)
     this.turnUsage.delete(sessionId)
     this.callUsage.delete(sessionId)
+    this.turnRounds.delete(sessionId)
+    this.turnRoundNo.delete(sessionId)
     this.thinkState.delete(sessionId)
     s.channel.kill()
     this.dropSessionBookkeeping(sessionId)
@@ -288,6 +429,8 @@ export class PiRunner extends AgentRunner {
     this.sessions.delete(sid)
     this.turnUsage.delete(sid)
     this.callUsage.delete(sid)
+    this.turnRounds.delete(sid)
+    this.turnRoundNo.delete(sid)
     this.thinkState.delete(sid)
     for (const [id, p] of this.pending) {
       if (p.sid === sid) {
@@ -314,7 +457,11 @@ export class PiRunner extends AgentRunner {
     this.sweeper.unref?.()
   }
 
-  async exportTrace(sessionId: string, outFile: string): Promise<{ toolCallCount: number } | null> {
+  async exportTrace(
+    sessionId: string,
+    outFile: string,
+    options: TraceExportOptions = {},
+  ): Promise<{ toolCallCount: number } | null> {
     const info = this.sessions.get(sessionId)
     const [state, msgs] = await Promise.all([
       this.request({ type: 'get_state' }, sessionId).catch(() => null),
@@ -341,6 +488,9 @@ export class PiRunner extends AgentRunner {
       parts: piParts(m, outputs, toolCalls),
     }))
 
+    const tokenUsage =
+      options.tokenUsage ??
+      tokenUsageFrom(undefined, info?.modelInfo ?? this.modelInfo(), options.usageRounds ?? [])
     const trace: SessionTrace = {
       session: {
         id: state?.sessionId ?? info?.piSessionId ?? sessionId,
@@ -349,6 +499,8 @@ export class PiRunner extends AgentRunner {
         created: messages[0]?.time ?? new Date().toISOString(),
         updated: messages[messages.length - 1]?.time ?? new Date().toISOString(),
       },
+      ...tokenUsage,
+      usageRounds: options.usageRounds ?? [],
       summary: { messages: list.length, toolCalls },
       messages,
     }
@@ -362,15 +514,16 @@ export class PiRunner extends AgentRunner {
     if (!isFirstTurn) return latest.content
     if (INSTALLED_SKILLS.has(skill)) {
       /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
-         career-guidance 直接输出可展示的 HTML 报告，图表由对应绘图 Skill 以内联 SVG 绘制。 */
+         career-guidance 写入 workspace/report.html，最终回复只保留短状态。 */
       const direct =
         `/skill:${skill} ${latest.content}\n\n` +
-        '（HTML 报告模式：先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
-        '最终回复必须是一个完整、可直接展示的 HTML 文档，至少包含：结论、岗位需求分析、岗位匹配、简历修改建议、行动计划。' +
+        '（先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+        '报告必须包含结论、岗位需求分析、岗位匹配、简历修改建议和行动计划，并写入当前 workspace/report.html。' +
         '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
         '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
         '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +
-        '报告正文使用 HTML 标题、段落、列表、表格和 figure；图表只能使用 HTML/CSS/内联 SVG，每个 figure 必须标注 data-chart-skill。）'
+        CAREER_GUIDANCE_FILE_PROTOCOL +
+        '不要读取 report.html 的完整内容，也不要把报告文件内容复制到最终回复。）'
       /* report-meta 侧车：报告尾部附机器校验块（服务端剥离，见 lib/reportMeta.ts） */
       return SIDECAR_SKILLS.has(skill) ? `${direct}\n\n${sidecarInstruction(skill)}` : direct
     }

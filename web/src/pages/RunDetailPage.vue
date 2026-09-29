@@ -19,8 +19,10 @@ const trace = ref<RunDetail | undefined>()
 const live = ref(false)
 const loading = ref(true)
 
-function isHtmlReportText(text: string): boolean {
-  return item.value?.skill === 'career-guidance' || /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(text)
+function isHtmlReportText(text: string, role?: string): boolean {
+  /* 仅把带独立报告文件的 assistant 最终 HTML 隐去；用户任务、工具和思考 trace 保持可见。 */
+  if (role !== 'assistant' || !item.value?.files?.html) return false
+  return item.value.skill === 'career-guidance' || /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(text)
 }
 
 async function load() {
@@ -269,7 +271,7 @@ const envRows = computed(() => {
                     <strong v-else>消息</strong>
                     <span class="rd-step-time">{{ fmtTime(entry.time) }}</span>
                   </header>
-                  <p v-if="entry.part.type === 'text' && isHtmlReportText(partText(entry.part))" class="rd-report-link">
+                  <p v-if="entry.part.type === 'text' && isHtmlReportText(partText(entry.part), entry.role)" class="rd-report-link">
                     HTML 报告已生成，<a :href="runReportUrl(runId)">点击查看具体报告</a>。
                   </p>
                   <pre v-else-if="entry.part.type === 'text'" class="rd-msg-text">{{ partText(entry.part) }}</pre>

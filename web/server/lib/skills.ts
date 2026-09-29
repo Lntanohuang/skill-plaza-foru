@@ -11,6 +11,9 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+export const CAREER_GUIDANCE_FILE_PROTOCOL =
+  '报告文件协议：必须在当前会话 workspace 根目录写入 report.html。报告必须是完整 HTML 文档，包含 <!doctype html>、<html>、<head>、<body>，图表使用带 data-chart-skill 的内联 SVG；中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略。写入后只做最小的存在性/结构检查，不要再次读取 report.html 全文。最终回复只输出简短完成说明，例如“报告已生成，请点击查看。”；写入或校验失败时说明原因并明确报告未生成，不得伪造链接，不得复制 HTML、SVG、Markdown、JSON 或文件内容。'
+
 export const SKILL_PROMPTS: Record<string, string> = {
   'industry-education-report':
     '你正在按 industry-education-report SKILL 工作。面向院校管理者、政府部门或产业园区，' +
@@ -32,9 +35,9 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '始终区分用户提供的事实、岗位原文、推断和待核实信息；不承诺录用概率，不给确定法律结论；' +
     '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具，不能用通用招聘常识替代；' +
     '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
-    '最终回复必须是完整 HTML 报告，不输出 Markdown、JSON、代码围栏或 report-meta 侧车；' +
+    CAREER_GUIDANCE_FILE_PROTOCOL +
     '量化数据和图表必须使用 HTML/CSS/内联 SVG 直接绘制，不能用 Markdown 表格冒充图表；' +
-    '每个图表必须按共享 chart-visualization Skill（.agents/skills/chart-visualization/references/）下对应的绘图规范输出，并在 figure 上标注 data-chart-skill；中国目标地点且有城市数据时加入无气泡城市热点图，国外目标地点省略。',
+    '每个图表必须按共享 chart-visualization Skill（.agents/skills/chart-visualization/references/）下对应的绘图规范输出，并在 figure 上标注 data-chart-skill；中国目标地点先查 `.agents/skills/chart-visualization/resources/regions/registry.json` 选择匹配 manifest，未注册省份标记未评估，再用同一岗位筛选口径调用 city-distribution（使用 province、limit=20），成功时必须输出 data-chart-skill="heatmap-chart"、data-chart-id="CH_CITY" 的无气泡热点图；只有同口径总量可得时才计算“其他”，否则明确标为未评估并说明。失败/超时/缺少边界时必须写“热点图未评估”及失败原因，国外目标地点省略，未知地点不猜测。',
   'training-data-qa':
     '你正在按 training-data-qa SKILL 工作。根据治理数据、任务模板和标注规则构造黄金种子、' +
     '扩增样本与难例，规划训练/验证/测试/独立评测划分，并检查 Schema、事实证据、业务规则、' +

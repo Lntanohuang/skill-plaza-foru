@@ -9,7 +9,13 @@
    ============================================================ */
 
 import { AgentRunner, JsonlChannel, type EngineName } from './runner.ts'
-import type { AgentEnvInfo } from './traceExport.ts'
+import type {
+  AgentEnvInfo,
+  ModelContextInfo,
+  TraceExportOptions,
+  UsageRound,
+  UsageSummary,
+} from './traceExport.ts'
 import type { ZcodeCli } from './zcodeCli.ts'
 import { zcodeCliVersion } from './agentEnv.ts'
 import { exportSessionTrace } from './traceExport.ts'
@@ -19,6 +25,8 @@ export class ZcodeRunner extends AgentRunner {
   readonly name: EngineName = 'zcode'
   readonly cli: ZcodeCli
   private shared: JsonlChannel | null = null
+  private contextBySession = new Map<string, ModelContextInfo>()
+  private roundNoBySession = new Map<string, number>()
 
   constructor(cli: ZcodeCli) {
     super()
@@ -27,6 +35,89 @@ export class ZcodeRunner extends AgentRunner {
 
   describe(): string {
     return 'glm-5.3 (GLM Coding Plan)'
+  }
+
+  modelInfo(): ModelContextInfo {
+    return {
+      model: this.describe(),
+      provider: null,
+      contextWindowTokens: null,
+      contextWindowSource: 'provider_metadata_unavailable',
+    }
+  }
+
+  beginTurn(sessionId: string): void {
+    this.roundNoBySession.delete(sessionId)
+    const current = this.contextBySession.get(sessionId)
+    if (current) this.contextBySession.set(sessionId, { ...current, peakContextTokens: null })
+  }
+
+  modelInfoForSession(sessionId: string): ModelContextInfo {
+    return this.contextInfo(sessionId)
+  }
+
+  private contextInfo(sid: string): ModelContextInfo {
+    return this.contextBySession.get(sid) ?? this.modelInfo()
+  }
+
+  private updateContextInfo(sid: string, payload: any): ModelContextInfo {
+    const ref = payload?.modelRef ?? (payload?.model && typeof payload.model === 'object' ? payload.model : undefined)
+    const provider = typeof ref?.providerId === 'string' ? ref.providerId : typeof ref?.provider === 'string' ? ref.provider : undefined
+    const model = typeof ref?.modelId === 'string' ? ref.modelId : typeof ref?.id === 'string' ? ref.id : undefined
+    const contextWindow =
+      typeof payload?.contextWindow === 'number' && Number.isFinite(payload.contextWindow) && payload.contextWindow > 0
+        ? payload.contextWindow
+        : typeof payload?.contextUsage?.contextWindow === 'number' && payload.contextUsage.contextWindow > 0
+          ? payload.contextUsage.contextWindow
+          : undefined
+    const current = this.contextInfo(sid)
+    const next: ModelContextInfo = {
+      model: model ?? current.model ?? null,
+      provider: provider ?? current.provider ?? null,
+      contextWindowTokens: contextWindow ?? current.contextWindowTokens ?? null,
+      contextWindowSource:
+        contextWindow !== undefined
+          ? 'provider_metadata'
+          : current.contextWindowSource ?? 'provider_metadata_unavailable',
+      peakContextTokens:
+        typeof payload?.contextUsage?.tokens === 'number' ? payload.contextUsage.tokens : current.peakContextTokens,
+    }
+    this.contextBySession.set(sid, next)
+    return next
+  }
+
+  private usage(u: any): UsageSummary | undefined {
+    if (!u) return undefined
+    const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : undefined
+    const inputTokens = number(u.inputTokens ?? u.input)
+    const outputTokens = number(u.outputTokens ?? u.output)
+    const cacheReadTokens = number(u.cacheReadTokens ?? u.cacheRead)
+    const totalTokens =
+      number(u.totalTokens ?? u.total) ??
+      (inputTokens !== undefined || outputTokens !== undefined || cacheReadTokens !== undefined
+        ? (inputTokens ?? 0) + (outputTokens ?? 0) + (cacheReadTokens ?? 0)
+        : undefined)
+    return { inputTokens, outputTokens, cacheReadTokens, totalTokens }
+  }
+
+  private round(sid: string, usage: UsageSummary | undefined, context: ModelContextInfo): UsageRound | undefined {
+    if (!usage) return undefined
+    const hasMetric = usage.inputTokens !== undefined || usage.outputTokens !== undefined || usage.cacheReadTokens !== undefined
+    if (!hasMetric) return undefined
+    const round = (this.roundNoBySession.get(sid) ?? 0) + 1
+    this.roundNoBySession.set(sid, round)
+    return {
+      round,
+      model: context.model ?? null,
+      provider: context.provider ?? null,
+      inputTokens: usage.inputTokens ?? null,
+      outputTokens: usage.outputTokens ?? null,
+      cacheReadTokens: usage.cacheReadTokens ?? null,
+      totalTokens: usage.totalTokens ?? null,
+      contextTokens: context.peakContextTokens ?? null,
+      contextWindowTokens: context.contextWindowTokens ?? null,
+      contextWindowSource: context.contextWindowSource ?? 'provider_metadata_unavailable',
+    }
   }
 
   /** 运行环境快照：zcode 侧模型为服务端标识串，无思考档位与花费数据 */
@@ -61,6 +152,7 @@ export class ZcodeRunner extends AgentRunner {
       const sid = msg.params?.sessionId
       this.tapOf(sid)?.('in', msg)
       const p = msg.params?.payload
+      const context = this.updateContextInfo(sid, p)
       if (p?.kind === 'text_delta') {
         if (p.delta) this.emit(sid, { kind: 'text_delta', delta: p.delta })
       } else if (p?.error) {
@@ -71,14 +163,18 @@ export class ZcodeRunner extends AgentRunner {
         })
       } else if (p?.response !== undefined && p?.resultType !== undefined) {
         // 终止事件：{response, resultType, tokenCount, usage, ...}
+        const usage = this.usage(p.usage)
+        const round = this.round(sid, usage, context)
         this.emit(sid, {
           kind: 'terminal',
           response: String(p.response ?? ''),
           resultType: p.resultType,
-          usage: p.usage,
+          usage,
+          rounds: round ? [round] : [],
+          context,
         })
       } else if (p?.usage && p?.stopReason !== undefined) {
-        this.emit(sid, { kind: 'usage', usage: p.usage, content: p.content })
+        this.emit(sid, { kind: 'usage', usage: this.usage(p.usage), content: p.content, context })
       }
     }
   }
@@ -112,8 +208,8 @@ export class ZcodeRunner extends AgentRunner {
     this.zrequest('session/stop', { sessionId }).catch(() => {})
   }
 
-  async exportTrace(sessionId: string, outFile: string) {
-    return exportSessionTrace(sessionId, outFile)
+  async exportTrace(sessionId: string, outFile: string, options: TraceExportOptions = {}) {
+    return exportSessionTrace(sessionId, outFile, options)
   }
 
   buildPrompt(skill: string, messages: any[], isFirstTurn: boolean): string {

@@ -12,6 +12,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
+import type { HtmlReportValidation } from './htmlReport.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 export const TRACES_DIR = process.env.TRACES_DIR || join(__dirname, '..', 'traces')
@@ -24,6 +25,96 @@ export interface UsageSummary {
   totalTokens?: number
   /** 本次运行花费（美元）；pi 的 usage 事件自带 cost.total，按轮累计 */
   costUsd?: number
+}
+
+/** 当前模型及上下文窗口的来源；unknown 不作为默认值，拿不到时固定使用 unavailable。 */
+export interface ModelContextInfo {
+  model?: string | null
+  provider?: string | null
+  contextWindowTokens?: number | null
+  contextWindowSource?: string
+  /** Provider 明确报告的某轮最大上下文占用。 */
+  peakContextTokens?: number | null
+}
+
+/** 一次实际模型请求的 token 用量；与运行期间累计 usage 分开记录。 */
+export interface UsageRound {
+  round: number
+  model: string | null
+  provider: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  cacheReadTokens: number | null
+  totalTokens: number | null
+  /** Provider/runtime 明确报告的该次请求上下文占用。 */
+  contextTokens: number | null
+  contextWindowTokens: number | null
+  contextWindowSource: string
+}
+
+/** runStart、runEnd、索引和权威 trace 共用的完整累计/上下文快照。 */
+export interface TokenUsageSnapshot {
+  model: string | null
+  provider: string | null
+  contextWindowTokens: number | null
+  contextWindowSource: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  totalTokens: number
+  peakContextTokens: number | null
+  contextUsageRatio: number | null
+}
+
+export interface TraceExportOptions {
+  tokenUsage?: TokenUsageSnapshot
+  usageRounds?: UsageRound[]
+}
+
+export function tokenUsageFrom(
+  usage?: UsageSummary,
+  context: ModelContextInfo = {},
+  rounds: UsageRound[] = [],
+): TokenUsageSnapshot {
+  const contextWindowTokens = Number.isFinite(context.contextWindowTokens) && (context.contextWindowTokens ?? 0) > 0
+    ? Number(context.contextWindowTokens)
+    : null
+  const peakFromRounds = rounds.reduce<number | null>(
+    (peak, round) => round.contextTokens === null ? peak : Math.max(peak ?? 0, round.contextTokens),
+    null,
+  )
+  const peakContextTokens = Number.isFinite(context.peakContextTokens)
+    ? Number(context.peakContextTokens)
+    : peakFromRounds
+  const ratio =
+    peakContextTokens !== null && contextWindowTokens !== null
+      ? peakContextTokens / contextWindowTokens
+      : null
+  return {
+    model: context.model ?? null,
+    provider: context.provider ?? null,
+    contextWindowTokens,
+    contextWindowSource:
+      context.contextWindowSource ??
+      (contextWindowTokens === null ? 'provider_metadata_unavailable' : 'provider_metadata'),
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+    cacheReadTokens: usage?.cacheReadTokens ?? 0,
+    totalTokens: usage?.totalTokens ?? 0,
+    peakContextTokens,
+    contextUsageRatio: ratio,
+  }
+}
+
+/** 将完整快照放入旧 usage 字段，兼容已有列表消费者。 */
+export function usageWithTokenSnapshot(
+  usage: UsageSummary | undefined,
+  snapshot: TokenUsageSnapshot,
+): UsageSummary & TokenUsageSnapshot {
+  return {
+    ...(usage ?? {}),
+    ...snapshot,
+  }
 }
 
 /** Agent 与环境快照（随运行落盘：升级 CLI/换模型不影响旧记录的复现对比） */
@@ -55,6 +146,10 @@ export interface RunRecord {
   outcome: RunOutcome
   durationMs: number
   usage?: UsageSummary
+  /** 完整累计 token 与上下文窗口快照；usage 保留旧字段形状。 */
+  tokenUsage?: TokenUsageSnapshot
+  /** 每次实际模型请求的用量，累计 usage 不替代此数组。 */
+  usageRounds?: UsageRound[]
   toolCallCount?: number
   /** 本次运行随消息上传的附件文件名（文件在会话沙箱 uploads/ 下） */
   attachments?: string[]
@@ -94,6 +189,8 @@ export interface RunRecord {
       /** 已通过侧车校验的图表规格，供运行详情页渲染。 */
       charts?: Array<Record<string, unknown>>
     }
+    /** career-guidance HTML figure/heatmap structural check. */
+    html?: HtmlReportValidation
   }
   files: { events?: string; trace?: string; report?: string; html?: string }
 }
@@ -143,6 +240,24 @@ export class RunRecorder {
     this.line({ t: now(), kind: 'runStart', ...meta })
   }
 
+  /**
+   * 会话创建后补齐 runStart 的 provider/model 元数据。创建阶段尚未挂接
+   * proto tap，因此首行仍可安全更新；如果已有后续事件则保持原始首行。
+   */
+  updateStart(meta: Record<string, unknown>): void {
+    if (this.closed) return
+    try {
+      const lines = readFileSync(this.file, 'utf8').split('\n')
+      if (!lines[0]) return
+      const first = JSON.parse(lines[0]) as Record<string, unknown>
+      if (first.kind !== 'runStart') return
+      lines[0] = JSON.stringify({ ...first, ...meta })
+      writeFileSync(this.file, lines.join('\n'))
+    } catch {
+      /* 仅补充元数据失败不影响运行 */
+    }
+  }
+
   /** 协议交互（带 sessionId 的请求/响应/通知） */
   proto(dir: 'out' | 'in', msg: unknown): void {
     this.line({ t: now(), kind: 'proto', dir, msg })
@@ -186,6 +301,19 @@ export interface SessionTrace {
     updated: string
     trace_id?: string
   }
+  /** 权威 trace 顶层保留完整快照，便于不读取运行索引也能审计上下文。 */
+  model: string | null
+  provider: string | null
+  contextWindowTokens: number | null
+  contextWindowSource: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  totalTokens: number
+  peakContextTokens: number | null
+  contextUsageRatio: number | null
+  /** 一次实际请求一条；以上 token 字段是整个运行期间累计值。 */
+  usageRounds: UsageRound[]
   summary: {
     messages: number
     toolCalls: Array<{ tool: string; status: string; read_only: boolean; started: string }>
@@ -199,8 +327,9 @@ type Row = Record<string, unknown>
 export async function exportSessionTrace(
   zcodeSessionId: string,
   outFile: string,
+  options: TraceExportOptions = {},
 ): Promise<{ toolCallCount: number } | null> {
-  const trace = await readSessionFromDb(zcodeSessionId)
+  const trace = await readSessionFromDb(zcodeSessionId, options)
   if (!trace) return null
   writeFileSync(outFile, JSON.stringify(trace, null, 1))
   return { toolCallCount: trace.summary.toolCalls.length }
@@ -224,24 +353,28 @@ export async function listWorkspaceSessions(): Promise<
   }
 }
 
-async function readSessionFromDb(sid: string): Promise<SessionTrace | null> {
+async function readSessionFromDb(sid: string, options: TraceExportOptions = {}): Promise<SessionTrace | null> {
   try {
     const { DatabaseSync } = (await import('node:sqlite')) as any
     const db = new DatabaseSync(ZCODE_DB, { readOnly: true })
     try {
-      return querySession((sql: string, ...args: unknown[]) =>
-        db.prepare(sql).all(...args),
+      return querySession(
+        sid,
+        (sql: string, ...args: unknown[]) => db.prepare(sql).all(...args),
+        options,
       )
     } finally {
       db.close()
     }
   } catch {
-    return readSessionViaPython(sid)
+    return readSessionViaPython(sid, options)
   }
 }
 
 function querySession(
+  sid: string,
   all: (sql: string, ...args: unknown[]) => Row[],
+  options: TraceExportOptions = {},
 ): SessionTrace | null {
   const meta = all(
     'SELECT id, title, directory, time_created, time_updated, trace_id FROM session WHERE id = ?',
@@ -277,6 +410,8 @@ function querySession(
       updated: new Date(Number(meta.time_updated)).toISOString(),
       trace_id: meta.trace_id ? String(meta.trace_id) : undefined,
     },
+    ...(options.tokenUsage ?? tokenUsageFrom()),
+    usageRounds: options.usageRounds ?? [],
     summary: {
       messages: messages.length,
       toolCalls: tools.map((t) => ({
@@ -298,7 +433,7 @@ function querySession(
   }
 }
 
-function readSessionViaPython(sid: string): SessionTrace | null {
+function readSessionViaPython(sid: string, options: TraceExportOptions = {}): SessionTrace | null {
   const script = join(__dirname, '..', 'scripts', 'sqlite_dump.py')
   try {
     const r = spawnSync('python3', [script, ZCODE_DB, sid], {
@@ -306,7 +441,12 @@ function readSessionViaPython(sid: string): SessionTrace | null {
       maxBuffer: 64 * 1024 * 1024,
     })
     if (r.status !== 0 || !r.stdout.trim()) return null
-    return JSON.parse(r.stdout) as SessionTrace
+    const trace = JSON.parse(r.stdout) as SessionTrace
+    return {
+      ...trace,
+      ...(options.tokenUsage ?? tokenUsageFrom()),
+      usageRounds: options.usageRounds ?? [],
+    }
   } catch {
     return null
   }

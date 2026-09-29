@@ -16,6 +16,18 @@ export function renderTraceMd(trace: SessionTrace): string {
   L.push(`- **沙箱**：\`${s.workspace}\``)
   L.push(`- **时间**：${s.created?.slice(0, 19)} → ${s.updated?.slice(0, 19)}`)
   L.push(`- **规模**：${trace.summary.messages} 条消息 · ${trace.summary.toolCalls.length} 次工具调用`)
+  L.push(`- **模型**：${trace.provider ?? '—'} / ${trace.model ?? '—'}`)
+  L.push(`- **上下文窗口**：${trace.contextWindowTokens ?? '—'} tokens（${trace.contextWindowSource}）`)
+  L.push(`- **累计 Token**：输入 ${trace.inputTokens} · 输出 ${trace.outputTokens} · 缓存读取 ${trace.cacheReadTokens} · 合计 ${trace.totalTokens}`)
+  L.push(`- **单轮上下文峰值**：${trace.peakContextTokens ?? '—'} tokens · 使用率 ${trace.contextUsageRatio ?? '—'}`)
+  L.push('')
+  L.push('## 每轮 Token 用量')
+  L.push('')
+  L.push('| 轮次 | 输入 | 输出 | 缓存读取 | 合计 | 上下文 |')
+  L.push('| --- | ---: | ---: | ---: | ---: | ---: |')
+  for (const round of trace.usageRounds ?? []) {
+    L.push(`| ${round.round} | ${round.inputTokens ?? '—'} | ${round.outputTokens ?? '—'} | ${round.cacheReadTokens ?? '—'} | ${round.totalTokens ?? '—'} | ${round.contextTokens ?? '—'} |`)
+  }
   L.push('')
   L.push('## 工具调用时间线')
   L.push('')

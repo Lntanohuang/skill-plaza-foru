@@ -23,11 +23,22 @@ import {
   TRACES_DIR,
   readIndex,
   type RunOutcome,
+  type ModelContextInfo,
   type RunRecord,
+  type TokenUsageSnapshot,
+  type UsageRound,
   type UsageSummary,
 } from './lib/traceExport.ts'
+import { tokenUsageFrom, usageWithTokenSnapshot } from './lib/traceExport.ts'
 import { renderTraceMd } from './lib/traceMd.ts'
 import { parseReport } from './lib/reportParse.ts'
+import {
+  MAX_HTML_REPORT_BYTES,
+  normalizeLegacyHtmlDocument,
+  readWorkspaceHtmlReport,
+  validateCompleteHtmlReport,
+  type HtmlReportValidation,
+} from './lib/htmlReport.ts'
 import { serverEnv } from './lib/agentEnv.ts'
 import { resolveZcodeCli } from './lib/zcodeCli.ts'
 import { loadLocalEnv } from './lib/env.ts'
@@ -54,7 +65,6 @@ const RUN_TIMEOUT_MS = 10 * 60_000
 const RUN_TIMEOUT_MS_INSTALLED = Number(process.env.RUN_TIMEOUT_MS || 20 * 60_000)
 const HEARTBEAT_MS = 15_000
 const MAX_BODY_BYTES = 512_000
-
 /* 附件上传：文件落会话沙箱 workspace/<sessionId>/uploads/；
    base64 膨胀 4/3，6MB 文件 ≈ 8MB body，上限放宽到 10MB */
 const MAX_UPLOAD_BODY_BYTES = 10_000_000
@@ -144,8 +154,9 @@ function sandboxAgentsMd(): string {
       '## MySQL 只读查询工具',
       '',
       `用 bash 执行白名单工具：\`node "${CAREER_MARKET_QUERY_TOOL}" --query <queryId> --params '<JSON>'\`。`,
-      'Agent 只能选择 queryId 并填写 city、keywords、roleTerms、internship、limit、timeoutMs；不得传原始 SQL。',
-      '可用 queryId：cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution。',
+      'Agent 只能选择 queryId 并填写普通查询的 city，或 city-distribution 的 province，以及 keywords、roleTerms、internship、timeoutMs；普通查询可填写 limit，city-distribution 的 limit 固定为 20，不得传原始 SQL。',
+      '可用 queryId：cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution、city-distribution。',
+      '中国目标地区的城市热点图先读取工作区 .agents/skills/chart-visualization/resources/regions/registry.json 选择已注册省份，再调用 city-distribution；固定筛选条件必须与城市岗位统计一致，未注册省份标记未评估，当前优先使用省内范围。',
       `多个独立查询使用 \`node "${CAREER_MARKET_QUERY_TOOL}" --parallel '<JSON数组>'\`，工具内部最多并发 2 个查询；单查询默认 120 秒、最长 180 秒。工具会在批次开始时选择兼容的 MySQL 客户端并复用。`,
       '涉及具体城市、岗位、实习/应届或学历门槛的问题，必须优先调用该工具；查询结果用于 report-meta 的 sources/metrics/charts，查询失败时把原因写入开发侧 gaps/risks。',
     )
@@ -347,12 +358,6 @@ function handleHtmlReport(_req: any, res: any, runId: string) {
   res.end(data)
 }
 
-function htmlDocument(text: string): string {
-  const trimmed = text.trim().replace(/^```html\s*/i, '').replace(/\s*```$/i, '')
-  if (/<html[\s>]/i.test(trimmed)) return trimmed
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`
-}
-
 /** POST /api/upload：{ sessionId?, filename, dataBase64 } → 文件落会话沙箱 uploads/ 目录。
     不写 sessions map——引擎会话仍由 /api/chat 首次调用创建（isFirstTurn 判定不受影响），
     workspace 目录名即 sessionId，后续 chat 天然复用同一目录。 */
@@ -537,8 +542,49 @@ async function handleChat(req: any, res: any) {
       latest.content = `${latest.content}\n\n${attachmentNotes.join('\n\n')}`
     }
   }
-  const recorder = new RunRecorder(runId, { clientSessionId, engine, skill, promptDigest })
+  let contextInfo: ModelContextInfo = runner.modelInfo()
+  const usageRounds: UsageRound[] = []
+  const initialTokenUsage: TokenUsageSnapshot = tokenUsageFrom(undefined, contextInfo)
+  const recorder = new RunRecorder(runId, {
+    clientSessionId,
+    engine,
+    skill,
+    promptDigest,
+    ...initialTokenUsage,
+    usageRounds: [],
+  })
   let lastUsage: UsageSummary | undefined
+  const mergeContextInfo = (next?: ModelContextInfo) => {
+    if (!next) return
+    const hasWindow = typeof next.contextWindowTokens === 'number' && next.contextWindowTokens > 0
+    const peak =
+      typeof next.peakContextTokens === 'number'
+        ? Math.max(contextInfo.peakContextTokens ?? 0, next.peakContextTokens)
+        : contextInfo.peakContextTokens
+    contextInfo = {
+      ...contextInfo,
+      ...next,
+      model: next.model ?? contextInfo.model ?? null,
+      provider: next.provider ?? contextInfo.provider ?? null,
+      contextWindowTokens: hasWindow ? next.contextWindowTokens : contextInfo.contextWindowTokens ?? null,
+      contextWindowSource: hasWindow
+        ? next.contextWindowSource ?? contextInfo.contextWindowSource ?? 'provider_metadata'
+        : contextInfo.contextWindowSource ?? next.contextWindowSource ?? 'provider_metadata_unavailable',
+      peakContextTokens: peak ?? null,
+    }
+  }
+  const addUsageRounds = (rounds: UsageRound[] | undefined) => {
+    for (const round of rounds ?? []) {
+      if (usageRounds.some((existing) => existing.round === round.round)) continue
+      usageRounds.push(round)
+      recorder.note({ roundUsage: round })
+    }
+  }
+  const currentTokenUsage = (): TokenUsageSnapshot => tokenUsageFrom(lastUsage, contextInfo, usageRounds)
+  if (entry) {
+    mergeContextInfo(runner.modelInfoForSession(entry.engineSessionId))
+    recorder.updateStart({ ...currentTokenUsage(), usageRounds: [] })
+  }
   let finalText = ''
   let runFinalized = false
   /* 侧车流式隐藏：围栏标记可能跨 delta 到达，未确认出现前扣留尾部
@@ -548,12 +594,68 @@ async function handleChat(req: any, res: any) {
   let hiddenFrom = -1
   let sidecar: SidecarExtract | null = null
   let htmlReportFile: string | undefined
+  let htmlReportValidation: HtmlReportValidation | undefined
+  let htmlReportError: string | undefined
+
+  /** Copy a validated report into the run-owned trace directory. */
+  const saveHtmlReport = (reportHtml: string, source: string): boolean => {
+    if (!reportHtml || Buffer.byteLength(reportHtml, 'utf8') > MAX_HTML_REPORT_BYTES) {
+      htmlReportError = `HTML 报告超过 ${MAX_HTML_REPORT_BYTES} 字节上限或为空`
+      recorder.note({ htmlReportError, htmlReportSource: source })
+      return false
+    }
+    const validation = validateCompleteHtmlReport(reportHtml)
+    htmlReportValidation = validation
+    recorder.note({ htmlReport: validation, htmlReportSource: source })
+    if (!validation.pass) {
+      htmlReportError = validation.errors.slice(0, 3).join('；') || 'HTML 报告结构校验失败'
+      return false
+    }
+    const target = traceFilePath(runId, 'html')
+    try {
+      writeFileSync(target, reportHtml)
+      htmlReportFile = target
+      htmlReportError = undefined
+      return true
+    } catch (exc: any) {
+      htmlReportError = exc?.message ?? String(exc)
+      recorder.note({ htmlReportError, htmlReportSource: source })
+      return false
+    }
+  }
+
+  /**
+   * Prefer the report the Agent wrote in its session sandbox. The workspace
+   * reader follows only the server-owned fixed report.html path; malformed or
+   * oversized files fall back to the legacy terminal response.
+   */
+  const captureWorkspaceHtmlReport = (): boolean => {
+    if (skill !== 'career-guidance' || htmlReportFile || !entry?.workspaceDir) return Boolean(htmlReportFile)
+    const report = readWorkspaceHtmlReport(entry.workspaceDir)
+    if (!report.found) {
+      if (report.error) {
+        htmlReportError = report.error
+        recorder.note({ htmlReportError, htmlReportSource: 'workspace/report.html' })
+      }
+      return false
+    }
+    return saveHtmlReport(report.html, 'workspace/report.html')
+  }
 
   const finalizeRun = (outcome: RunOutcome) => {
     if (runFinalized) return
+    /* A timeout/abort can happen after the Agent flushed report.html but
+       before its terminal event. Capture it before writing the run record. */
+    captureWorkspaceHtmlReport()
     runFinalized = true
     const durationMs = Date.now() - startedAt
-    recorder.end(outcome, { durationMs, usage: lastUsage })
+    const tokenUsage = currentTokenUsage()
+    recorder.end(outcome, {
+      durationMs,
+      usage: lastUsage,
+      ...tokenUsage,
+      usageRounds: usageRounds.slice(),
+    })
     const record: RunRecord = {
       runId,
       ts: new Date(startedAt).toISOString(),
@@ -564,16 +666,22 @@ async function handleChat(req: any, res: any) {
       promptDigest,
       outcome,
       durationMs,
-      usage: lastUsage,
+      usage: usageWithTokenSnapshot(lastUsage, tokenUsage),
+      tokenUsage,
+      usageRounds: usageRounds.slice(),
       attachments: attachmentNames.length ? attachmentNames : undefined,
       files: { events: recorder.file },
     }
+    if (htmlReportValidation) record.report = { ...(record.report ?? {}), html: htmlReportValidation }
     if (htmlReportFile) record.files.html = htmlReportFile
     void (async () => {
       try {
         if (entry?.engineSessionId) {
           const traceFile = traceFilePath(runId, 'trace')
-          const result = await runner.exportTrace(entry.engineSessionId, traceFile)
+          const result = await runner.exportTrace(entry.engineSessionId, traceFile, {
+            tokenUsage,
+            usageRounds: usageRounds.slice(),
+          })
           if (result) {
             record.toolCallCount = result.toolCallCount
             record.files.trace = traceFile
@@ -608,6 +716,7 @@ async function handleChat(req: any, res: any) {
           if (sidecar.meta) {
             const v = validateMeta(sidecar.meta)
             record.report = {
+              ...(record.report ?? {}),
               meta: {
                 pass: v.pass,
                 errors: v.errors,
@@ -657,7 +766,20 @@ async function handleChat(req: any, res: any) {
 
   timeout = setTimeout(() => {
     if (entry) runner.stop(entry.engineSessionId)
-    sse({ type: 'error', message: '任务超时，已停止。' })
+    const recovered = captureWorkspaceHtmlReport()
+    if (recovered) {
+      /* A recovered report is a usable result; do not send error first because
+         the browser treats error as terminal and would discard the link. */
+      sse({
+        type: 'done',
+        content: '报告已生成，但本次任务已超时。',
+        resultType: 'timeout',
+        runId,
+        reportUrl: `/api/reports/${encodeURIComponent(runId)}`,
+      })
+    } else {
+      sse({ type: 'error', message: '任务超时，报告未生成。' })
+    }
     finalizeRun('timeout')
     cleanup()
     finish()
@@ -670,6 +792,9 @@ async function handleChat(req: any, res: any) {
     clientGone = true
     if (entry?.busy) {
       runner.stop(entry.engineSessionId)
+      /* The browser has already disconnected; only persist any report that was
+         flushed before the abort. A future history lookup can recover it. */
+      captureWorkspaceHtmlReport()
       finalizeRun('aborted')
       cleanup()
     }
@@ -682,6 +807,8 @@ async function handleChat(req: any, res: any) {
       const engineSessionId = await runner.createSession(dir, { skill })
       entry = { engine, engineSessionId, workspaceDir: dir, busy: false }
       sessions.set(clientSessionId, entry)
+      mergeContextInfo(runner.modelInfoForSession(engineSessionId))
+      recorder.updateStart({ ...currentTokenUsage(), usageRounds: [] })
       recorder.note({ created: engineSessionId, engine, workspaceDir: dir })
       sse({ type: 'session', sessionId: clientSessionId })
     }
@@ -732,9 +859,13 @@ async function handleChat(req: any, res: any) {
         sse({ type: 'status', phase: ev.phase, chars: ev.chars, tool: ev.tool })
       } else if (ev.kind === 'usage') {
         lastUsage = ev.usage ?? lastUsage
+        mergeContextInfo(ev.context)
+        addUsageRounds(ev.round ? [ev.round] : undefined)
         sse({ type: 'usage', usage: ev.usage, content: ev.content })
       } else if (ev.kind === 'terminal') {
         lastUsage = ev.usage ?? lastUsage
+        mergeContextInfo(ev.context)
+        addUsageRounds(ev.rounds)
         /* 剥离侧车：done 只发干净正文；全文见 traces/<runId>.events.jsonl */
         sidecar = extractSidecar(ev.response)
         finalText = sidecar.cleanText
@@ -744,19 +875,35 @@ async function handleChat(req: any, res: any) {
         }
         sse({ type: 'usage', usage: ev.usage })
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
-        if (skill === 'career-guidance' && finalText.trim()) {
-          htmlReportFile = traceFilePath(runId, 'html')
-          writeFileSync(htmlReportFile, htmlDocument(finalText))
+        const workspaceReport = captureWorkspaceHtmlReport()
+        if (skill === 'career-guidance' && !workspaceReport) {
+          /* Backward compatibility only: a plain short status is not a report.
+             Legacy agents may still return a complete HTML document in text. */
+          const legacyReport = normalizeLegacyHtmlDocument(finalText)
+          if (legacyReport) saveHtmlReport(legacyReport, 'terminal-legacy-html')
         }
+        const reportFailure = htmlReportError
+          ? `报告未生成：${htmlReportError}`
+          : '报告未生成：未找到有效的 workspace/report.html，且最终回复未包含可转换内容。'
         sse({
           type: 'done',
-          content: skill === 'career-guidance' && htmlReportFile ? '' : finalText,
+          content:
+            skill === 'career-guidance'
+              ? htmlReportFile
+                ? ''
+                : reportFailure
+              : finalText,
           resultType: ev.resultType,
           charts: checkedCharts,
           runId,
           reportUrl: htmlReportFile ? `/api/reports/${encodeURIComponent(runId)}` : undefined,
         })
-        finalizeRun(clientGone ? 'aborted' : 'success')
+        const finalOutcome: RunOutcome = clientGone
+          ? 'aborted'
+          : skill === 'career-guidance' && !htmlReportFile
+            ? 'error'
+            : 'success'
+        finalizeRun(finalOutcome)
         cleanup()
         finish()
       } else if (ev.kind === 'error') {
@@ -769,6 +916,7 @@ async function handleChat(req: any, res: any) {
     unlisten = runner.listen(entry.engineSessionId, onEvent)
 
     try {
+      runner.beginTurn(entry.engineSessionId)
       await runner.send(entry.engineSessionId, runner.buildPrompt(skill, messages, !existingEntry))
     } catch (exc: any) {
       /* pi 会话进程被空闲回收/退出后，浏览器仍持旧 sessionId——此前每次运行都会
@@ -785,6 +933,7 @@ async function handleChat(req: any, res: any) {
       untap()
       untap = runner.tapSession(engineSessionId, (dir, msg) => recorder.proto(dir, msg))
       unlisten = runner.listen(engineSessionId, onEvent)
+      runner.beginTurn(engineSessionId)
       await runner.send(engineSessionId, runner.buildPrompt(skill, messages, true))
     }
   } catch (exc: any) {

@@ -7,6 +7,7 @@ import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatE
 import ReportOutput from '../components/ReportOutput.vue'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
+import { CAREER_TEST_TEMPLATES } from '../data/careerTestTemplates'
 import { DEMO_FILES } from '../data/demoFiles'
 import { isTestEnv } from '../plazaEnv'
 import { toast } from '../composables/toast'
@@ -55,6 +56,9 @@ const uploading = ref(false)
 const MAX_UPLOADS = 3
 /** 内置演示附件本次访问是否已尝试过（移除后不再自动带回，换技能重置） */
 const demoTried = ref(false)
+const testTemplateId = ref('java')
+const showTestTemplates = computed(() => isTestEnv() && skill.value.slug === 'career-guidance')
+let uploadRevision = 0
 
 interface RunMessage {
   role: 'user' | 'assistant' | 'error'
@@ -84,6 +88,8 @@ function resetForm() {
   knowledge.value = config.value.knowledge.filter(item => item.default).map(item => item.id)
   keyword.value = ''
   uploads.value = []
+  uploadRevision++
+  testTemplateId.value = 'java'
   demoTried.value = false
 }
 
@@ -117,7 +123,7 @@ function valueLabel(field: TaskField) {
   return Array.isArray(form[field.id]) ? multi(field.id).join('、') : String(form[field.id] ?? '').trim()
 }
 
-const canRun = computed(() => apiState.value === 'ready' && !busy.value)
+const canRun = computed(() => apiState.value === 'ready' && !busy.value && !uploading.value)
 const filteredKnowledge = computed(() => {
   const needle = keyword.value.trim().toLowerCase()
   if (!needle) return config.value.knowledge
@@ -128,7 +134,10 @@ const filteredKnowledge = computed(() => {
 /* ---------- 交互 ---------- */
 function applyExample() {
   for (const field of config.value.sections.flatMap(s => s.fields)) {
-    const value = config.value.example[field.id]
+    const example = showTestTemplates.value
+      ? CAREER_TEST_TEMPLATES.find(item => item.id === testTemplateId.value)!.values
+      : config.value.example
+    const value = example[field.id]
     form[field.id] = Array.isArray(value) ? [...value] : (value ?? '')
   }
 }
@@ -244,7 +253,7 @@ function attachmentsPayload(): ChatAttachment[] | undefined {
 }
 
 /* 会话与引擎绑定：换引擎开新会话，旧沙箱里的附件路径不再可用，需清空重传 */
-watch(engine, () => { uploads.value = [] })
+watch(engine, () => { uploads.value = []; uploadRevision++ })
 
 /* 内置演示附件（一键测试）：仅测试环境（PLAZA_ENV=test），后端就绪且附件区为空时自动上传一次 */
 watch([apiState, () => skill.value.slug], () => {
@@ -254,14 +263,52 @@ watch([apiState, () => skill.value.slug], () => {
   if (!demo || uploads.value.length) return
   demoTried.value = true
   const key = sessionKey(skill.value.slug)
+  const revision = uploadRevision
+  uploading.value = true
   void uploadDemoFile(demo.filename, demo.content, sessionIds[key] ?? uploadSessionIds[key])
     .then(uploaded => {
+      if (revision !== uploadRevision) return
       uploadSessionIds[key] = uploaded.sessionId
       uploads.value.push({ name: uploaded.name, path: uploaded.path, size: uploaded.size })
       toast(`已附带${uploaded.name}，可移除后换自己的文件`)
     })
-    .catch(() => { /* 演示附件上传失败不阻塞手动测试 */ })
+    .catch(() => { /* 演示附件上传失败可通过应用模板重试 */ })
+    .finally(() => { uploading.value = false })
 })
+
+/** 先上传到新沙箱，成功后一起替换表单、附件、上下文；失败保留当前输入。 */
+async function applyTestTemplate() {
+  if (!showTestTemplates.value || !canRun.value) return
+  const template = CAREER_TEST_TEMPLATES.find(item => item.id === testTemplateId.value)!
+  const demo = DEMO_FILES[template.demoFile]
+  const target = skill.value.slug
+  const key = sessionKey(target)
+  const revision = ++uploadRevision
+  uploading.value = true
+  try {
+    const uploaded = await uploadDemoFile(demo.filename, demo.content)
+    if (revision !== uploadRevision || target !== skill.value.slug) return
+    for (const oldKey of Object.keys(sessionIds)) {
+      if (oldKey.endsWith(`:${target}`)) delete sessionIds[oldKey]
+    }
+    for (const oldKey of Object.keys(uploadSessionIds)) {
+      if (oldKey.endsWith(`:${target}`)) delete uploadSessionIds[oldKey]
+    }
+    uploadSessionIds[key] = uploaded.sessionId
+    sessions[target] = []
+    clearHistorySelection()
+    chatInput.value = ''
+    lastUsage.value = ''
+    applyExample()
+    uploads.value = [{ name: uploaded.name, path: uploaded.path, size: uploaded.size }]
+    demoTried.value = true
+    toast(`已应用「${template.label}」，新测试会话已就绪`)
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '模板简历上传失败，请重试')
+  } finally {
+    uploading.value = false
+  }
+}
 
 /* SSE 事件处理（表单运行与对话发送共用）：写入占位的 assistant 消息 */
 function makeStreamHandler(answer: RunMessage) {
@@ -341,11 +388,11 @@ const chatInput = ref('')
 const chatStreamEl = ref<HTMLElement | null>(null)
 const chatFileEl = ref<HTMLInputElement | null>(null)
 const canSend = computed(() =>
-  apiState.value === 'ready' && !busy.value && Boolean(chatInput.value.trim()))
+  apiState.value === 'ready' && !busy.value && !uploading.value && Boolean(chatInput.value.trim()))
 
 async function sendChat() {
   const text = chatInput.value.trim()
-  if (!text || busy.value) return
+  if (!text || busy.value || uploading.value) return
   if (apiState.value !== 'ready') { toast('需要先启动本地服务'); return }
   const target = skill.value.slug
   clearHistorySelection()
@@ -588,7 +635,7 @@ onBeforeUnmount(endRun)
           <div v-if="apiState === 'ready' && engines.length" class="engine-switch" role="group" aria-label="切换执行引擎">
             <button
               v-for="e in engines" :key="e.id" type="button" class="engine-btn"
-              :class="{ 'is-on': e.id === engine }" :disabled="!e.available"
+              :class="{ 'is-on': e.id === engine }" :disabled="!e.available || busy || uploading"
               :title="e.available ? `引擎 ${e.id} · ${e.model ?? ''}` : `不可用：${e.reason ?? ''}`"
               @click="pickEngine(e.id)">{{ e.id === 'pi' ? 'pi · DeepSeek' : 'zcode · GLM' }}</button>
           </div>
@@ -620,6 +667,22 @@ onBeforeUnmount(endRun)
           ? '用结构化表单描述任务边界，一次运行交付完整结果'
           : '直接对话推进任务，与表单模式共用同一会话、附件与运行记录' }}</p>
       </div>
+
+      <aside v-if="showTestTemplates" class="use-test-templates" aria-label="开发侧测试模板">
+        <div>
+          <strong>开发侧 · 测试模板</strong>
+          <p>合成示例。应用后替换表单和全部附件，并开启新会话；已有运行记录保留。</p>
+        </div>
+        <label class="use-select">
+          <select v-model="testTemplateId" aria-label="选择测试模板" :disabled="busy || uploading">
+            <option v-for="item in CAREER_TEST_TEMPLATES" :key="item.id" :value="item.id">{{ item.label }}</option>
+          </select>
+          <Icon name="chev-down" :size="14" />
+        </label>
+        <button type="button" class="btn btn-quiet" :disabled="!canRun" @click="applyTestTemplate">
+          {{ uploading ? '上传中…' : '应用模板' }}
+        </button>
+      </aside>
 
       <ol v-if="mode === 'form'" class="use-steps">
         <li :class="{ 'is-on': completed > 0 }"><b>1</b>配置任务</li>
@@ -837,8 +900,8 @@ onBeforeUnmount(endRun)
               开始运行 SKILL<Icon name="arrow" :size="15" />
             </button>
             <div class="use-run-sub">
-              <button type="button" class="btn btn-quiet use-run-quiet" @click="fillExample">填入示例</button>
-              <button type="button" class="btn btn-quiet use-run-quiet" @click="clearForm">重置表单</button>
+              <button type="button" class="btn btn-quiet use-run-quiet" :disabled="busy || uploading" @click="fillExample">填入示例</button>
+              <button type="button" class="btn btn-quiet use-run-quiet" :disabled="busy || uploading" @click="clearForm">重置表单</button>
             </div>
             <small class="use-run-note">提交前请确认资料授权范围，不要填写敏感个人信息。</small>
           </section>

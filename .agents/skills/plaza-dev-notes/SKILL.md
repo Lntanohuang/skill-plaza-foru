@@ -50,7 +50,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 013 | 就业指导正式报告：岗位需求分析与简历修改建议 | 已实现（真实查询与浏览器回归待跑） | [013-career-guidance-formal-report.md](references/013-career-guidance-formal-report.md) |
 | 012 | Pi 运行详情合并工具与对话时间线 | 已实现（Zcode 未接入） | [012-pi-unified-run-timeline.md](references/012-pi-unified-run-timeline.md) |
 | 014 | 流式 Markdown 渲染批处理 | 已实现（浏览器长报告体验待回归） | [014-stream-render-batching.md](references/014-stream-render-batching.md) |
-| 015 | 就业指导 HTML 报告与内联 SVG 绘图 Skill | 已实现（真实 HTML Agent 输出待回归） | [015-career-guidance-html-report.md](references/015-career-guidance-html-report.md) |
+| 015 | 就业指导 HTML 报告文件产物与内联 SVG 绘图 Skill | 已实现（真实 Agent 超时恢复与浏览器回归待验证） | [015-career-guidance-html-report.md](references/015-career-guidance-html-report.md) |
 | 016 | 岗位库查询客户端的 mysql_native_password 回落 | 已实现（2026-09-28 实测） | [016-mysql-client-native-password-fallback.md](references/016-mysql-client-native-password-fallback.md) |
 
 | 017 | 岗位统计查询 EXPLAIN 实测 | 已完成计划检查（优化待验证） | [017-career-query-explain.md](references/017-career-query-explain.md) |
@@ -58,3 +58,8 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 019 | 岗位名 FULLTEXT 替代 LIKE 试验 | 试验完成（不能直接替换） | [019-fulltext-match-trial.md](references/019-fulltext-match-trial.md) |
 | 020 | 岗位查询客户端预探测与受控并行 | 已实现（真实岗位库验证通过） | [020-career-query-client-probe-parallel.md](references/020-career-query-client-probe-parallel.md) |
 | 021 | 共享图表与城市热点图 Skill | 已实现本地整合（远端待完成） | [021-shared-chart-visualization-skill.md](references/021-shared-chart-visualization-skill.md) |
+
+| 022 | 就业指导开发侧测试模板切换 | 已实现（构建与浏览器交互已验证） | [022-career-test-template-switcher.md](references/022-career-test-template-switcher.md) |
+| 023 | 省内城市分布白名单查询与热点图报告校验 | 已实现接入（真实数据库与模型报告已验证） | [023-city-distribution-heatmap.md](references/023-city-distribution-heatmap.md) |
+| 024 | 城市热点图省份资源包泛化与 Pi 双省验证 | 已实现资源泛化（真实数据库广东、浙江报告均已验证） | [024-region-resource-generalization.md](references/024-region-resource-generalization.md) |
+| 025 | 就业指导 trace 运行记录显示链路诊断 | 已实现（真实 API/浏览器回归待验证） | [025-career-trace-history-display.md](references/025-career-trace-history-display.md) |

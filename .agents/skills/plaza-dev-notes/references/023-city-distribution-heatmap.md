@@ -1,0 +1,13 @@
+# 023 · 省内城市分布白名单查询与热点图报告校验
+
+- 状态：已实现接入（2026-09-29；真实数据库查询与真实 career-guidance 模型报告均已跑通，见验证）。
+- 动机：城市热点图必须先取得与广州岗位统计相同筛选口径的跨城市记录，再用有标准编码和离线边界依据的地图展示；查询失败、边界缺失或“其他”总量不可得时都不能静默补图或把缺失误写成 0。
+- 约定细节：
+  - `scripts/career-market-query.mjs:14,21-24,44-91` 注册 `city-distribution`。该 query 只接受 `province`（普通城市 query 仍接受 `city`），默认广东省，`limit` 固定为 20；关键词、岗位词、实习谓词与现有广州查询共用模板，占位替换为 `{{PROVINCE}}`，并行预校验传入 queryId。`scripts/career-market-queries/city-distribution.sql:1-14` 按 `a.province` 分组 `a.city`，按 count 降序并固定 `LIMIT 20`。
+  - `.agents/skills/chart-visualization` 子模块 `bd709aa` 提供广东省 21 城六位 adcode 映射、离线 GeoJSON、来源/许可说明和 `scripts/validate-resources.mjs`；`references/heatmap-chart.md` 固定 `rows[].code`、`coveredCodes`、`totalCount`、`otherCount`、中性色缺失值和 `CH_CITY`/失败状态块字段。当前边界资源仅覆盖广东省，许可状态待核实。
+  - `.agents/skills/career-guidance` 子模块 `4f82010`、`web/server/lib/skills.ts` 与 `web/server/lib/piRunner.ts` 要求中国目标地区先调用 `city-distribution`（`province`、`limit=20`），成功时输出 `<figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">`，失败/超时/边界缺失时输出“热点图未评估”和原因；没有同口径总量时不能凭空计算“其他”。
+  - `web/server/lib/htmlReport.ts:1-180` 校验 figure 的 `data-chart-skill`、CH_CITY、成功 SVG 的 title/desc/figcaption，以及 `data-chart-status="unassessed"` 的失败原因；`web/server/index.ts:31,552-575,752-758` 在 career-guidance HTML 落盘时记录 `recorder.note({htmlReport})` 和 `RunRecord.report.html`，不改写或阻塞用户报告。
+- 成本与取舍：先采用省内查询和 21 城离线边界，避免全国地图资源和一次性全国聚合；固定 `LIMIT 20` 并沿用现有最多 2 路并行约束，未增加岗位表索引或统计快照。没有把普通 `city` 过滤扩展为跨城，也没有让模型临时拼接 GeoJSON。当前 SQL 只返回 TOP 20；在同口径总量未提供前，报告必须把“其他”标为未评估，避免重复全量聚合带来的额外耗时和虚假汇总。
+- 验证：`node scripts/career-market-query.mjs --help`、`node --check scripts/career-market-query.mjs`、查询模板 fake-MySQL 检查、`city` 参数拒绝、既有 city 查询和并行查询回归均通过；资源校验返回 21 个编码/21 个边界/42 个别名；`cd web && node --experimental-strip-types --test server/lib/htmlReport.test.ts` 6 项通过；`cd web && npm run build` 通过；相关 `git diff --check` 通过。
+- 2026-09-29 真实数据库端到端跑通（workspace `web/server/workspace/sess-heatmap-gd`）：`city-distribution`（`province=广东省`、`keywords=[Java]`、`roleTerms=[后端,服务端,开发]`、`internship=true`、`limit=20`）约 55s 返回 2 城（广州、深圳），同口径 `cohort-summary`（`city=广州市`）约 55s 返回样本；`education-distribution`（本科 100%）、`experience-distribution`（在校 40%/应届 30%/不限 30%）、`salary-distribution`（3–6K 40% 等）、`title-top`（7 个岗位名）并行批次约 101s 全部成功。真实 career-guidance 报告写入 `report.html`（约 118 KiB）并通过 `htmlReport.ts` 结构校验，含 `data-chart-skill="heatmap-chart" data-chart-id="CH_CITY"` 与 21 条广东城市边界 path。注意：本次广东省内仅 2 城返回数据、广州样本规模很小，报告按小样本口径加“代表性有限”说明；`city-distribution` 未提供同口径总量，报告未生成数值“其他”，未返回城市用中性色标示缺失。
+- 后续扩展路线：已重跑固定广东参数并记录 elapsedMs、返回城市数与筛选一致性；待验证查询失败/超时/未注册省份的报告“热点图未评估”分支与海外省略分支；若耗时仍高，先基于 EXPLAIN/实际对比评估复合索引或城市统计快照；为同口径总量增加受控来源后再生成数值“其他”；复核边界许可后再扩展省份或全国资源。
