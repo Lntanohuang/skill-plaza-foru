@@ -57,3 +57,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 018 | 就业指导比例展示与来源文案 | 已实现（真实报告待回归） | [018-career-proportion-source-display.md](references/018-career-proportion-source-display.md) |
 | 019 | 岗位名 FULLTEXT 替代 LIKE 试验 | 试验完成（不能直接替换） | [019-fulltext-match-trial.md](references/019-fulltext-match-trial.md) |
 | 020 | 岗位查询客户端预探测与受控并行 | 已实现（真实岗位库验证通过） | [020-career-query-client-probe-parallel.md](references/020-career-query-client-probe-parallel.md) |
+| 021 | 共享图表与城市热点图 Skill | 已实现本地整合（远端待完成） | [021-shared-chart-visualization-skill.md](references/021-shared-chart-visualization-skill.md) |
