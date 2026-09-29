@@ -34,7 +34,7 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
     '最终回复必须是完整 HTML 报告，不输出 Markdown、JSON、代码围栏或 report-meta 侧车；' +
     '量化数据和图表必须使用 HTML/CSS/内联 SVG 直接绘制，不能用 Markdown 表格冒充图表；' +
-    '每个图表必须按 career-guidance references/html-chart-skills 下对应的绘图 Skill 输出，并在 figure 上标注 data-chart-skill。',
+    '每个图表必须按共享 chart-visualization Skill（.agents/skills/chart-visualization/references/）下对应的绘图规范输出，并在 figure 上标注 data-chart-skill；中国目标地点且有城市数据时加入无气泡城市热点图，国外目标地点省略。',
   'training-data-qa':
     '你正在按 training-data-qa SKILL 工作。根据治理数据、任务模板和标注规则构造黄金种子、' +
     '扩增样本与难例，规划训练/验证/测试/独立评测划分，并检查 Schema、事实证据、业务规则、' +

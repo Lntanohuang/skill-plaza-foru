@@ -365,7 +365,7 @@ export class PiRunner extends AgentRunner {
          career-guidance 直接输出可展示的 HTML 报告，图表由对应绘图 Skill 以内联 SVG 绘制。 */
       const direct =
         `/skill:${skill} ${latest.content}\n\n` +
-        '（HTML 报告模式：先读取用户附件、Skill 参考资料和对应的 html-chart-skills；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+        '（HTML 报告模式：先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
         '最终回复必须是一个完整、可直接展示的 HTML 文档，至少包含：结论、岗位需求分析、岗位匹配、简历修改建议、行动计划。' +
         '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
         '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
