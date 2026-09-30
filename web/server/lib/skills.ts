@@ -1,11 +1,9 @@
 /* ============================================================
    技能注册表（引擎无关）
    ------------------------------------------------------------
-   SKILL_PROMPTS 与旧 server.py 保持一致；INSTALLED_SKILLS 为
-   仓库 .agents/skills/ 下已安装真实技能的 slug，各引擎按自己的
-   方式加载（zcode：Skill 工具；pi：--skill + /skill: 命令）。
-   .agents/skills/ 是跨引擎中性约定：zcode 自动发现该目录，
-   pi 经 --skill 显式路径加载，不绑定任何一家。
+   SKILL_PROMPTS 为未安装技能的回落提示；INSTALLED_SKILLS 为
+   仓库 .agents/skills/ 下已安装真实技能的 slug。
+   Pi 经 --skill 显式路径加载，首轮以 /skill: 命令展开。
    ============================================================ */
 
 import { join, dirname } from 'node:path'
@@ -13,6 +11,27 @@ import { fileURLToPath } from 'node:url'
 
 export const CAREER_GUIDANCE_FILE_PROTOCOL =
   '报告文件协议：必须在当前会话 workspace 根目录写入 report.html。报告必须是完整 HTML 文档，包含 <!doctype html>、<html>、<head>、<body>，图表使用带 data-chart-skill 的内联 SVG；中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略。写入后只做最小的存在性/结构检查，不要再次读取 report.html 全文。最终回复只输出简短完成说明，例如“报告已生成，请点击查看。”；写入或校验失败时说明原因并明确报告未生成，不得伪造链接，不得复制 HTML、SVG、Markdown、JSON 或文件内容。'
+
+/** 仅约束 career-guidance 正式报告；与 Skill 的 HTML 骨架保持一致。 */
+export const CAREER_GUIDANCE_REPORT_SECTIONS = [
+  '一、结论与优先动作',
+  '二、岗位需求分析',
+  '三、岗位匹配',
+  '四、简历修改建议',
+  '五、行动清单',
+  '六、需要核实的问题',
+] as const
+
+export const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
+  '用户可见的正式 HTML 报告只使用以下六个 h2 章节，标题和顺序固定，不改名、不增删：' +
+  CAREER_GUIDANCE_REPORT_SECTIONS.join('；') + '。' +
+  'h1 后直接进入结论与优先动作，具体建议写在段落而非标题中；子标题只用于岗位、图表、简历项目等用户内容。' +
+  '资料不足或章节不适用时在原章节简短注明未评估及原因，不补造事实。需要核实的问题最多三项，无关键问题时写暂无。' +
+  '不得以任何层级章节、表格或清单呈现任务复述、输入摘要、已提供事实汇总、完整缺失信息清单、分析/思考过程、工具调用或模型/Agent/Skill 说明。' +
+  '不隐瞒影响决策的限制：必要来源与口径放在图注，关键限制就地简述，确认项放末章，不复述内部证据和推理链。' +
+  '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
+  '章节中的岗位、地点和经历只来自当前任务、用户材料与相符查询，不沿用示例默认值。' +
+  '仅当用户明确只需局部改写或简短答疑而非正式报告时，直接交付所需内容，不强行展开六章。'
 
 export const SKILL_PROMPTS: Record<string, string> = {
   'industry-education-report':
@@ -33,6 +52,7 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '先澄清目标，再给证据化判断，最后给有优先级、可检查的行动。每个岗位要求绑定用户提供的经历、作品或项目结果，' +
     '标记为已证明、部分证明、缺口或未知；简历改写保留真实经历，不编造数字、公司、职责或成果。' +
     '始终区分用户提供的事实、岗位原文、推断和待核实信息；不承诺录用概率，不给确定法律结论；' +
+    CAREER_GUIDANCE_USER_REPORT_CONTRACT +
     '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具，不能用通用招聘常识替代；' +
     '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
     CAREER_GUIDANCE_FILE_PROTOCOL +
@@ -65,7 +85,7 @@ export const REPORT_SECTIONS: Array<{ id: string; title: string }> = [
   { id: 'C09', title: '证据与图表附录' },
 ]
 
-/** 已安装技能的目录（供 pi --skill 直接加载，SKILL.md 格式两边通用）。
+/** 已安装技能的目录（供 pi --skill 直接加载）。
     本文件在 web/server/lib/ 下，仓库根需上溯三级：lib → server → web → 根 */
 export function skillDir(slug: string): string {
   return join(

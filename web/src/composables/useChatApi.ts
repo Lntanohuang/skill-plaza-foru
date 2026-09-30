@@ -1,7 +1,7 @@
 /* ============================================================
-   模型对话接入（Node 后端 → ZCode app-server）
+   模型对话接入（Node 后端 → pi RPC）
    ------------------------------------------------------------
-   浏览器只访问本机 /api/*：后端持有 ZCode CLI 与模型配置，不进前端。
+   浏览器只访问本机 /api/*：后端持有 pi CLI 与模型配置，不进前端。
    /api/chat 为 SSE 流式：text 增量 → usage 用量 → done 收尾。
    未启动本地服务时，工作台会提示如何启动，不影响表单预览。
    ============================================================ */
@@ -12,22 +12,13 @@ export interface ChatMessage {
 }
 
 export type ApiState = 'checking' | 'ready' | 'offline' | 'nokey'
-export type EngineId = 'zcode' | 'pi'
+export type EngineId = 'pi'
 import type { ReportChart } from '../data/runsMock'
-
-export interface EngineInfo {
-  id: EngineId
-  available: boolean
-  model?: string
-  reason?: string
-}
 
 export interface HealthResult {
   ok: boolean
   model?: string
   runner?: EngineId
-  /** 可用引擎清单（默认引擎 = runner）；不可用项带 reason */
-  engines?: EngineInfo[]
   /** 未就绪时的原因：nokey = 服务在但没读到密钥；offline = 服务没启动 */
   reason?: 'nokey' | 'offline'
   message?: string
@@ -51,7 +42,7 @@ export async function checkHealth(): Promise<HealthResult> {
       const message = data.message || 'API 未配置'
       return { ok: false, reason: message.includes('密钥') ? 'nokey' : 'offline', message }
     }
-    return { ok: true, model: data.model, runner: data.runner, engines: data.engines }
+    return { ok: true, model: data.model, runner: data.runner }
   } catch {
     return { ok: false, reason: 'offline', message: '需要启动本地服务' }
   }
@@ -69,8 +60,6 @@ export interface StreamChatOptions {
   messages: ChatMessage[]
   /** 复用会话（多轮）；缺省由后端新建并通过 session 事件返回 */
   sessionId?: string
-  /** 执行引擎；缺省用后端默认引擎（AGENT_RUNNER） */
-  engine?: EngineId
   /** 本次消息随带的附件（已上传到会话沙箱） */
   attachments?: ChatAttachment[]
   onEvent: (event: ChatEvent) => void
@@ -79,11 +68,11 @@ export interface StreamChatOptions {
 
 /** 流式对话：消费 /api/chat 的 SSE，逐事件回调。 */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { skill, messages, sessionId, engine, attachments, onEvent, signal } = options
+  const { skill, messages, sessionId, attachments, onEvent, signal } = options
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ skill, messages, sessionId, engine, attachments }),
+    body: JSON.stringify({ skill, messages, sessionId, attachments }),
     signal,
   })
   if (!response.ok || !response.body) {

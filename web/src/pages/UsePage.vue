@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
-import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage, type EngineId, type EngineInfo } from '../composables/useChatApi'
+import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage } from '../composables/useChatApi'
 import ReportOutput from '../components/ReportOutput.vue'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
@@ -33,13 +33,6 @@ const keyword = ref('')
 const apiState = ref<ApiState>('checking')
 const modelName = ref('')
 const busy = ref(false)
-/* 执行引擎：默认取后端 AGENT_RUNNER，可按运行切换（切换后走新后端会话） */
-const engine = ref<EngineId>('pi')
-const engines = ref<EngineInfo[]>([])
-const engineOf = (id: EngineId) => engines.value.find(e => e.id === id)
-function pickEngine(id: EngineId) {
-  if (engineOf(id)?.available) engine.value = id
-}
 
 /* ---------- 交互模式：表单 / 对话（URL query 持久化，两模式共用同一会话） ---------- */
 type UseMode = 'form' | 'chat'
@@ -192,10 +185,9 @@ function sessionOf(target: string): RunMessage[] {
   return sessions[target]
 }
 
-/* 后端按浏览器会话复用引擎会话（多轮上下文天然保留）；
-   会话与引擎绑定，切换引擎自动开新会话（key 拼入引擎名） */
+/* 后端按浏览器会话复用 Pi 会话；保留 pi: 前缀兼容测试模板的会话清理。 */
 const sessionIds: Record<string, string> = {}
-const sessionKey = (slug: string) => `${engine.value}:${slug}`
+const sessionKey = (slug: string) => `pi:${slug}`
 const lastUsage = ref('')
 /* 运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文，正文 delta 前也有推进体感 */
 const streamStatus = ref('')
@@ -251,9 +243,6 @@ function attachmentsPayload(): ChatAttachment[] | undefined {
     ? uploads.value.map(item => ({ name: item.name, path: item.path }))
     : undefined
 }
-
-/* 会话与引擎绑定：换引擎开新会话，旧沙箱里的附件路径不再可用，需清空重传 */
-watch(engine, () => { uploads.value = []; uploadRevision++ })
 
 /* 内置演示附件（一键测试）：仅测试环境（PLAZA_ENV=test），后端就绪且附件区为空时自动上传一次 */
 watch([apiState, () => skill.value.slug], () => {
@@ -368,7 +357,6 @@ async function run() {
       skill: target,
       messages: outgoing as ChatMessage[],
       sessionId: sessionIds[key] ?? uploadSessionIds[key],
-      engine: engine.value,
       attachments: attachmentsPayload(),
       onEvent: makeStreamHandler(answer),
     })
@@ -416,7 +404,6 @@ async function sendChat() {
       skill: target,
       messages: [{ role: 'user', content: text }],
       sessionId: sessionIds[key] ?? uploadSessionIds[key],
-      engine: engine.value,
       attachments: files.length
         ? files.map(f => ({ name: f.name, path: f.path }))
         : undefined,
@@ -574,12 +561,6 @@ async function probe() {
   if (result.ok) {
     apiState.value = 'ready'
     modelName.value = result.model ?? ''
-    engines.value = result.engines ?? []
-    if (result.runner && engineOf(result.runner)?.available) engine.value = result.runner
-    else if (!engineOf(engine.value)?.available) {
-      const first = engines.value.find(e => e.available)
-      if (first) engine.value = first.id
-    }
     return
   }
   apiState.value = result.reason === 'nokey' ? 'nokey' : 'offline'
@@ -588,18 +569,14 @@ async function probe() {
 const statusText = computed(() => {
   if (apiState.value === 'checking') return '正在检查 API'
   if (apiState.value === 'ready') {
-    const model = engineOf(engine.value)?.model ?? modelName.value
+    const model = modelName.value
     return `API 已就绪${model ? ' · ' + model : ''}`
   }
   if (apiState.value === 'nokey') return '未读到模型配置'
   return '需要启动本地服务'
 })
 
-/* 各引擎的密钥/配置指引（nokey 或引擎不可用时展示） */
-const engineHint = computed(() =>
-  engine.value === 'pi'
-    ? '确认启动后端的 shell 环境里有 DeepSeek Key（如 ~/.zshrc 的 DEEPSEEK_API_KEY），或将其写入 web/.env 后重启服务。'
-    : '请确认 ~/.zcode/cli/config.json 已配置模型 provider（详见 server/samples/PROTOCOL.md），然后重启服务。')
+const engineHint = '确认 Pi 所选模型的凭据已配置（如 DEEPSEEK_API_KEY），或将其写入 web/.env 后重启服务。'
 
 const visibleMessages = computed(() => session.value.slice(-2))
 
@@ -632,13 +609,6 @@ onBeforeUnmount(endRun)
           <p class="use-lead">{{ config.lead }}</p>
         </div>
         <div class="use-head-side">
-          <div v-if="apiState === 'ready' && engines.length" class="engine-switch" role="group" aria-label="切换执行引擎">
-            <button
-              v-for="e in engines" :key="e.id" type="button" class="engine-btn"
-              :class="{ 'is-on': e.id === engine }" :disabled="!e.available || busy || uploading"
-              :title="e.available ? `引擎 ${e.id} · ${e.model ?? ''}` : `不可用：${e.reason ?? ''}`"
-              @click="pickEngine(e.id)">{{ e.id === 'pi' ? 'pi · DeepSeek' : 'zcode · GLM' }}</button>
-          </div>
           <span class="use-api" :class="`is-${apiState}`"><i></i>{{ statusText }}</span>
           <RouterLink class="use-detail-link" :to="{ name: 'detail', params: { slug: skill.slug }, query: { from: 'use' } }">
             查看能力详情<Icon name="ext" :size="13" />

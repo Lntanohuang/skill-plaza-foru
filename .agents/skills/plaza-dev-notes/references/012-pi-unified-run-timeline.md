@@ -1,6 +1,6 @@
 # 012 · Pi 运行详情合并工具与对话时间线
 
-**状态**：已实现（2026-09-23；仅 Pi 详情页，Zcode 未接入）。
+**状态**：已实现（2026-09-23；当前执行链已统一为 Pi，历史 Zcode 记录仅作兼容数据）。
 
 ## 动机
 
@@ -13,7 +13,7 @@
 - `tool` 节点保留 `tool`、`callID`、`state.status/input/output`，入参和输出继续按需展开；`toolCallCount` 作为时间线头部的次级统计。
 - `web/src/pages/RunDetailPage.vue:225-277` 用单列“运行时间线”替代工具侧栏与独立对话流；事件按统一顺序显示。
 - `web/src/styles/styles.css:1607-1668` 提供统一节点、连接线、工具卡片和展开控件样式。
-- 范围限定为 Pi trace。Zcode 的 `tool_usage` 与 message parts 对齐、缺失事件补偿和后端 schema 暂不修改。
+- 范围限定为 Pi trace；当前运行链不再接入 Zcode。历史 Zcode trace 文件不删除，按旧记录 schema 只读展示。
 
 ## 成本与取舍
 
@@ -25,4 +25,4 @@
 
 - `cd web && npm run build` 已通过（vue-tsc 与 Vite build）。
 - 待真实浏览器回归 Pi 运行，确认文本、思考、工具调用交错展示，以及工具详情展开在长输出下的滚动表现。
-- 后续若接入 Zcode，应先统一其 trace part 形状，再复用本时间线归一化层；不要直接把 `summary.toolCalls` 拼接到时间线末尾。
+- 后续只扩展 Pi trace 的事件与展示能力；不要重新引入第二个执行引擎来承载用户报告。

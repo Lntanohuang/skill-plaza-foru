@@ -23,10 +23,10 @@ export function renderTraceMd(trace: SessionTrace): string {
   L.push('')
   L.push('## 每轮 Token 用量')
   L.push('')
-  L.push('| 轮次 | 输入 | 输出 | 缓存读取 | 合计 | 上下文 |')
-  L.push('| --- | ---: | ---: | ---: | ---: | ---: |')
+  L.push('| 轮次 | 输入 | 输出 | 缓存读取 | 合计 | 上下文 | 使用率 |')
+  L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: |')
   for (const round of trace.usageRounds ?? []) {
-    L.push(`| ${round.round} | ${round.inputTokens ?? '—'} | ${round.outputTokens ?? '—'} | ${round.cacheReadTokens ?? '—'} | ${round.totalTokens ?? '—'} | ${round.contextTokens ?? '—'} |`)
+    L.push(`| ${round.round} | ${round.inputTokens ?? '—'} | ${round.outputTokens ?? '—'} | ${round.cacheReadTokens ?? '—'} | ${round.totalTokens ?? '—'} | ${round.contextTokens ?? '—'} | ${round.contextUsageRatio ?? '—'} |`)
   }
   L.push('')
   L.push('## 工具调用时间线')

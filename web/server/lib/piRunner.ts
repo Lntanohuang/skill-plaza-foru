@@ -1,7 +1,7 @@
 /* ============================================================
    PiRunner：pi --mode rpc 桥（继承 AgentRunner，针对性修改）
    ------------------------------------------------------------
-   与 zcode 不同：pi RPC 是单会话协议，因此【每个引擎会话一个
+   pi RPC 是单会话协议，因此【每个引擎会话一个
    常驻子进程】，cwd 即沙箱 workspace；模型经 --model provider/id
    钉死（默认 DeepSeek）。命令/事件协议见 docs/pi-runner.md 与
    samples/pi-rpc-events-sample.jsonl（照真实输出写的解析）。
@@ -22,7 +22,14 @@ import type {
 } from './traceExport.ts'
 import { tokenUsageFrom } from './traceExport.ts'
 import { piCliVersion } from './agentEnv.ts'
-import { CAREER_GUIDANCE_FILE_PROTOCOL, SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, skillDir } from './skills.ts'
+import {
+  CAREER_GUIDANCE_FILE_PROTOCOL,
+  CAREER_GUIDANCE_USER_REPORT_CONTRACT,
+  SKILL_PROMPTS,
+  INSTALLED_SKILLS,
+  SIDECAR_SKILLS,
+  skillDir,
+} from './skills.ts'
 import { sidecarInstruction } from './reportMeta.ts'
 import { loadLocalEnv } from './env.ts'
 
@@ -133,6 +140,8 @@ export class PiRunner extends AgentRunner {
   /** 引擎会话 id → 本轮每次实际模型请求的 usage。 */
   private turnRounds = new Map<string, UsageRound[]>()
   private turnRoundNo = new Map<string, number>()
+  /** 每个 message_end 对应一次 get_session_stats；agent_settled 前等待全部完成。 */
+  private contextStatsPending = new Map<string, Set<Promise<void>>>()
   /** 当前 LLM 调用最近一次流式 usage（message_end 全零时的回落值，DeepSeek 实测如此） */
   private callUsage = new Map<string, UsageSummary>()
   /** 引擎会话 id → 思考进度（累计字数 + 上次上报时间，agent_start 重置） */
@@ -171,6 +180,12 @@ export class PiRunner extends AgentRunner {
       typeof patch.contextWindowTokens === 'number' && Number.isFinite(patch.contextWindowTokens) && patch.contextWindowTokens > 0
         ? patch.contextWindowTokens
         : session.modelInfo.contextWindowTokens
+    const peakContextTokens =
+      patch.peakContextTokens === null
+        ? null
+        : typeof patch.peakContextTokens === 'number' && Number.isFinite(patch.peakContextTokens)
+          ? Math.max(session.modelInfo.peakContextTokens ?? 0, patch.peakContextTokens)
+          : session.modelInfo.peakContextTokens
     session.modelInfo = {
       ...session.modelInfo,
       ...patch,
@@ -181,6 +196,7 @@ export class PiRunner extends AgentRunner {
         contextWindowTokens !== null && contextWindowTokens !== undefined
           ? patch.contextWindowSource ?? session.modelInfo.contextWindowSource ?? 'model_config'
           : patch.contextWindowSource ?? session.modelInfo.contextWindowSource ?? 'provider_metadata_unavailable',
+      peakContextTokens,
     }
   }
 
@@ -201,6 +217,59 @@ export class PiRunner extends AgentRunner {
       contextWindowTokens: contextWindowTokens ?? null,
       contextWindowSource: contextWindowTokens !== undefined ? 'model_config' : 'provider_metadata_unavailable',
     }
+  }
+
+  /**
+   * Pi 的 message_end 对应一次真实 LLM 请求（可能是工具调用链中的中间请求）。
+   * 每次只查一次 session stats，不按 token delta 轮询，避免 RPC 噪声。
+   */
+  private async captureRoundContext(sid: string, round: UsageRound): Promise<void> {
+    try {
+      const stats = await this.request({ type: 'get_session_stats' }, sid)
+      const contextTokens = numberOrUndefined(stats?.contextUsage?.tokens)
+      const contextWindowTokens = numberOrUndefined(stats?.contextUsage?.contextWindow)
+      this.updateModelInfo(sid, {
+        contextWindowTokens,
+        contextWindowSource: contextWindowTokens !== undefined ? 'provider_metadata' : undefined,
+        peakContextTokens: contextTokens ?? undefined,
+      })
+      const context = this.modelInfoOf(sid)
+      round.contextTokens = contextTokens ?? null
+      round.contextWindowTokens = context.contextWindowTokens ?? null
+      round.contextWindowSource = context.contextWindowSource ?? 'provider_metadata_unavailable'
+      round.contextUsageRatio =
+        contextTokens !== undefined && context.contextWindowTokens
+          ? contextTokens / context.contextWindowTokens
+          : null
+    } catch {
+      /* stats 查询失败不影响模型结果；该轮上下文明确记为 unavailable。 */
+      const context = this.modelInfoOf(sid)
+      round.contextTokens = null
+      round.contextWindowTokens = context.contextWindowTokens ?? null
+      round.contextWindowSource = context.contextWindowSource ?? 'provider_metadata_unavailable'
+      round.contextUsageRatio = null
+    }
+  }
+
+  private trackRoundContext(sid: string, round: UsageRound, usage: UsageSummary) {
+    const pending = this.contextStatsPending.get(sid) ?? new Set<Promise<void>>()
+    const task = this.captureRoundContext(sid, round)
+    pending.add(task)
+    this.contextStatsPending.set(sid, pending)
+    void task.finally(() => pending.delete(task))
+    void task.then(() => {
+      this.emit(sid, {
+        kind: 'usage',
+        usage,
+        round,
+        context: this.modelInfoOf(sid),
+      })
+    })
+  }
+
+  private async waitForRoundContexts(sid: string) {
+    const pending = this.contextStatsPending.get(sid)
+    if (pending?.size) await Promise.all([...pending])
   }
 
   /** 运行环境快照：模型引用/思考档位/CLI 版本（run 记录落盘用） */
@@ -230,7 +299,7 @@ export class PiRunner extends AgentRunner {
   protected routeMessage(channel: JsonlChannel, msg: any) {
     const sid = this.sidOf(channel)
     if (!sid) return
-    /* 全部事件留痕（zcode 侧通知同样落 events.jsonl，保持对齐） */
+    /* 全部事件留痕到 events.jsonl。 */
     this.tapOf(sid)?.('in', msg)
     const type = msg.type
     if (type === 'message_update') {
@@ -276,13 +345,15 @@ export class PiRunner extends AgentRunner {
           contextTokens: null,
           contextWindowTokens: context.contextWindowTokens ?? null,
           contextWindowSource: context.contextWindowSource ?? 'provider_metadata_unavailable',
+          contextUsageRatio: null,
         }
         const rounds = this.turnRounds.get(sid) ?? []
         rounds.push(round)
         this.turnRounds.set(sid, rounds)
         const total = sumUsage(this.turnUsage.get(sid), final)
         this.turnUsage.set(sid, total)
-        this.emit(sid, { kind: 'usage', usage: total, round, context })
+        /* 先查询该 message_end 对应的上下文，再发带 contextTokens 的轮次事件。 */
+        this.trackRoundContext(sid, round, total)
       }
     } else if (type === 'agent_start') {
       this.turnUsage.delete(sid)
@@ -290,6 +361,7 @@ export class PiRunner extends AgentRunner {
       this.updateModelInfo(sid, { peakContextTokens: null })
       this.turnRounds.delete(sid)
       this.turnRoundNo.delete(sid)
+      this.contextStatsPending.delete(sid)
       this.thinkState.delete(sid)
     } else if (type === 'agent_settled') {
       /* 权威收尾：拉最终文本后发 terminal（失败经 error 收尾） */
@@ -321,6 +393,8 @@ export class PiRunner extends AgentRunner {
 
   private async finishTurn(sid: string) {
     try {
+      /* 每个 message_end 的 stats 查询必须先完成，避免最终 trace 丢最后一轮上下文。 */
+      await this.waitForRoundContexts(sid)
       const [last, stats] = await Promise.all([
         this.request({ type: 'get_last_assistant_text' }, sid),
         this.request({ type: 'get_session_stats' }, sid).catch(() => null),
@@ -339,7 +413,13 @@ export class PiRunner extends AgentRunner {
       if (statsPeak !== undefined && rounds.length) {
         /* get_session_stats.contextUsage 是 pi 对当前请求的真实上下文占用；
            归属于本轮最后一个请求，避免把累计 tokens 当作单轮上下文。 */
-        rounds[rounds.length - 1] = { ...rounds[rounds.length - 1], contextTokens: statsPeak }
+        const contextWindow = this.modelInfoOf(sid).contextWindowTokens
+        rounds[rounds.length - 1] = {
+          ...rounds[rounds.length - 1],
+          contextTokens: statsPeak,
+          contextWindowTokens: contextWindow ?? null,
+          contextUsageRatio: contextWindow ? statsPeak / contextWindow : null,
+        }
       }
       const context = this.modelInfoOf(sid)
       for (let i = 0; i < rounds.length; i++) {
@@ -418,6 +498,7 @@ export class PiRunner extends AgentRunner {
     this.callUsage.delete(sessionId)
     this.turnRounds.delete(sessionId)
     this.turnRoundNo.delete(sessionId)
+    this.contextStatsPending.delete(sessionId)
     this.thinkState.delete(sessionId)
     s.channel.kill()
     this.dropSessionBookkeeping(sessionId)
@@ -431,6 +512,7 @@ export class PiRunner extends AgentRunner {
     this.callUsage.delete(sid)
     this.turnRounds.delete(sid)
     this.turnRoundNo.delete(sid)
+    this.contextStatsPending.delete(sid)
     this.thinkState.delete(sid)
     for (const [id, p] of this.pending) {
       if (p.sid === sid) {
@@ -509,16 +591,26 @@ export class PiRunner extends AgentRunner {
   }
 
   buildPrompt(skill: string, messages: any[], isFirstTurn: boolean): string {
-    // pi 进程常驻，历史天然保留，只发最新一条；技能指令仅首条注入
+    // Pi 保留历史；就业报告的短结构契约逐轮重申，避免追问或旧会话沿用旧结构。
     const latest = messages[messages.length - 1]
-    if (!isFirstTurn) return latest.content
+    if (!isFirstTurn) {
+      return skill === 'career-guidance'
+        ? `${latest.content}\n\n${CAREER_GUIDANCE_USER_REPORT_CONTRACT}\n${CAREER_GUIDANCE_FILE_PROTOCOL}`
+        : latest.content
+    }
     if (INSTALLED_SKILLS.has(skill)) {
+      // 其他已安装技能保持自己的输出契约，不注入就业报告章节或文件协议。
+      if (skill !== 'career-guidance') {
+        const prompt = `/skill:${skill} ${latest.content}`
+        return SIDECAR_SKILLS.has(skill) ? `${prompt}\n\n${sidecarInstruction(skill)}` : prompt
+      }
       /* --skill 已注册命令，/skill:name 展开注入技能文档（模板章节在文档内）。
          career-guidance 写入 workspace/report.html，最终回复只保留短状态。 */
       const direct =
         `/skill:${skill} ${latest.content}\n\n` +
         '（先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
-        '报告必须包含结论、岗位需求分析、岗位匹配、简历修改建议和行动计划，并写入当前 workspace/report.html。' +
+        '报告必须写入当前 workspace/report.html。' +
+        CAREER_GUIDANCE_USER_REPORT_CONTRACT +
         '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
         '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
         '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +

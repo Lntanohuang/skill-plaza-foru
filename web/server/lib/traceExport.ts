@@ -2,7 +2,7 @@
    运行 Trace 记录与导出
    ------------------------------------------------------------
    三层：实时事件流（RunRecorder，逐行落盘）/ 权威导出
-   （zcode SQLite → trace.json）/ 运行索引（index.jsonl）。
+   （Pi RPC → trace.json）/ 运行索引（index.jsonl）。
    目录：web/server/traces/（TRACES_DIR 环境变量可覆盖）。
    评测只依赖 index.jsonl 与 <runId>.json，schema 保持稳定。
    ============================================================ */
@@ -10,13 +10,10 @@
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
-import { homedir } from 'node:os'
 import type { HtmlReportValidation } from './htmlReport.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 export const TRACES_DIR = process.env.TRACES_DIR || join(__dirname, '..', 'traces')
-const ZCODE_DB = process.env.ZCODE_DB || join(homedir(), '.zcode', 'cli', 'db', 'db.sqlite')
 
 export interface UsageSummary {
   inputTokens?: number
@@ -50,6 +47,7 @@ export interface UsageRound {
   contextTokens: number | null
   contextWindowTokens: number | null
   contextWindowSource: string
+  contextUsageRatio: number | null
 }
 
 /** runStart、runEnd、索引和权威 trace 共用的完整累计/上下文快照。 */
@@ -121,7 +119,7 @@ export function usageWithTokenSnapshot(
 export interface AgentEnvInfo {
   /** Agent CLI 版本（--version / package.json 探测；失败省略，界面显示 —） */
   agentVersion?: string
-  /** 模型标识（pi：provider/modelId；zcode：服务端描述串） */
+  /** 模型标识（pi：provider/modelId） */
   model?: string
   /** 思考档位（pi 专属） */
   thinking?: string
@@ -138,7 +136,7 @@ export interface RunRecord {
   runId: string
   ts: string
   clientSessionId: string
-  /** 执行引擎（zcode / pi）；历史记录缺省视为 zcode */
+  /** 执行引擎；历史记录可能保留旧版 zcode 值。 */
   engine?: 'zcode' | 'pi'
   engineSessionId?: string
   skill: string
@@ -288,8 +286,8 @@ function now(): string {
 }
 
 /* ------------------------------------------------------------
-   权威导出：zcode SQLite（message/part/tool_usage）→ trace.json
-   schema 与既有导出一致：session / summary / messages
+   权威导出：Pi RPC get_messages → trace.json
+   schema：session / summary / messages
    ------------------------------------------------------------ */
 
 export interface SessionTrace {
@@ -319,135 +317,4 @@ export interface SessionTrace {
     toolCalls: Array<{ tool: string; status: string; read_only: boolean; started: string }>
   }
   messages: Array<{ seq: number | null; time: string; role?: string; parts: unknown[] }>
-}
-
-type Row = Record<string, unknown>
-
-/** 只读打开 zcode 会话库；node:sqlite 优先，失败回落 python3 脚本 */
-export async function exportSessionTrace(
-  zcodeSessionId: string,
-  outFile: string,
-  options: TraceExportOptions = {},
-): Promise<{ toolCallCount: number } | null> {
-  const trace = await readSessionFromDb(zcodeSessionId, options)
-  if (!trace) return null
-  writeFileSync(outFile, JSON.stringify(trace, null, 1))
-  return { toolCallCount: trace.summary.toolCalls.length }
-}
-
-/** 列出属于本项目沙箱的全部会话（backfill 用） */
-export async function listWorkspaceSessions(): Promise<
-  Array<{ id: string; title: string; directory: string; time_created: number; time_updated: number }>
-> {
-  const { DatabaseSync } = (await import('node:sqlite')) as any
-  const db = new DatabaseSync(ZCODE_DB, { readOnly: true })
-  try {
-    return db
-      .prepare(
-        `SELECT id, title, directory, time_created, time_updated FROM session
-         WHERE directory LIKE ? ORDER BY time_created`,
-      )
-      .all(`%${join('web', 'server', 'workspace')}%`) as any
-  } finally {
-    db.close()
-  }
-}
-
-async function readSessionFromDb(sid: string, options: TraceExportOptions = {}): Promise<SessionTrace | null> {
-  try {
-    const { DatabaseSync } = (await import('node:sqlite')) as any
-    const db = new DatabaseSync(ZCODE_DB, { readOnly: true })
-    try {
-      return querySession(
-        sid,
-        (sql: string, ...args: unknown[]) => db.prepare(sql).all(...args),
-        options,
-      )
-    } finally {
-      db.close()
-    }
-  } catch {
-    return readSessionViaPython(sid, options)
-  }
-}
-
-function querySession(
-  sid: string,
-  all: (sql: string, ...args: unknown[]) => Row[],
-  options: TraceExportOptions = {},
-): SessionTrace | null {
-  const meta = all(
-    'SELECT id, title, directory, time_created, time_updated, trace_id FROM session WHERE id = ?',
-    sid,
-  )[0]
-  if (!meta) return null
-  const messages = all(
-    'SELECT id, sequence, time_created, data FROM message WHERE session_id = ? ORDER BY sequence, time_created',
-    sid,
-  )
-  const parts = all(
-    'SELECT p.message_id, p.sequence, p.data FROM part p WHERE p.session_id = ? ORDER BY p.message_id, p.sequence',
-    sid,
-  )
-  const tools = all(
-    'SELECT tool_name, status, read_only, started_at FROM tool_usage WHERE session_id = ? ORDER BY started_at',
-    sid,
-  )
-
-  const byMsg = new Map<string, unknown[]>()
-  for (const p of parts) {
-    const list = byMsg.get(String(p.message_id)) ?? []
-    list.push(JSON.parse(String(p.data)))
-    byMsg.set(String(p.message_id), list)
-  }
-
-  return {
-    session: {
-      id: String(meta.id),
-      title: String(meta.title),
-      workspace: String(meta.directory),
-      created: new Date(Number(meta.time_created)).toISOString(),
-      updated: new Date(Number(meta.time_updated)).toISOString(),
-      trace_id: meta.trace_id ? String(meta.trace_id) : undefined,
-    },
-    ...(options.tokenUsage ?? tokenUsageFrom()),
-    usageRounds: options.usageRounds ?? [],
-    summary: {
-      messages: messages.length,
-      toolCalls: tools.map((t) => ({
-        tool: String(t.tool_name),
-        status: String(t.status),
-        read_only: Boolean(t.read_only),
-        started: new Date(Number(t.started_at)).toISOString(),
-      })),
-    },
-    messages: messages.map((m) => {
-      const data = JSON.parse(String(m.data))
-      return {
-        seq: (m.sequence as number | null) ?? null,
-        time: new Date(Number(m.time_created)).toISOString(),
-        role: data?.role,
-        parts: byMsg.get(String(m.id)) ?? [],
-      }
-    }),
-  }
-}
-
-function readSessionViaPython(sid: string, options: TraceExportOptions = {}): SessionTrace | null {
-  const script = join(__dirname, '..', 'scripts', 'sqlite_dump.py')
-  try {
-    const r = spawnSync('python3', [script, ZCODE_DB, sid], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    })
-    if (r.status !== 0 || !r.stdout.trim()) return null
-    const trace = JSON.parse(r.stdout) as SessionTrace
-    return {
-      ...trace,
-      ...(options.tokenUsage ?? tokenUsageFrom()),
-      usageRounds: options.usageRounds ?? [],
-    }
-  } catch {
-    return null
-  }
 }

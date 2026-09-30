@@ -63,3 +63,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 023 | 省内城市分布白名单查询与热点图报告校验 | 已实现接入（真实数据库与模型报告已验证） | [023-city-distribution-heatmap.md](references/023-city-distribution-heatmap.md) |
 | 024 | 城市热点图省份资源包泛化与 Pi 双省验证 | 已实现资源泛化（真实数据库广东、浙江报告均已验证） | [024-region-resource-generalization.md](references/024-region-resource-generalization.md) |
 | 025 | 就业指导 trace 运行记录显示链路诊断 | 已实现（真实 API/浏览器回归待验证） | [025-career-trace-history-display.md](references/025-career-trace-history-display.md) |
+| 026 | Pi 每次模型请求的上下文占用记录 | 已实现（真实 Pi/API 端到端回归待用户执行） | [026-pi-context-usage-per-request.md](references/026-pi-context-usage-per-request.md) |
+| 027 | Pi-only 执行链与就业报告固定用户结构 | 已实现（真实报告回归待用户执行） | [027-pi-only-user-report-structure.md](references/027-pi-only-user-report-structure.md) |

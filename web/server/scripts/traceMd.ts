@@ -8,7 +8,7 @@ import { renderTraceMd } from '../lib/traceMd.ts'
 
 const arg = process.argv[2]
 if (!arg) {
-  console.error('用法：npm run trace:md -- <runId | zcodeSessionId | trace文件路径>')
+  console.error('用法：npm run trace:md -- <runId | engineSessionId | trace文件路径>')
   process.exit(1)
 }
 

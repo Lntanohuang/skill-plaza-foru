@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 /* ============================================================
-   SKILL 广场 · Node 后端（双引擎）
+   SKILL 广场 · Node 后端（Pi 引擎）
    ------------------------------------------------------------
-   职责：把浏览器 /api/chat 桥接到本地 agent 引擎，SSE 流式回传。
-   引擎（AgentRunner 抽象，见 lib/runner.ts）：
-     · zcode —— zcode app-server（NDJSON，共享单进程，内网全能力）
-     · pi   —— pi --mode rpc（每会话一进程，DeepSeek 直连）
-   默认引擎由 AGENT_RUNNER 选择（缺省 pi），前端可在请求级覆盖；
-   两个引擎共用同一套 SSE 协议与三层 trace 留痕。
-   协议笔记：samples/PROTOCOL.md（zcode）、docs/pi-runner.md（pi）。
+   职责：把浏览器 /api/chat 桥接到本地 pi agent 引擎，SSE 流式回传。
+   Pi 通过 --mode rpc 按会话启动独立进程，统一使用 docs/pi-runner.md
+   规定的 JSONL 协议和三层 trace 留痕。
    ============================================================ */
 
 import { createServer } from 'node:http'
@@ -40,7 +36,6 @@ import {
   type HtmlReportValidation,
 } from './lib/htmlReport.ts'
 import { serverEnv } from './lib/agentEnv.ts'
-import { resolveZcodeCli } from './lib/zcodeCli.ts'
 import { loadLocalEnv } from './lib/env.ts'
 import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS } from './lib/skills.ts'
 import {
@@ -50,9 +45,8 @@ import {
   EMPTY_META_COUNTS,
   type SidecarExtract,
 } from './lib/reportMeta.ts'
-import { ZcodeRunner } from './lib/zcodeRunner.ts'
 import { PiRunner, resolvePiCli, piModelRef } from './lib/piRunner.ts'
-import type { AgentRunner, EngineName, RunnerEvent } from './lib/runner.ts'
+import type { EngineName, RunnerEvent } from './lib/runner.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -72,51 +66,16 @@ const MAX_UPLOAD_FILE_BYTES = 6 * 1024 * 1024
 const UPLOAD_EXT_WHITELIST = new Set(['.pdf', '.docx', '.doc', '.md', '.txt'])
 
 /* ------------------------------------------------------------
-   引擎注册：AGENT_RUNNER=zcode|pi 选默认（缺省 pi）；
-   引擎缺依赖时不阻止服务启动，仅标记不可用（/api/health 暴露）
+   Pi 引擎注册：缺少 CLI 时服务启动失败，避免页面显示无法运行的引擎。
    ------------------------------------------------------------ */
 
-type EngineEntry =
-  | { runner: AgentRunner; available: true }
-  | { available: false; reason: string }
-
-const zcodeCli = resolveZcodeCli()
 const piCli = resolvePiCli()
-const RUNNERS: Partial<Record<EngineName, EngineEntry>> = {
-  zcode: zcodeCli
-    ? { runner: new ZcodeRunner(zcodeCli), available: true }
-    : {
-        available: false,
-        reason: '未找到 zcode CLI（ZCODE_CLI 配置 / 常见安装位置 / PATH 均未命中）',
-      },
-  pi: piCli
-    ? { runner: new PiRunner(piModelRef(), piCli), available: true }
-    : { available: false, reason: '未找到 pi CLI（PI_CLI 配置 / PATH 均未命中）' },
-}
-
-const REQUESTED_RUNNER = (process.env.AGENT_RUNNER || 'pi').trim().toLowerCase()
-if (REQUESTED_RUNNER !== 'zcode' && REQUESTED_RUNNER !== 'pi')
-  console.warn(`忽略非法 AGENT_RUNNER=${REQUESTED_RUNNER}（仅支持 zcode|pi），回落到 pi`)
-const DEFAULT_ENGINE: EngineName =
-  RUNNERS[REQUESTED_RUNNER as EngineName]?.available === true
-    ? (REQUESTED_RUNNER as EngineName)
-    : RUNNERS.pi?.available === true
-      ? 'pi'
-      : 'zcode'
-
-if (!Object.values(RUNNERS).some((e) => e?.available)) {
-  console.error('zcode 与 pi 两个引擎都不可用，无法启动：')
-  for (const [name, e] of Object.entries(RUNNERS)) console.error(`- ${name}：${e && !e.available ? e.reason : ''}`)
+if (!piCli) {
+  console.error('未找到 pi CLI（PI_CLI 配置 / PATH 均未命中），请安装 Pi 后重试。')
   process.exit(1)
 }
-if (REQUESTED_RUNNER === 'zcode' && DEFAULT_ENGINE !== 'zcode')
-  console.warn(`AGENT_RUNNER=zcode 但 zcode 不可用，默认引擎回落为 ${DEFAULT_ENGINE}`)
-
-function runnerOf(engine: EngineName): AgentRunner {
-  const e = RUNNERS[engine]
-  if (!e?.available) throw new Error(`「${engine}」引擎不可用：${e && !e.available ? e.reason : '未知'}`)
-  return e.runner
-}
+const DEFAULT_ENGINE: EngineName = 'pi'
+const runner = new PiRunner(piModelRef(), piCli)
 
 /* ------------------------------------------------------------
    会话管理：浏览器 sessionId → 引擎会话 + 沙箱目录
@@ -130,7 +89,7 @@ const sessions = new Map<
 
 /* ------------------------------------------------------------
    沙箱 AGENTS.md：会话工作目录的服务端说明（Agent 从 cwd 收集
-   AGENTS.md——pi resource-loader 与 zcode 同一约定）。目前只声明
+   AGENTS.md——由 pi resource-loader 加载）。目前只声明
    MySQL 只读查询工具；MYSQL_* 未配置时（如公开部署无凭据）不写
    工具节，避免给 Agent 一把坏工具。内容确定性覆盖，每次创建重写。
    ------------------------------------------------------------ */
@@ -224,17 +183,12 @@ const server = createServer((req, res) => {
   const path = decodeURIComponent((req.url || '').split('?')[0])
   const seg = path.split('/').filter(Boolean) // 如 ['api','runs',runId,'file',kind]
   if (req.method === 'GET' && path === '/api/health') {
-    const defaultRunner = runnerOf(DEFAULT_ENGINE)
     sendJson(res, 200, {
       ok: true,
-      model: defaultRunner.describe(),
+      model: runner.describe(),
       runner: DEFAULT_ENGINE,
-      engines: (Object.entries(RUNNERS) as [EngineName, EngineEntry][]).map(
-        ([id, e]) =>
-          e?.available
-            ? { id, available: true, model: e.runner.describe(), version: e.runner.envInfo().agentVersion }
-            : { id, available: false, reason: e ? e.reason : '未注册' },
-      ),
+      // 保留数组形状兼容旧客户端，但只公布 Pi。
+      engines: [{ id: DEFAULT_ENGINE, available: true, model: runner.describe(), version: runner.envInfo().agentVersion }],
       message: 'API 已配置',
     })
     return
@@ -451,18 +405,13 @@ async function handleChat(req: any, res: any) {
     sendJson(res, 400, { error: '请选择有效的 SKILL。' })
     return
   }
-  /* 引擎随请求可覆盖（缺省用 AGENT_RUNNER 默认）；同一会话与引擎绑定 */
-  const engineRaw = typeof body.engine === 'string' ? body.engine : DEFAULT_ENGINE
-  if (engineRaw !== 'zcode' && engineRaw !== 'pi') {
-    sendJson(res, 400, { error: 'engine 仅支持 zcode 或 pi。' })
+  /* 兼容省略 engine 的旧客户端；显式请求已移除的引擎必须拒绝，不静默换模型。 */
+  const engineRaw = body.engine ?? DEFAULT_ENGINE
+  if (engineRaw !== 'pi') {
+    sendJson(res, 400, { error: 'engine 仅支持 pi。' })
     return
   }
   const engine: EngineName = engineRaw
-  if (!RUNNERS[engine]?.available) {
-    const e = RUNNERS[engine]!
-    sendJson(res, 400, { error: `「${engine}」引擎不可用：${e.available ? '' : e.reason}` })
-    return
-  }
   if (!Array.isArray(messages) || messages.length === 0) {
     sendJson(res, 400, { error: '请至少输入一条消息。' })
     return
@@ -509,7 +458,6 @@ async function handleChat(req: any, res: any) {
   let clientGone = false
   let timeout: ReturnType<typeof setTimeout>
 
-  const runner = runnerOf(engine)
 
   /* ---- trace 记录：实时流 + 终态导出 + 索引（见 lib/traceExport.ts） ---- */
   const runId = newRunId()
@@ -633,8 +581,9 @@ async function handleChat(req: any, res: any) {
     if (skill !== 'career-guidance' || htmlReportFile || !entry?.workspaceDir) return Boolean(htmlReportFile)
     const report = readWorkspaceHtmlReport(entry.workspaceDir)
     if (!report.found) {
-      if (report.error) {
-        htmlReportError = report.error
+      const error = 'error' in report ? report.error : undefined
+      if (error) {
+        htmlReportError = error
         recorder.note({ htmlReportError, htmlReportSource: 'workspace/report.html' })
       }
       return false
@@ -721,11 +670,11 @@ async function handleChat(req: any, res: any) {
                 pass: v.pass,
                 errors: v.errors,
                 counts: v.counts,
-                gaps: sidecar.meta.gaps,
-                risks: sidecar.meta.risks,
-                marketAnalysis: sidecar.meta.marketAnalysis,
-                resumeReview: sidecar.meta.resumeReview,
-                charts: v.pass ? sidecar.meta.charts : [],
+                gaps: sidecar.meta.gaps as unknown as Array<Record<string, unknown>> | undefined,
+                risks: sidecar.meta.risks as unknown as Array<Record<string, unknown>> | undefined,
+                marketAnalysis: sidecar.meta.marketAnalysis as unknown as Record<string, unknown> | undefined,
+                resumeReview: sidecar.meta.resumeReview as unknown as Record<string, unknown> | undefined,
+                charts: v.pass ? sidecar.meta.charts as unknown as Array<Record<string, unknown>> : [],
               },
             }
             record.files.report = traceFilePath(runId, 'report')
@@ -949,26 +898,16 @@ server.listen(PORT, '127.0.0.1', () => {
   /* PLAZA_ENV 前后端共用（前端经 vite envPrefix 暴露）；test 时工作台带演示默认值 */
   const plazaEnv = (process.env.PLAZA_ENV || '').trim().toLowerCase() || 'prod'
   console.log(`运行环境：${plazaEnv}${plazaEnv === 'test' ? '（测试环境：工作台自动带入示例与测试简历）' : '（生产环境：不预填演示默认值）'}`)
-  console.log(`默认引擎：${DEFAULT_ENGINE}（AGENT_RUNNER=zcode|pi 可改）`)
-  for (const [name, e] of Object.entries(RUNNERS)) {
-    if (e?.available) {
-      const r = e.runner
-      /* 顺带预热版本探测缓存（run 记录 /api/health 共用） */
-      const v = r.envInfo().agentVersion
-      console.log(`- ${name}：可用 · ${r.describe()}${v ? ` · v${v}` : ''}`)
-    } else {
-      console.log(`- ${name}：不可用 · ${e && !e.available ? e.reason : ''}`)
-    }
-  }
-  if (RUNNERS.pi?.available)
-    console.log('pi 凭据：模型 key 需在启动服务的 shell 环境中（如 DEEPSEEK_API_KEY），或写入 web/.env。')
+  console.log(`执行引擎：${DEFAULT_ENGINE}（模型通过 PI_MODEL 配置）`)
+  const version = runner.envInfo().agentVersion
+  console.log(`- pi：可用 · ${runner.describe()}${version ? ` · v${version}` : ''}`)
+  console.log('pi 凭据：模型 key 需在启动服务的 shell 环境中（如 DEEPSEEK_API_KEY），或写入 web/.env。')
   console.log(`trace 记录：${TRACES_DIR}`)
 })
 
 /* 服务退出时回收引擎会话进程（pi 每会话一进程，避免残留） */
 server.on('close', () => {
   for (const entry of sessions.values()) {
-    const e = RUNNERS[entry.engine]
-    if (e?.available) e.runner.disposeSession(entry.engineSessionId)
+    runner.disposeSession(entry.engineSessionId)
   }
 })

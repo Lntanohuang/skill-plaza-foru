@@ -12,7 +12,6 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { arch, platform } from 'node:os'
 import type { AgentEnvInfo } from './traceExport.ts'
-import type { ZcodeCli } from './zcodeCli.ts'
 
 const VERSION_RE = /(\d+\.\d+[\w.\-+]*)/
 
@@ -54,18 +53,6 @@ export function piCliVersion(cli: string | null): string | undefined {
   if (!cli) return undefined
   const key = `pi:${cli}`
   if (!cache.has(key)) cache.set(key, versionByFlag(cli, ['--version']) ?? versionByPackageJson(cli))
-  return cache.get(key)
-}
-
-export function zcodeCliVersion(cli: ZcodeCli): string | undefined {
-  const key = `zcode:${cli.path}:${cli.mode}`
-  if (!cache.has(key)) {
-    const v =
-      cli.mode === 'node'
-        ? versionByFlag(process.execPath, [cli.path, '--version'])
-        : versionByFlag(cli.path, ['--version'], cli.mode === 'shell')
-    cache.set(key, v ?? versionByPackageJson(cli.path))
-  }
   return cache.get(key)
 }
 

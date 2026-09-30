@@ -7,12 +7,11 @@
 ## 为什么是 RPC 模式
 
 pi 有四种接入形态（交互 TUI / `-p` print+json / `--mode rpc` / Node SDK）。
-RPC 模式是「常驻子进程 + JSONL over stdio」，与 zcode `app-server` 的桥接结构同构
-（共用 `lib/runner.ts` 抽象基类：分帧、id 关联、listen/tap 都在基类），
+RPC 模式是「常驻子进程 + JSONL over stdio」，由 `lib/runner.ts` 提供
+分帧、id 关联、listen/tap 等公共机制。
 且 token 级流式、多轮上下文、abort、工具事件齐全。
 
-与 zcode 的关键差异：**RPC 是单会话协议**，因此 PiRunner 每个引擎会话各起一个
-pi 子进程（zcode 是全局共享一个进程）；进程 cwd 即沙箱 workspace。
+RPC 是单会话协议，因此 PiRunner 每个会话各起一个 pi 子进程；进程 cwd 即沙箱 workspace。
 
 ## 启动参数（PiRunner.createSession）
 
@@ -62,7 +61,7 @@ pi --mode rpc \
 
 ## trace 导出（exportTrace）
 
-`get_messages` 的 AgentMessage 直接映射成与 zcode 导出同构的 `SessionTrace`：
+`get_messages` 的 AgentMessage 直接映射成 `SessionTrace`：
 - assistant 内容块：`text` 原样、`thinking` → `reasoning`、`toolCall` → `tool`
   （`state.input = arguments`）；`toolResult` 消息的输出折叠进对应 `tool` 的 `state.output`；
 - `summary.toolCalls` 从 toolCall 块登记（名称/状态/时间），详情页时间线直接可用。
@@ -75,6 +74,6 @@ DeepSeek key 走 pi 自己的读取顺序（环境变量 `DEEPSEEK_API_KEY` 等�
 
 ## 已安装技能
 
-pi 的技能就是 SKILL.md（与 zcode 同一约定）。`--skill <dir>` 显式加载仓库
-`.agents/skills/`（跨引擎中性目录，绕过项目信任检查），技能目录里的 references/assets 由 agent 在执行时
+pi 的技能就是 SKILL.md。`--skill <dir>` 显式加载仓库
+`.agents/skills/`，技能目录里的 references/assets 由 agent 在执行时
 自行按需读取（渐进披露）。

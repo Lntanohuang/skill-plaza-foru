@@ -1,14 +1,12 @@
 /* ============================================================
    AgentRunner 抽象基类
    ------------------------------------------------------------
-   各引擎（zcode app-server / pi --mode rpc）都是「常驻子进程 +
-   JSONL over stdio」的桥：公共机制放这里——严格 \n 分帧、请求/
-   响应 id 关联、pending 拒绝、会话事件回调（listen）、协议留痕
-   tap（trace 记录用）。
-   子类做针对性定制：进程生命周期（zcode 全局共享一个进程；
-   pi 每个会话一个进程）、消息路由与事件归一（→ RunnerEvent）、
-   会话创建/收尾/trace 导出/首轮提示词拼装。
-   协议笔记：samples/PROTOCOL.md（zcode）、docs/pi-runner.md（pi）。
+   Pi 是「常驻子进程 + JSONL over stdio」的桥：公共机制放这里——
+   严格 \n 分帧、请求/响应 id 关联、pending 拒绝、会话事件回调
+   （listen）、协议留痕 tap（trace 记录用）。
+   PiRunner 负责进程生命周期、消息路由与事件归一、会话创建/收尾、
+   trace 导出和首轮提示词拼装。
+   协议说明：docs/pi-runner.md。
    ============================================================ */
 
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -20,7 +18,7 @@ import type {
   UsageSummary,
 } from './traceExport.ts'
 
-export type EngineName = 'zcode' | 'pi'
+export type EngineName = 'pi'
 
 export type EventCb = (event: RunnerEvent) => void
 export type TapFn = (dir: 'out' | 'in', msg: any) => void
@@ -125,7 +123,7 @@ export abstract class AgentRunner {
 
   /* ---------------- 子类定制点 ---------------- */
 
-  /** 取会话对应的通道，无则按引擎策略创建（zcode：共享单进程；pi：每会话一进程） */
+  /** 取会话对应的 Pi 通道；每个引擎会话一个进程。 */
   protected abstract channelFor(sessionId: string): JsonlChannel
 
   /** 非响应类消息（通知 / 反向请求 / 事件）的路由与归一 */
@@ -203,8 +201,7 @@ export abstract class AgentRunner {
   }
 
   /**
-   * 发请求并按 id 关联响应。payload 带引擎自己的命令字段
-   * （zcode：{method, params}；pi：{type, ...}），id 由这里统一附加。
+   * 发请求并按 id 关联响应。Pi payload 使用 {type, ...}，id 由这里统一附加。
    */
   protected request(payload: Record<string, any>, sid?: string): Promise<any> {
     const ch = this.channelFor(sid ?? '')
