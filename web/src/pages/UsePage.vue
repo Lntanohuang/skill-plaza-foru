@@ -158,6 +158,16 @@ function toggleOption(fieldId: string, option: string) {
     : [...current, option]
 }
 
+function buildTaskTitle(): string {
+  const goal = String(form.goal ?? '').trim()
+  const task = String(form.task ?? '').trim()
+  if (skill.value.slug === 'career-guidance' && goal && task) {
+    return `${goal}${task}分析`
+  }
+  if (goal && task) return `${goal}${task}`
+  return `${skill.value.name}${task ? ` · ${task}` : ''}`
+}
+
 function buildPrompt(): string {
   const lines = config.value.sections.flatMap(s => s.fields)
     .map(field => (valueLabel(field) ? `- ${field.label}：${valueLabel(field)}` : ''))
@@ -355,6 +365,7 @@ async function run() {
   try {
     await streamChat({
       skill: target,
+      taskTitle: buildTaskTitle(),
       messages: outgoing as ChatMessage[],
       sessionId: sessionIds[key] ?? uploadSessionIds[key],
       attachments: attachmentsPayload(),

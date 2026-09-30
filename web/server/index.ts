@@ -201,8 +201,8 @@ const server = createServer((req, res) => {
     handleUpload(req, res)
     return
   }
-  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'reports' && seg.length === 3) {
-    handleHtmlReport(req, res, seg[2])
+  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'reports' && (seg.length === 3 || seg.length === 4 && seg[3] === 'download')) {
+    handleHtmlReport(req, res, seg[2], seg.length === 4)
     return
   }
   /* ---- 运行记录（只读，评测用）---- */
@@ -292,7 +292,7 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
 }
 
 /** GET /api/reports/:runId：返回就业指导 Agent 直接生成的独立 HTML 报告。 */
-function handleHtmlReport(_req: any, res: any, runId: string) {
+function handleHtmlReport(req: any, res: any, runId: string, forceDownload = false) {
   const record = readIndex().find(r => r.runId === runId)
   /* done 事件先于异步 appendIndex 到达，直接按 runId 回退查找可避免用户点击瞬间竞态。 */
   const file = record?.files.html ?? traceFilePath(runId, 'html')
@@ -301,10 +301,16 @@ function handleHtmlReport(_req: any, res: any, runId: string) {
     return
   }
   const data = readFileSync(file)
+  const query = new URL(req.url || '/', 'http://localhost').searchParams
+  const download = forceDownload || query.get('download') === '1'
+  const title = (record?.taskTitle || record?.promptDigest || '就业指导报告')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 100) || '就业指导报告'
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': data.length,
-    'Content-Disposition': 'inline',
+    'Content-Disposition': download
+      ? `attachment; filename="report.html"; filename*=UTF-8''${encodeURIComponent(title)}.html`
+      : 'inline',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; script-src 'none'; object-src 'none'",
@@ -401,6 +407,10 @@ async function handleChat(req: any, res: any) {
   }
 
   const { skill, messages, sessionId } = body || {}
+  /* taskTitle 由结构化表单生成，仅作为用户可见标题；不信任过长或带控制字符的输入。 */
+  const taskTitle = typeof body?.taskTitle === 'string'
+    ? body.taskTitle.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
+    : ''
   if (!skill || !(skill in SKILL_PROMPTS)) {
     sendJson(res, 400, { error: '请选择有效的 SKILL。' })
     return
@@ -465,7 +475,7 @@ async function handleChat(req: any, res: any) {
   /* 首包立即确认在线运行已开始；不要等会话创建或模型首个 delta。 */
   sse({ type: 'started', runId, startedAt })
   sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
-  const promptDigest = String(latest.content).replace(/\s+/g, ' ').slice(0, 80)
+  const promptDigest = taskTitle || String(latest.content).replace(/\s+/g, ' ').slice(0, 80)
   /* 附件说明在 digest 之后注入 prompt：路径必须落在本会话沙箱内（防穿越）；
      .md/.txt 直接内联内容（截断 16000 字保底），其余格式指示引擎读工作目录文件 */
   const attachmentNotes: string[] = []
@@ -612,6 +622,7 @@ async function handleChat(req: any, res: any) {
       engine,
       engineSessionId: entry?.engineSessionId,
       skill,
+      taskTitle: taskTitle || undefined,
       promptDigest,
       outcome,
       durationMs,

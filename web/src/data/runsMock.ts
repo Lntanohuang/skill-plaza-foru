@@ -28,6 +28,7 @@ export interface RunListItem {
   runId: string
   ts: string
   skill: string
+  taskTitle?: string
   promptDigest: string
   outcome: RunOutcome
   /** 执行引擎（历史记录缺省视为 zcode） */

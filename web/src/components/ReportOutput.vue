@@ -26,7 +26,10 @@ const htmlStatus = computed(() => {
 <template>
   <p v-if="isHtml" class="report-ready">
     {{ htmlStatus }}
-    <a v-if="reportUrl" :href="reportUrl">点击查看具体报告</a>
+    <template v-if="reportUrl">
+      <a :href="reportUrl" target="_blank" rel="noopener">点击查看具体报告</a>
+      <a class="report-download" :href="`${reportUrl}/download`" download>下载报告</a>
+    </template>
   </p>
   <MarkdownView v-else :class="{ 'is-streaming': streaming }" :text="text" />
   <div v-if="!isHtml && charts?.length" class="use-report-charts">

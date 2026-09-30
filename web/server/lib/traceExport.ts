@@ -140,6 +140,8 @@ export interface RunRecord {
   engine?: 'zcode' | 'pi'
   engineSessionId?: string
   skill: string
+  /** 用户可读的运行标题；旧记录缺省时回退到 promptDigest。 */
+  taskTitle?: string
   promptDigest: string
   outcome: RunOutcome
   durationMs: number

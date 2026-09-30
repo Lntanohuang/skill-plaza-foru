@@ -65,3 +65,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 025 | 就业指导 trace 运行记录显示链路诊断 | 已实现（真实 API/浏览器回归待验证） | [025-career-trace-history-display.md](references/025-career-trace-history-display.md) |
 | 026 | Pi 每次模型请求的上下文占用记录 | 已实现（真实 Pi/API 端到端回归待用户执行） | [026-pi-context-usage-per-request.md](references/026-pi-context-usage-per-request.md) |
 | 027 | Pi-only 执行链与就业报告固定用户结构 | 已实现（真实报告回归待用户执行） | [027-pi-only-user-report-structure.md](references/027-pi-only-user-report-structure.md) |
+| 028 | 在线报告下载与结构化任务标题 | 已实现（真实浏览器下载与历史运行回归待验证） | [028-online-report-download-and-task-title.md](references/028-online-report-download-and-task-title.md) |
+| 029 | DeepResearch 主子 Agent 编排与可视化拓扑 | 设计定稿，待实现 | [029-deep-research-multi-agent-topology.md](references/029-deep-research-multi-agent-topology.md) |

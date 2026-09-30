@@ -57,6 +57,8 @@ export interface ChatAttachment {
 
 export interface StreamChatOptions {
   skill: string
+  /** 结构化任务生成的用户可读标题，用于运行历史和报告文件名。 */
+  taskTitle?: string
   messages: ChatMessage[]
   /** 复用会话（多轮）；缺省由后端新建并通过 session 事件返回 */
   sessionId?: string
@@ -68,11 +70,11 @@ export interface StreamChatOptions {
 
 /** 流式对话：消费 /api/chat 的 SSE，逐事件回调。 */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { skill, messages, sessionId, attachments, onEvent, signal } = options
+  const { skill, taskTitle, messages, sessionId, attachments, onEvent, signal } = options
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ skill, messages, sessionId, attachments }),
+    body: JSON.stringify({ skill, taskTitle, messages, sessionId, attachments }),
     signal,
   })
   if (!response.ok || !response.body) {
