@@ -62,6 +62,11 @@ const pad2 = (i: number) => String(i + 1).padStart(2, '0')
         </div>
       </header>
 
+      <section v-if="skill.introduction" class="block" v-reveal="40">
+        <h2 class="block-title">SKILL 简介</h2>
+        <p class="block-note detail-introduction">{{ skill.introduction }}</p>
+      </section>
+
       <section class="block" v-reveal="60">
         <h2 class="block-title">跑完会得到什么</h2>
         <p class="block-note">按条目列出。具体文件名与目录结构以仓库当前发布资料为准。</p>
@@ -77,7 +82,7 @@ const pad2 = (i: number) => String(i + 1).padStart(2, '0')
         </div>
       </section>
 
-      <section class="block" v-reveal="120">
+      <section v-if="skill.slug !== 'career-guidance'" class="block" v-reveal="120">
         <h2 class="block-title">怎么用</h2>
         <p class="block-note">两步：先装上，再跑一次最小任务。</p>
         <div class="rail">
@@ -115,7 +120,7 @@ const pad2 = (i: number) => String(i + 1).padStart(2, '0')
         </div>
       </section>
 
-      <section class="block" v-reveal="240">
+      <section v-if="skill.slug !== 'career-guidance'" class="block" v-reveal="240">
         <h2 class="block-title">安装步骤</h2>
         <ol class="olist"><li v-for="d in skill.installation" :key="d">{{ d }}</li></ol>
         <div class="repo-line">
@@ -124,7 +129,7 @@ const pad2 = (i: number) => String(i + 1).padStart(2, '0')
         </div>
       </section>
 
-      <p class="note">这一页的安装提示词、最小输入示例和产物清单都取自该仓库的发布资料；依赖、费用与许可以仓库当前内容为准。页面不会执行 SKILL。</p>
+      <p class="note">这一页的内容与产物清单都取自该仓库的发布资料；依赖、费用与许可以仓库当前内容为准。页面不会执行 SKILL。</p>
 
       <div class="detail-foot">
         <a class="btn btn-quiet" :href="returnTo"><Icon name="back" :size="15" />返回列表</a>

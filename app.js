@@ -5,12 +5,6 @@
   const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const icon = name => `<svg viewBox="0 0 56 56" aria-hidden="true"><use href="#foru-${name}"/></svg>`;
   const iconNames = {industry:'building',teaching:'learning',interview:'jobs',data:'assessment'};
-  const roles = [
-    {id:'manager',label:'院校管理者',icon:'building',items:[['industry-education-report','产业与专业建设'],['classroom-assistant','课程实施支持']]},
-    {id:'teacher',label:'教师',icon:'learning',items:[['classroom-assistant','课程与教学开发'],['ai-interview','学生就业训练']]},
-    {id:'student',label:'学生',icon:'jobs',items:[['ai-interview','面试练习与复盘'],['classroom-assistant','课程答疑与练习']]},
-    {id:'data-team',label:'数据团队',icon:'assessment',items:[['training-data-qa','数据治理与质检'],['industry-education-report','决策数据分析']]}
-  ];
   const features = [
     {id:'industry',title:'规划产业与专业',description:'让产业、岗位和专业建议回到证据与口径。',tags:['产业分析','专业建设','证据报告'],slug:'industry-education-report',icon:'building'},
     {id:'teaching',title:'开发课程与教学',description:'在授权课程资料内生成答疑、要点和练习。',tags:['授权资料','定位引用','课堂练习'],slug:'classroom-assistant',icon:'learning'},
@@ -115,7 +109,6 @@
   const featureTabs = $('#feature-tabs');
   const nav = $('#foru-nav');
   const navToggle = $('#nav-toggle');
-  const productMenu = $('#product-menu');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const narrow = matchMedia('(max-width: 767px)');
   let activeFeature=0, elapsed=0, previous=0, frame=0, visible=false, paused=false, hover=false, focused=false, toastTimer;
@@ -142,11 +135,9 @@
       if(index!==undefined){event.preventDefault();select(index);list[index].focus();}
     }));
   }
-  $('#mega-content').innerHTML=roles.map(role=>`<div class="foru-menu-group"><h3><span>面向${role.label}</span></h3>${role.items.slice(0,3).map(([slug,description])=>{const skill=skills.find(item=>item.slug===slug);return `<a class="foru-menu-item" href="${useHash(slug)}">${icon(iconNames[skill.kind])}<div><strong>${esc(skill.name)}</strong><p>${esc(description)}</p></div></a>`;}).join('')}</div>`).join('');
-
   function closeNav(restore=false) {
     const wasOpen=nav.classList.contains('open');
-    nav.classList.remove('open');navToggle.setAttribute('aria-expanded','false');navToggle.textContent='菜单';productMenu.open=false;
+    nav.classList.remove('open');navToggle.setAttribute('aria-expanded','false');navToggle.textContent='菜单';
     document.body.style.overflow='';$('#main').inert=false;$('#footer').inert=false;
     if(wasOpen&&restore)navToggle.focus();
   }
@@ -160,7 +151,6 @@
   document.addEventListener('keydown',event=>{
     if(event.key==='Escape'){
       if(nav.classList.contains('open'))closeNav(true);
-      else if(productMenu.open){productMenu.open=false;productMenu.querySelector('summary').focus();}
     }
     if(event.key==='Tab'&&nav.classList.contains('open')){
       const nodes=[navToggle,...nav.querySelectorAll('a,summary')].filter(node=>node.getClientRects().length);

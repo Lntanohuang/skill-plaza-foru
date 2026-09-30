@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>全库在招岗位结构概览</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#e6eaf0; --bg:#f5f7fb; --card:#fff; --blue:#3867d6; --teal:#13a8a8; --orange:#e8892d; --purple:#7950d6; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--bg); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    .wrap { max-width:1180px; margin:0 auto; padding:42px 24px 64px; }
+    header { margin-bottom:26px; }
+    .eyebrow { color:var(--blue); font-weight:700; letter-spacing:.08em; font-size:12px; }
+    h1 { margin:6px 0 8px; font-size:clamp(28px,4vw,44px); line-height:1.18; letter-spacing:-.03em; }
+    .lead { margin:0; color:var(--muted); max-width:780px; }
+    .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:28px 0; }
+    .metric, .panel { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 7px 24px rgba(27,39,67,.045); }
+    .metric { padding:18px 20px; }
+    .metric .label { color:var(--muted); font-size:13px; }
+    .metric .value { display:block; margin-top:5px; font-size:27px; font-weight:760; letter-spacing:-.025em; }
+    .metric .sub { color:var(--muted); font-size:12px; }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; }
+    .panel { padding:22px 22px 18px; }
+    .panel.wide { grid-column:1/-1; }
+    h2 { font-size:19px; margin:0 0 2px; }
+    .hint { margin:0 0 12px; color:var(--muted); font-size:13px; }
+    figure { margin:0; }
+    figcaption { color:var(--muted); font-size:12px; margin-top:6px; }
+    svg { display:block; width:100%; height:auto; overflow:visible; }
+    .bar-label { fill:var(--ink); font-size:13px; }
+    .bar-value { fill:var(--ink); font-size:12px; font-weight:700; }
+    .axis { fill:var(--muted); font-size:11px; }
+    .track { fill:#edf1f6; }
+    .note { border-left:3px solid var(--blue); background:#eef4ff; padding:12px 15px; border-radius:8px; color:#31405d; font-size:13px; margin-top:18px; }
+    .method { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    code { background:#eef1f6; padding:1px 5px; border-radius:4px; }
+    @media (max-width:800px) { .cards { grid-template-columns:repeat(2,1fr); } .grid { grid-template-columns:1fr; } .panel.wide { grid-column:auto; } }
+    @media (max-width:480px) { .wrap { padding:28px 14px 44px; } .cards { gap:9px; } .metric { padding:13px; } .metric .value { font-size:22px; } }
+    @media print { body { background:#fff; } .wrap { max-width:none; padding:0; } .metric,.panel { box-shadow:none; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="eyebrow">DATABASE SNAPSHOT · 2026-09-29</div>
+      <h1>全库在招岗位结构概览</h1>
+      <p class="lead">基于岗位表 <code>c_company_position</code> 的实时只读查询，展示当前发布中的岗位在职业类别、招聘性质、学历要求和经验要求上的结构分布。</p>
+    </header>
+
+    <section class="cards" aria-label="核心指标">
+      <div class="metric"><span class="label">在招岗位</span><strong class="value">961.70 万</strong><span class="sub">9,616,999 条</span></div>
+      <div class="metric"><span class="label">有岗位企业</span><strong class="value">304.04 万</strong><span class="sub">3,040,395 家</span></div>
+      <div class="metric"><span class="label">去重岗位名</span><strong class="value">134.65 万</strong><span class="sub">1,346,533 个</span></div>
+      <div class="metric"><span class="label">最大结构特征</span><strong class="value">社招 95.28%</strong><span class="sub">其次为兼职 4.38%</span></div>
+    </section>
+
+    <section class="grid">
+      <article class="panel wide">
+        <h2>职业类别结构</h2>
+        <p class="hint">分母：9,616,999 条在招岗位 · 共 34 个一级职业类别 · 单位：岗位数 / 占比</p>
+        <figure data-chart-skill="bar-chart" data-chart-id="CH-OCCUPATION">
+          <svg viewBox="0 0 1100 580" role="img" aria-labelledby="occupation-title occupation-desc">
+            <title id="occupation-title">在招岗位职业类别结构分布</title>
+            <desc id="occupation-desc">生产制造 1017161 条，占 10.58%，为最大职业类别；运营 834795 条；销售 820306 条；零售生活服务 787652 条。图中展示全部 34 个一级职业类别。</desc>
+            <text class="axis" x="150" y="16">左列岗位数（条）</text><text class="axis" x="700" y="16">右列岗位数（条）</text>
+            <g>
+              <text class="bar-label" x="0" y="42">生产制造</text><rect class="track" x="150" y="28" width="200" height="18" rx="5"/><rect x="150" y="28" width="200.0" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="365" y="42">1,017,161 · 10.58%</text>
+              <text class="bar-label" x="0" y="74">运营</text><rect class="track" x="150" y="60" width="200" height="18" rx="5"/><rect x="150" y="60" width="164.1" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="365" y="74">834,795 · 8.68%</text>
+              <text class="bar-label" x="0" y="106">销售</text><rect class="track" x="150" y="92" width="200" height="18" rx="5"/><rect x="150" y="92" width="161.3" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="365" y="106">820,306 · 8.53%</text>
+              <text class="bar-label" x="0" y="138">零售/生活服务</text><rect class="track" x="150" y="124" width="200" height="18" rx="5"/><rect x="150" y="124" width="154.9" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="365" y="138">787,652 · 8.19%</text>
+              <text class="bar-label" x="0" y="170">物流/仓储/司机</text><rect class="track" x="150" y="156" width="200" height="18" rx="5"/><rect x="150" y="156" width="103.9" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="365" y="170">528,473 · 5.50%</text>
+              <text class="bar-label" x="0" y="202">房地产/建筑</text><rect class="track" x="150" y="188" width="200" height="18" rx="5"/><rect x="150" y="188" width="96.6" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="365" y="202">491,540 · 5.11%</text>
+              <text class="bar-label" x="0" y="234">教育培训</text><rect class="track" x="150" y="220" width="200" height="18" rx="5"/><rect x="150" y="220" width="90.6" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="365" y="234">460,673 · 4.79%</text>
+              <text class="bar-label" x="0" y="266">设计</text><rect class="track" x="150" y="252" width="200" height="18" rx="5"/><rect x="150" y="252" width="88.4" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="365" y="266">449,571 · 4.67%</text>
+              <text class="bar-label" x="0" y="298">医疗健康</text><rect class="track" x="150" y="284" width="200" height="18" rx="5"/><rect x="150" y="284" width="76.5" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="365" y="298">389,041 · 4.05%</text>
+              <text class="bar-label" x="0" y="330">电子/电气/通信</text><rect class="track" x="150" y="316" width="200" height="18" rx="5"/><rect x="150" y="316" width="70.5" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="365" y="330">358,626 · 3.73%</text>
+              <text class="bar-label" x="0" y="362">运维/技术支持</text><rect class="track" x="150" y="348" width="200" height="18" rx="5"/><rect x="150" y="348" width="70.2" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="365" y="362">356,787 · 3.71%</text>
+              <text class="bar-label" x="0" y="394">餐饮</text><rect class="track" x="150" y="380" width="200" height="18" rx="5"/><rect x="150" y="380" width="67.3" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="365" y="394">342,285 · 3.56%</text>
+              <text class="bar-label" x="0" y="426">直播/影视/传媒</text><rect class="track" x="150" y="412" width="200" height="18" rx="5"/><rect x="150" y="412" width="60.5" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="365" y="426">307,511 · 3.20%</text>
+              <text class="bar-label" x="0" y="458">智能网联汽车</text><rect class="track" x="150" y="444" width="200" height="18" rx="5"/><rect x="150" y="444" width="55.7" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="365" y="458">283,450 · 2.95%</text>
+              <text class="bar-label" x="0" y="490">技术</text><rect class="track" x="150" y="476" width="200" height="18" rx="5"/><rect x="150" y="476" width="52.3" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="365" y="490">266,188 · 2.77%</text>
+              <text class="bar-label" x="0" y="522">人力/行政/法务</text><rect class="track" x="150" y="508" width="200" height="18" rx="5"/><rect x="150" y="508" width="49.0" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="365" y="522">249,158 · 2.59%</text>
+              <text class="bar-label" x="0" y="554">产品</text><rect class="track" x="150" y="540" width="200" height="18" rx="5"/><rect x="150" y="540" width="48.4" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="365" y="554">246,052 · 2.56%</text>
+
+              <text class="bar-label" x="550" y="42">跨境电商</text><rect class="track" x="700" y="28" width="200" height="18" rx="5"/><rect x="700" y="28" width="40.6" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="915" y="42">206,724 · 2.15%</text>
+              <text class="bar-label" x="550" y="74">财务/审计/税务</text><rect class="track" x="700" y="60" width="200" height="18" rx="5"/><rect x="700" y="60" width="26.8" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="915" y="74">136,248 · 1.42%</text>
+              <text class="bar-label" x="550" y="106">市场/公关/广告</text><rect class="track" x="700" y="92" width="200" height="18" rx="5"/><rect x="700" y="92" width="24.7" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="915" y="106">125,485 · 1.30%</text>
+              <text class="bar-label" x="550" y="138">能源/环保/农业</text><rect class="track" x="700" y="124" width="200" height="18" rx="5"/><rect x="700" y="124" width="21.4" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="915" y="138">108,963 · 1.13%</text>
+              <text class="bar-label" x="550" y="170">酒店/旅游</text><rect class="track" x="700" y="156" width="200" height="18" rx="5"/><rect x="700" y="156" width="20.7" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="915" y="170">105,115 · 1.09%</text>
+              <text class="bar-label" x="550" y="202">采购/贸易</text><rect class="track" x="700" y="188" width="200" height="18" rx="5"/><rect x="700" y="188" width="19.3" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="915" y="202">98,315 · 1.02%</text>
+              <text class="bar-label" x="550" y="234">其他</text><rect class="track" x="700" y="220" width="200" height="18" rx="5"/><rect x="700" y="220" width="15.3" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="915" y="234">77,682 · 0.81%</text>
+              <text class="bar-label" x="550" y="266">咨询/翻译/法律</text><rect class="track" x="700" y="252" width="200" height="18" rx="5"/><rect x="700" y="252" width="15.1" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="915" y="266">76,647 · 0.80%</text>
+              <text class="bar-label" x="550" y="298">金融</text><rect class="track" x="700" y="284" width="200" height="18" rx="5"/><rect x="700" y="284" width="14.8" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="915" y="298">75,230 · 0.78%</text>
+              <text class="bar-label" x="550" y="330">高级管理</text><rect class="track" x="700" y="316" width="200" height="18" rx="5"/><rect x="700" y="316" width="14.6" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="915" y="330">74,041 · 0.77%</text>
+              <text class="bar-label" x="550" y="362">汽车</text><rect class="track" x="700" y="348" width="200" height="18" rx="5"/><rect x="700" y="348" width="12.2" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="915" y="362">62,122 · 0.65%</text>
+              <text class="bar-label" x="550" y="394">人工智能</text><rect class="track" x="700" y="380" width="200" height="18" rx="5"/><rect x="700" y="380" width="11.2" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="915" y="394">56,716 · 0.59%</text>
+              <text class="bar-label" x="550" y="426">测试</text><rect class="track" x="700" y="412" width="200" height="18" rx="5"/><rect x="700" y="412" width="10.8" height="18" rx="5" fill="#e8892d"/><text class="bar-value" x="915" y="426">54,748 · 0.57%</text>
+              <text class="bar-label" x="550" y="458">半导体</text><rect class="track" x="700" y="444" width="200" height="18" rx="5"/><rect x="700" y="444" width="9.9" height="18" rx="5" fill="#7950d6"/><text class="bar-value" x="915" y="458">50,136 · 0.52%</text>
+              <text class="bar-label" x="550" y="490">智能家电</text><rect class="track" x="700" y="476" width="200" height="18" rx="5"/><rect x="700" y="476" width="9.7" height="18" rx="5" fill="#ef5da8"/><text class="bar-value" x="915" y="490">49,399 · 0.51%</text>
+              <text class="bar-label" x="550" y="522">数据</text><rect class="track" x="700" y="508" width="200" height="18" rx="5"/><rect x="700" y="508" width="9.1" height="18" rx="5" fill="#3867d6"/><text class="bar-value" x="915" y="522">46,327 · 0.48%</text>
+              <text class="bar-label" x="550" y="554">智能产品</text><rect class="track" x="700" y="540" width="200" height="18" rx="5"/><rect x="700" y="540" width="4.7" height="18" rx="5" fill="#13a8a8"/><text class="bar-value" x="915" y="554">23,832 · 0.25%</text>
+            </g>
+          </svg>
+          <figcaption>职业类别由岗位的 <code>position_type</code> 首个分类 ID 回溯至 <code>c_position_type</code> 一级目录；34 类合计与在招岗位总量一致。前四类为生产制造、运营、销售、零售/生活服务，合计 35.98%。</figcaption>
+        </figure>
+      </article>
+
+      <article class="panel">
+        <h2>招聘性质</h2>
+        <p class="hint">分母：9,616,999 条在招岗位 · 单位：岗位数 / 占比</p>
+        <figure data-chart-skill="bar-chart" data-chart-id="CH-JOB-TYPE">
+          <svg viewBox="0 0 700 260" role="img" aria-labelledby="type-title type-desc">
+            <title id="type-title">在招岗位招聘性质分布</title>
+            <desc id="type-desc">社招 9163277 条，占 95.28%；兼职 421348 条，占 4.38%；实习 32197 条，占 0.33%；校招 177 条，占 0.002%。</desc>
+            <text class="axis" x="160" y="18">岗位数（条）</text>
+            <g transform="translate(0,30)">
+              <text class="bar-label" x="0" y="25">社招</text><rect class="track" x="160" y="10" width="390" height="22" rx="6"/><rect x="160" y="10" width="390" height="22" rx="6" fill="#3867d6"/><text class="bar-value" x="565" y="27">9,163,277 · 95.28%</text>
+              <text class="bar-label" x="0" y="75">兼职</text><rect class="track" x="160" y="60" width="390" height="22" rx="6"/><rect x="160" y="60" width="18" height="22" rx="6" fill="#13a8a8"/><text class="bar-value" x="190" y="77">421,348 · 4.38%</text>
+              <text class="bar-label" x="0" y="125">实习</text><rect class="track" x="160" y="110" width="390" height="22" rx="6"/><rect x="160" y="110" width="5" height="22" rx="6" fill="#e8892d"/><text class="bar-value" x="177" y="127">32,197 · 0.33%</text>
+              <text class="bar-label" x="0" y="175">校招</text><rect class="track" x="160" y="160" width="390" height="22" rx="6"/><rect x="160" y="160" width="2" height="22" rx="6" fill="#7950d6"/><text class="bar-value" x="175" y="177">177 · 0.002%</text>
+            </g>
+          </svg>
+          <figcaption>招聘性质来自字段 <code>type</code>：SHEZHAO / JIANZHI / SHIXI / XIAOZHAO。</figcaption>
+        </figure>
+      </article>
+
+      <article class="panel">
+        <h2>学历要求</h2>
+        <p class="hint">分母：9,616,999 条在招岗位 · 已将高职并入大专、硕博合并</p>
+        <figure data-chart-skill="bar-chart" data-chart-id="CH-EDUCATION">
+          <svg viewBox="0 0 700 300" role="img" aria-labelledby="edu-title edu-desc">
+            <title id="edu-title">在招岗位学历要求分布</title>
+            <desc id="edu-desc">学历不限 34.96%；大专或高职 27.85%；本科 22.15%；中专、高中及以下 13.39%；硕士或博士 1.65%。</desc>
+            <text class="axis" x="190" y="18">岗位数（条）</text>
+            <g transform="translate(0,30)">
+              <text class="bar-label" x="0" y="25">不限</text><rect class="track" x="190" y="10" width="330" height="22" rx="6"/><rect x="190" y="10" width="330" height="22" rx="6" fill="#3867d6"/><text class="bar-value" x="535" y="27">3,362,439 · 34.96%</text>
+              <text class="bar-label" x="0" y="75">大专 / 高职</text><rect class="track" x="190" y="60" width="330" height="22" rx="6"/><rect x="190" y="60" width="263" height="22" rx="6" fill="#13a8a8"/><text class="bar-value" x="468" y="77">2,678,591 · 27.85%</text>
+              <text class="bar-label" x="0" y="125">本科</text><rect class="track" x="190" y="110" width="330" height="22" rx="6"/><rect x="190" y="110" width="209" height="22" rx="6" fill="#e8892d"/><text class="bar-value" x="414" y="127">2,130,097 · 22.15%</text>
+              <text class="bar-label" x="0" y="175">中专 / 高中及以下</text><rect class="track" x="190" y="160" width="330" height="22" rx="6"/><rect x="190" y="160" width="126" height="22" rx="6" fill="#7950d6"/><text class="bar-value" x="331" y="177">1,287,509 · 13.39%</text>
+              <text class="bar-label" x="0" y="225">硕士 / 博士</text><rect class="track" x="190" y="210" width="330" height="22" rx="6"/><rect x="190" y="210" width="15" height="22" rx="6" fill="#ef5da8"/><text class="bar-value" x="220" y="227">158,363 · 1.65%</text>
+            </g>
+          </svg>
+          <figcaption>本科及以上合计 2,288,460 条，占 23.80%；学历要求“不限”是单一最大组。</figcaption>
+        </figure>
+      </article>
+
+      <article class="panel wide">
+        <h2>经验要求</h2>
+        <p class="hint">分母：9,616,999 条在招岗位 · 枚举是“X 年以下”上界桶，不代表精确工作年限</p>
+        <figure data-chart-skill="bar-chart" data-chart-id="CH-EXPERIENCE">
+          <svg viewBox="0 0 1050 380" role="img" aria-labelledby="exp-title exp-desc">
+            <title id="exp-title">在招岗位经验要求分布</title>
+            <desc id="exp-desc">经验不限 35.17%；3年以下 31.33%；5年以下 18.83%；10年以下 8.36%；1年以下 5.14%；10年以上 1.04%；应届或在校 0.13%；其他 0.002%。</desc>
+            <text class="axis" x="235" y="18">岗位数（条）</text>
+            <g transform="translate(0,30)">
+              <text class="bar-label" x="0" y="25">不限</text><rect class="track" x="235" y="10" width="510" height="22" rx="6"/><rect x="235" y="10" width="510" height="22" rx="6" fill="#3867d6"/><text class="bar-value" x="760" y="27">3,382,386 · 35.17%</text>
+              <text class="bar-label" x="0" y="70">3年以下</text><rect class="track" x="235" y="55" width="510" height="22" rx="6"/><rect x="235" y="55" width="455" height="22" rx="6" fill="#13a8a8"/><text class="bar-value" x="705" y="72">3,012,842 · 31.33%</text>
+              <text class="bar-label" x="0" y="115">5年以下</text><rect class="track" x="235" y="100" width="510" height="22" rx="6"/><rect x="235" y="100" width="273" height="22" rx="6" fill="#e8892d"/><text class="bar-value" x="523" y="117">1,811,313 · 18.83%</text>
+              <text class="bar-label" x="0" y="160">10年以下</text><rect class="track" x="235" y="145" width="510" height="22" rx="6"/><rect x="235" y="145" width="121" height="22" rx="6" fill="#7950d6"/><text class="bar-value" x="371" y="162">803,645 · 8.36%</text>
+              <text class="bar-label" x="0" y="205">1年以下</text><rect class="track" x="235" y="190" width="510" height="22" rx="6"/><rect x="235" y="190" width="74" height="22" rx="6" fill="#ef5da8"/><text class="bar-value" x="324" y="207">494,401 · 5.14%</text>
+              <text class="bar-label" x="0" y="250">10年以上</text><rect class="track" x="235" y="235" width="510" height="22" rx="6"/><rect x="235" y="235" width="15" height="22" rx="6" fill="#6b7280"/><text class="bar-value" x="265" y="252">99,597 · 1.04%</text>
+              <text class="bar-label" x="0" y="295">应届 / 在校</text><rect class="track" x="235" y="280" width="510" height="22" rx="6"/><rect x="235" y="280" width="3" height="22" rx="6" fill="#94a3b8"/><text class="bar-value" x="252" y="297">12,638 · 0.13%</text>
+              <text class="bar-label" x="0" y="340">其他脏值</text><rect class="track" x="235" y="325" width="510" height="22" rx="6"/><rect x="235" y="325" width="2" height="22" rx="6" fill="#cbd5e1"/><text class="bar-value" x="250" y="342">177 · 0.002%</text>
+            </g>
+          </svg>
+          <figcaption>“不限”与“3年以下”合计 6,395,228 条，占 66.50%；数据库中发现 177 条经验值 <code>WEWER23</code>，单列为其他。</figcaption>
+        </figure>
+      </article>
+    </section>
+
+    <div class="note"><strong>读图结论：</strong>职业类别中生产制造最多（10.58%），其后是运营、销售和零售/生活服务；当前库内岗位以社招为绝对主体；学历要求主要集中在“不限、大专/高职、本科”三组；经验要求中“不限”和“3年以下”占三分之二，整体呈现较宽的准入门槛。</div>
+
+    <footer class="method">
+      <strong>数据与口径：</strong>数据源为内部 MySQL 数据库 <code>ai_crowd_souring_extend.c_company_position</code>；查询时点：2026-09-29；筛选条件：<code>deleted=0 AND publish_state='PUBLISHING'</code>。岗位数为记录数，不等于去重后的职位名称数。职业类别图表从岗位 <code>position_type</code> 的首个分类 ID 回溯 <code>c_position_type</code> 的一级目录，逐岗位归入一个主类别；学历与经验图表使用数据库枚举直接统计，其中学历图表将 <code>GAOZHI</code> 并入“大专/高职”，将 <code>SHUOSHI/BOSHI</code> 合并；经验图表将 <code>ON_CAMPUS/GRADUATING</code> 合并。数据库没有统一快照字段，<code>create_time</code> 主要表示导入批次，不能直接当作岗位发布时间。
+    </footer>
+  </main>
+</body>
+</html>

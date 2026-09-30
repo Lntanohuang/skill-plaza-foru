@@ -28,7 +28,15 @@ export interface HealthResult {
 export type ChatEvent =
   | { type: 'started'; runId: string; startedAt: number }
   | { type: 'session'; sessionId: string }
-  | { type: 'status'; phase: 'initializing' | 'thinking' | 'tool' | 'text'; message?: string; chars?: number; tool?: string }
+  | {
+      type: 'status'
+      phase: 'initializing' | 'thinking' | 'tool' | 'text'
+      state?: 'active' | 'completed' | 'failed'
+      message?: string
+      chars?: number
+      tool?: string
+      id?: string
+    }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Record<string, number | string> }
   | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[]; runId?: string; reportUrl?: string }

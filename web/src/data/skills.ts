@@ -23,6 +23,7 @@ export interface Skill {
   categoryId: string
   audiences: string[]
   summary: string
+  introduction?: string
   tags: string[]
   compatibility: string[]
   preconditions: string
@@ -177,6 +178,7 @@ export const SKILLS: Skill[] = [
     categoryId: 'career',
     audiences: ['student'],
     summary: '基于目标、经历、岗位要求和现实约束，制定可执行的职业定位与求职行动方案。',
+    introduction: '就业指导是面向学生求职决策的结构化职业规划 SKILL。它综合目标岗位、个人经历、简历、岗位描述以及地区和求职阶段等现实约束，帮助梳理职业定位、岗位匹配证据、能力缺口与求职优先级，并形成简历优化建议和分阶段行动计划。它不承诺录用结果，结论应以用户提供的事实和可核验的岗位信息为依据。',
     tags: ['职业定位', '岗位匹配', '求职计划'],
     compatibility: ['Codex', 'Claude Code', 'Cursor', 'WorkBuddy', '豆包'],
     preconditions: '目标岗位或方向 + 简历、经历摘要',

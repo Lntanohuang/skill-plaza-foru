@@ -1367,6 +1367,25 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 }
 .use-live-status strong { color: var(--ink-strong); font-weight: var(--fw-medium); }
 .use-live-status span { margin-left: auto; color: var(--ink-muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+.use-progress-timeline {
+  display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; padding: 10px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--brand) 30%, var(--line-hair));
+  background: color-mix(in srgb, var(--brand) 3%, var(--surface-card)); border-radius: 0 8px 8px 0;
+}
+.use-progress-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.use-progress-head strong { color: var(--ink-strong); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.use-progress-head span { color: var(--ink-muted); font-size: var(--fs-xs); }
+.use-progress-head button { margin-left: auto; border: 0; padding: 2px 6px; background: transparent; color: var(--brand); font-size: var(--fs-xs); cursor: pointer; }
+.use-progress-scroll { height: 92px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.use-progress-timeline.is-expanded .use-progress-scroll { height: 280px; }
+.use-progress-item { display: flex; align-items: flex-start; gap: 8px; min-height: 22px; font-size: var(--fs-xs); }
+.use-progress-item > i { width: 16px; color: var(--brand); font-style: normal; text-align: center; font-weight: var(--fw-semibold); }
+.use-progress-item > div { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.use-progress-item strong { color: var(--ink-body); font-weight: var(--fw-medium); }
+.use-progress-item small { color: var(--ink-muted); }
+.use-progress-item.is-active > i { animation: use-live-pulse 1.2s ease-in-out infinite; }
+.use-progress-item.is-completed > i { color: var(--ok); }
+.use-progress-item.is-failed > i { color: var(--danger); }
 @keyframes use-live-pulse { 50% { opacity: .45; transform: scale(.8); } }
 .use-result-empty { margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--ink-muted); }
 .use-answer { display: flex; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--line-hair); border-radius: 10px; }
@@ -1476,55 +1495,6 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 .card-go.is-quiet:hover { color: var(--brand); }
 .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
 .detail-actions-note { font-size: var(--fs-sm); color: var(--ink-muted); }
-
-/* ---------- 导航「角色入口」下拉 ---------- */
-.role-wrap { position: relative; display: inline-flex; }
-.role-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: none; border: none; cursor: pointer;
-  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl);
-  font: inherit; font-size: var(--fs-md); color: var(--ink-body); white-space: nowrap;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-.role-btn .ic { transition: transform var(--dur-fast) var(--ease); }
-.role-btn[aria-expanded='true'] .ic { transform: rotate(180deg); }
-.role-btn:hover { color: var(--ink-strong); background: var(--surface-sunken); }
-.role-btn.is-on { color: var(--brand); }
-.role-menu {
-  position: absolute; top: calc(100% + 14px); left: 50%; transform: translateX(-12%);
-  width: min(880px, calc(100vw - 48px));
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-5);
-  background: var(--surface-card); border: 1px solid var(--line-hair);
-  border-radius: var(--r-overlay); box-shadow: var(--shadow-overlay);
-  padding: var(--sp-5); z-index: 60;
-  animation: role-in .18s var(--ease);
-}
-@keyframes role-in { from { opacity: 0; transform: translateX(-12%) translateY(-4px); } }
-.role-group { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.role-group h3 {
-  margin: 0 0 var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  color: var(--ink-muted); letter-spacing: .02em;
-}
-.role-item {
-  display: flex; align-items: flex-start; gap: var(--sp-2);
-  padding: var(--sp-2); border-radius: 9px; min-width: 0;
-  transition: background var(--dur-fast) var(--ease);
-}
-.role-item:hover { background: var(--surface-sunken); }
-.role-item-icon {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 8px;
-  background: var(--surface-sunken); color: var(--ink-strong);
-}
-.role-item-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.role-item-copy strong { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ink-strong); line-height: 1.4; }
-.role-item-copy small { font-size: 11.5px; color: var(--ink-muted); line-height: 1.5; }
-.role-item:hover .role-item-copy strong { color: var(--brand); }
-
-@media (max-width: 901px) {
-  .role-wrap { width: 100%; }
-  .role-menu { position: static; transform: none; width: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); animation: none; box-shadow: none; border: 0; padding: var(--sp-2) 0 0; }
-}
 
 /* ============================================================
    运行记录（/runs）与运行详情（/runs/:runId）

@@ -67,3 +67,6 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 027 | Pi-only 执行链与就业报告固定用户结构 | 已实现（真实报告回归待用户执行） | [027-pi-only-user-report-structure.md](references/027-pi-only-user-report-structure.md) |
 | 028 | 在线报告下载与结构化任务标题 | 已实现（真实浏览器下载与历史运行回归待验证） | [028-online-report-download-and-task-title.md](references/028-online-report-download-and-task-title.md) |
 | 029 | DeepResearch 主子 Agent 编排与可视化拓扑 | 设计定稿，待实现 | [029-deep-research-multi-agent-topology.md](references/029-deep-research-multi-agent-topology.md) |
+| 030 | DeepResearch 分阶段实施计划 | 计划确定，待实现 | [030-deep-research-implementation-plan.md](references/030-deep-research-implementation-plan.md) |
+| 031 | DeepResearch Lead 上下文预算、压缩与会话交接 | 设计定稿，待实现 | [031-deep-research-lead-context-budget-and-handoff.md](references/031-deep-research-lead-context-budget-and-handoff.md) |
+| 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |

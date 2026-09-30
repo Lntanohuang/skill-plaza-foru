@@ -3,7 +3,7 @@
    ------------------------------------------------------------
    pi RPC 是单会话协议，因此【每个引擎会话一个
    常驻子进程】，cwd 即沙箱 workspace；模型经 --model provider/id
-   钉死（默认 DeepSeek）。命令/事件协议见 docs/pi-runner.md 与
+   钉死（默认 GPT-6 Astra）。命令/事件协议见 docs/pi-runner.md 与
    samples/pi-rpc-events-sample.jsonl（照真实输出写的解析）。
    会话进程空闲回收（PI_IDLE_MS），进程内天然保留多轮上下文。
    ============================================================ */
@@ -55,26 +55,26 @@ export function resolvePiCli(): string | null {
   return null
 }
 
-/** PI_MODEL（格式 provider/model），默认 DeepSeek Flash（便宜快速，MVP 演示够用） */
+/** PI_MODEL（格式 provider/model），默认 GPT-6 Astra；思考档位默认 medium */
 export function piModelRef(): { provider: string; modelId: string } {
   loadLocalEnv()
-  const raw = process.env.PI_MODEL?.trim() || 'deepseek/deepseek-flash'
+  const raw = process.env.PI_MODEL?.trim() || 'openai-codex/gpt-6-astra'
   const i = raw.indexOf('/')
   if (i <= 0 || i >= raw.length - 1) {
-    console.warn(`忽略非法 PI_MODEL（需 provider/model 格式）：${raw}，使用默认 deepseek/deepseek-flash`)
-    return { provider: 'deepseek', modelId: 'deepseek-flash' }
+    console.warn(`忽略非法 PI_MODEL（需 provider/model 格式）：${raw}，使用默认 openai-codex/gpt-6-astra`)
+    return { provider: 'openai-codex', modelId: 'gpt-6-astra' }
   }
   return { provider: raw.slice(0, i), modelId: raw.slice(i + 1) }
 }
 
-/** PI_THINKING 思考档位（off..max），默认 low：降 token 大头（长推理），要质量可调 high */
+/** PI_THINKING 思考档位（off..max），默认 medium */
 export function piThinkingLevel(): string {
   loadLocalEnv()
   const allowed = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-  const raw = process.env.PI_THINKING?.trim().toLowerCase() || 'low'
+  const raw = process.env.PI_THINKING?.trim().toLowerCase() || 'medium'
   if (!allowed.includes(raw)) {
-    console.warn(`忽略非法 PI_THINKING=${raw}（可选 ${allowed.join('/')}），使用默认 low`)
-    return 'low'
+    console.warn(`忽略非法 PI_THINKING=${raw}（可选 ${allowed.join('/')}），使用默认 medium`)
+    return 'medium'
   }
   return raw
 }
@@ -308,8 +308,16 @@ export class PiRunner extends AgentRunner {
         this.emit(sid, { kind: 'text_delta', delta: ev.delta })
       else if (ev?.type === 'thinking_delta' && ev.delta) this.emitThinking(sid, ev.delta.length)
       else if (ev?.type === 'toolcall_start' && ev.toolName)
-        this.emit(sid, { kind: 'status', phase: 'tool', tool: ev.toolName })
-      else if (ev?.type === 'text_start') this.emit(sid, { kind: 'status', phase: 'text' })
+        this.emit(sid, {
+          kind: 'status', phase: 'tool', state: 'active',
+          tool: ev.toolName, id: ev.toolCallId ?? ev.id,
+        })
+      else if (ev?.type === 'toolcall_end')
+        this.emit(sid, {
+          kind: 'status', phase: 'tool', state: ev.isError ? 'failed' : 'completed',
+          tool: ev.toolName ?? ev.name, id: ev.toolCallId ?? ev.id,
+        })
+      else if (ev?.type === 'text_start') this.emit(sid, { kind: 'status', phase: 'text', state: 'active' })
       if (msg.usage) {
         /* usage 逐 delta 都会带（单次调用内的累计值），先记账最新值 */
         this.callUsage.set(sid, normUsage(msg.usage) ?? {})
@@ -385,7 +393,7 @@ export class PiRunner extends AgentRunner {
     const st = this.thinkState.get(sid) ?? { chars: 0, at: 0 }
     st.chars += add
     if (now - st.at >= 700) {
-      this.emit(sid, { kind: 'status', phase: 'thinking', chars: st.chars })
+      this.emit(sid, { kind: 'status', phase: 'thinking', state: 'active', chars: st.chars })
       st.at = now
     }
     this.thinkState.set(sid, st)
@@ -454,7 +462,7 @@ export class PiRunner extends AgentRunner {
     const args = [
       '--mode', 'rpc',
       '--model', `${this.model.provider}/${this.model.modelId}`,
-      /* 思考档位默认 low：长推理是 token 大头，MVP 演示优先速度与成本 */
+      /* 思考档位默认 medium */
       '--thinking', this.thinking,
       /* 会话文件落在沙箱内，兼作权威 trace 来源 */
       '--session-dir', join(workspaceDir, '.pi-sessions'),

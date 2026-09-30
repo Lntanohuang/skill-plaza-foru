@@ -1,4 +1,4 @@
-# pi Runner 接入笔记（`pi --mode rpc` · DeepSeek）
+# pi Runner 接入笔记（`pi --mode rpc` · GPT-6 Astra）
 
 > 2026-09-18 实测落地。pi v0.85.1（npm 包 `@earendil-works/pi-coding-agent`，bin `pi`）。
 > 官方协议文档：`pi-mono` 仓库 `packages/coding-agent/docs/rpc.md`（本机安装目录下也有一份同版本副本）。
@@ -17,7 +17,7 @@ RPC 是单会话协议，因此 PiRunner 每个会话各起一个 pi 子进程�
 
 ```
 pi --mode rpc \
-   --model deepseek/deepseek-v4-pro \        # PI_MODEL 可覆盖，格式 provider/model
+   --model openai-codex/gpt-6-astra \        # PI_MODEL 可覆盖，格式 provider/model
    --session-dir <workspace>/.pi-sessions \  # 会话文件落沙箱，兼作权威 trace 来源
    -n <短id> \
    --no-extensions \                         # 无头运行裁掉扩展发现

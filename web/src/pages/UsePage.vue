@@ -201,6 +201,21 @@ const sessionKey = (slug: string) => `pi:${slug}`
 const lastUsage = ref('')
 /* 运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文，正文 delta 前也有推进体感 */
 const streamStatus = ref('')
+interface ProgressItem {
+  id: string
+  phase: 'thinking' | 'tool' | 'writing' | 'system'
+  state: 'active' | 'completed' | 'failed'
+  title: string
+  detail: string
+  tool?: string
+  startedAt: number
+  finishedAt?: number
+}
+const progressEvents = ref<ProgressItem[]>([])
+const progressExpanded = ref(false)
+const progressScrollEl = ref<HTMLElement | null>(null)
+const progressDoneCount = computed(() => progressEvents.value.filter(item => item.state !== 'active').length)
+let progressSeq = 0
 const elapsedMs = ref(0)
 let elapsedTimer: ReturnType<typeof setInterval> | null = null
 function formatElapsed(ms: number): string {
@@ -209,12 +224,81 @@ function formatElapsed(ms: number): string {
 }
 function beginRun() {
   if (elapsedTimer) clearInterval(elapsedTimer)
+  progressEvents.value = []
+  progressExpanded.value = false
+  progressSeq = 0
   const started = Date.now()
   elapsedMs.value = 0
   elapsedTimer = setInterval(() => { elapsedMs.value = Date.now() - started }, 250)
 }
 function endRun() {
   if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+}
+
+watch(progressEvents, () => {
+  void nextTick(() => {
+    if (progressScrollEl.value) progressScrollEl.value.scrollTop = progressScrollEl.value.scrollHeight
+  })
+}, { deep: true })
+
+function toolProgress(tool?: string): { title: string; detail: string } {
+  const name = (tool ?? '').toLowerCase()
+  if (name.includes('career-market') || name.includes('mysql') || name.includes('query')) {
+    return { title: '正在查询岗位库', detail: '分析岗位要求、经验和薪资结构' }
+  }
+  if (name === 'read' || name.includes('read')) {
+    return { title: '正在读取参考资料', detail: '整理当前任务所需的技能规则和资料' }
+  }
+  if (name === 'write' || name.includes('write')) {
+    return { title: '正在生成报告文件', detail: '写入并校验用户可查看的报告' }
+  }
+  if (name.includes('chart') || name.includes('visual')) {
+    return { title: '正在生成数据图表', detail: '把已验证的数据整理为可读图表' }
+  }
+  if (name === 'bash' || name.includes('shell')) {
+    return { title: '正在执行数据处理', detail: '运行受控的数据处理任务' }
+  }
+  return { title: '正在调用工具', detail: tool || '执行受控任务' }
+}
+
+function activeProgress(phase?: ProgressItem['phase'], id?: string): ProgressItem | undefined {
+  return progressEvents.value.find(item => item.state === 'active' && ((!id || item.id === id) && (!phase || item.phase === phase)))
+}
+
+function handleProgressStatus(event: Extract<ChatEvent, { type: 'status' }>) {
+  const now = Date.now()
+  if (event.phase === 'initializing') {
+    progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'system', state: 'active', title: '正在启动运行环境', detail: event.message ?? '准备执行任务', startedAt: now })
+    return
+  }
+  if (event.phase === 'thinking') {
+    const item = activeProgress('thinking')
+    if (item) item.detail = `正在分析任务（已处理约 ${event.chars ?? 0} 字思考内容）`
+    else progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'thinking', state: 'active', title: '正在分析任务', detail: '提取目标、限制条件和可用证据', startedAt: now })
+    return
+  }
+  if (event.phase === 'tool') {
+    if (event.state === 'active') {
+      const copy = toolProgress(event.tool)
+      progressEvents.value.push({ id: event.id ?? `p-${++progressSeq}`, phase: 'tool', state: 'active', title: copy.title, detail: copy.detail, tool: event.tool, startedAt: now })
+    } else {
+      const item = activeProgress('tool', event.id) ?? [...progressEvents.value].reverse().find(x => x.phase === 'tool' && x.state === 'active')
+      if (item) {
+        item.state = event.state === 'failed' ? 'failed' : 'completed'
+        item.finishedAt = now
+        const seconds = ((now - item.startedAt) / 1000).toFixed(1)
+        item.detail = event.state === 'failed' ? `工具执行失败（${seconds}s）` : `工具执行完成（${seconds}s）`
+      }
+    }
+    return
+  }
+  if (event.phase === 'text') {
+    for (const item of progressEvents.value) if (item.state === 'active' && (item.phase === 'thinking' || item.phase === 'tool' || item.phase === 'system')) {
+      item.state = 'completed'
+      item.finishedAt = now
+    }
+    if (!activeProgress('writing')) progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'writing', state: 'active', title: '正在生成结果', detail: '整理结论、依据和下一步行动', startedAt: now })
+  }
 }
 
 /* ---------- 附件上传：文件落会话沙箱 uploads/，随下一次运行/发送生效 ---------- */
@@ -318,9 +402,10 @@ function makeStreamHandler(answer: RunMessage) {
     } else if (event.type === 'session') {
       sessionIds[sessionKey(skill.value.slug)] = event.sessionId
     } else if (event.type === 'status') {
+      handleProgressStatus(event)
       if (event.phase === 'initializing') streamStatus.value = event.message ?? '正在启动运行环境…'
-      else if (event.phase === 'thinking') streamStatus.value = `模型思考中 · 已 ${event.chars ?? 0} 字`
-      else if (event.phase === 'tool') streamStatus.value = `调用工具 ${event.tool ?? ''}`
+      else if (event.phase === 'thinking') streamStatus.value = '正在分析任务…'
+      else if (event.phase === 'tool') streamStatus.value = toolProgress(event.tool).title
       else streamStatus.value = '正在生成结果…'
     } else if (event.type === 'text') {
       answer.content += event.delta
@@ -330,10 +415,12 @@ function makeStreamHandler(answer: RunMessage) {
       lastUsage.value =
         `输入 ${k(u.inputTokens ?? 0)} · 输出 ${k(u.outputTokens ?? 0)} · 缓存命中 ${k(u.cacheReadTokens ?? 0)}`
     } else if (event.type === 'done') {
+      for (const item of progressEvents.value) if (item.state === 'active') item.state = 'completed'
       if (event.content) answer.final = event.content
       answer.charts = event.charts ?? []
       answer.reportUrl = event.reportUrl
     } else if (event.type === 'error') {
+      for (const item of progressEvents.value) if (item.state === 'active') item.state = 'failed'
       throw new Error(event.message)
     }
   }
@@ -816,6 +903,18 @@ onBeforeUnmount(endRun)
                   <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
                   <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
                 </div>
+                <div v-if="progressEvents.length" class="use-progress-timeline" :class="{ 'is-expanded': progressExpanded }" aria-label="运行进度">
+                  <header class="use-progress-head">
+                    <strong>运行进度</strong><span>{{ progressDoneCount }} / {{ progressEvents.length }} 已完成</span>
+                    <button type="button" @click="progressExpanded = !progressExpanded">{{ progressExpanded ? '收起' : '展开' }}</button>
+                  </header>
+                  <div ref="progressScrollEl" class="use-progress-scroll">
+                    <div v-for="item in progressEvents" :key="item.id" class="use-progress-item" :class="`is-${item.state}`">
+                      <i>{{ item.state === 'completed' ? '✓' : item.state === 'failed' ? '!' : '·' }}</i>
+                      <div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
+                    </div>
+                  </div>
+                </div>
                 <template v-for="(msg, i) in visibleMessages" :key="i">
                   <article v-if="msg.role !== 'user'" class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
                     <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
@@ -947,6 +1046,18 @@ onBeforeUnmount(endRun)
           <div v-if="busy" class="use-live-status" aria-live="polite">
             <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
             <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
+          </div>
+          <div v-if="progressEvents.length" class="use-progress-timeline" :class="{ 'is-expanded': progressExpanded }" aria-label="运行进度">
+            <header class="use-progress-head">
+              <strong>运行进度</strong><span>{{ progressDoneCount }} / {{ progressEvents.length }} 已完成</span>
+              <button type="button" @click="progressExpanded = !progressExpanded">{{ progressExpanded ? '收起' : '展开' }}</button>
+            </header>
+            <div ref="progressScrollEl" class="use-progress-scroll">
+              <div v-for="item in progressEvents" :key="item.id" class="use-progress-item" :class="`is-${item.state}`">
+                <i>{{ item.state === 'completed' ? '✓' : item.state === 'failed' ? '!' : '·' }}</i>
+                <div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
+              </div>
+            </div>
           </div>
           <div v-if="!session.length && !busy" class="use-chat-empty">
             <span class="use-chat-empty-mark">{{ skill.name }}</span>

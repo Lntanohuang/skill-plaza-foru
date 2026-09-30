@@ -816,7 +816,7 @@ async function handleChat(req: any, res: any) {
         }
       } else if (ev.kind === 'status') {
         /* 思考/工具阶段的过程信号：正文 delta 之前前端也有"正在推进"的体感 */
-        sse({ type: 'status', phase: ev.phase, chars: ev.chars, tool: ev.tool })
+        sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
       } else if (ev.kind === 'usage') {
         lastUsage = ev.usage ?? lastUsage
         mergeContextInfo(ev.context)

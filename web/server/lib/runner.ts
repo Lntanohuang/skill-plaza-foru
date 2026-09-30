@@ -26,7 +26,14 @@ export type TapFn = (dir: 'out' | 'in', msg: any) => void
 /** 归一后的引擎事件；index.ts 统一映射成 SSE，前端协议不感知引擎 */
 export type RunnerEvent =
   | { kind: 'text_delta'; delta: string }
-  | { kind: 'status'; phase: 'thinking' | 'tool' | 'text'; chars?: number; tool?: string }
+  | {
+      kind: 'status'
+      phase: 'thinking' | 'tool' | 'text'
+      state?: 'active' | 'completed' | 'failed'
+      chars?: number
+      tool?: string
+      id?: string
+    }
   | {
       kind: 'usage'
       usage?: UsageSummary

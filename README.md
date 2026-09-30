@@ -71,8 +71,8 @@ cd web && npm run detect:cli
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PI_CLI` | 自动检测（PATH） | pi CLI 路径 |
-| `PI_MODEL` | `deepseek/deepseek-flash` | pi 运行模型，格式 `provider/model`（要更强推理可切 `deepseek/deepseek-v4-pro`） |
-| `PI_THINKING` | `low` | pi 思考档位（`off`..`max`）。长推理是 token 大头，MVP 演示建议 `low` |
+| `PI_MODEL` | `openai-codex/gpt-6-astra` | pi 运行模型，格式 `provider/model` |
+| `PI_THINKING` | `medium` | pi 思考档位（`off`..`max`） |
 | `PI_IDLE_MS` | 30 分钟 | pi 会话进程空闲回收阈值（pi 每会话一进程） |
 | `DEEPSEEK_API_KEY` | — | pi 引擎的模型 key（也可放 shell 环境；pi 按 `pi auth` 的读取顺序） |
 | `PORT` | `8767` | 后端端口（Vite 代理目标需同步改） |
