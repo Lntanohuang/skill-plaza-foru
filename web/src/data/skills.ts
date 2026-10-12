@@ -126,15 +126,15 @@ export const SKILLS: Skill[] = [
       '无真实月度趋势数据时，需求与增长趋势标注为推断或未评估。',
     ],
     installation: [
-      '从公开 GitHub 仓库获取完整目录。',
+      '随技能广场主仓库分发（.agents/skills/tech-forecast/ 目录）。',
       '安装时保留 SKILL.md、references 和 agents 等配套文件。',
     ],
     installPrompt:
-      '请从 https://github.com/Lntanohuang/tech-forecast-skill.git 安装 tech-forecast SKILL，保留仓库完整目录，并在安装后检查依赖、说明调用方式。',
+      '请从 https://github.com/Lntanohuang/skill-plaza-foru 获取 .agents/skills/tech-forecast 目录并安装 tech-forecast SKILL，保留完整目录结构，并在安装后检查依赖、说明调用方式。',
     minimalInput:
       '使用 $tech-forecast，面向广东省高职院校，预判未来 1–3 年人工智能与机器人方向的新兴岗位与培训建议。',
-    repository: 'https://github.com/Lntanohuang/tech-forecast-skill',
-    repositoryLabel: 'Lntanohuang/tech-forecast-skill',
+    repository: 'https://github.com/Lntanohuang/skill-plaza-foru',
+    repositoryLabel: 'Lntanohuang/skill-plaza-foru（本仓库内置技能）',
   },
   {
     slug: 'classroom-assistant',

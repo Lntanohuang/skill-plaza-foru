@@ -102,7 +102,7 @@ cd web && npm run detect:cli
 
 ## 技能组织模式（父子仓库）
 
-每个技能一个**独立仓库（父）**：技能的全部内容与修改历史都在父仓库，广场不保存副本，只以 git submodule 将其挂载到 `.agents/skills/<slug>`（子引用，钉住 commit）。**今后新增技能一律沿用此模式。**
+每个技能一个**独立仓库（父）**：技能的全部内容与修改历史都在父仓库，广场不保存副本，只以 git submodule 将其挂载到 `.agents/skills/<slug>`（子引用，钉住 commit）。**今后新增技能默认沿用此模式；例外需在 README 和开发手记中注明**——当前例外：`tech-forecast`（新岗位·新技术预判）直接内置于主仓库 `.agents/skills/tech-forecast/`，不设独立父仓库；开发手记 `plaza-dev-notes` 同为主仓库内置。
 
 新技能接入三步：
 
