@@ -104,6 +104,56 @@ export const USE_TASK_CONFIGS: UseTaskConfig[] = [
     ],
   },
   {
+    slug: 'tech-forecast',
+    eyebrow: '技术预判工作台',
+    lead: '说明地区、技术方向与预判窗口，SKILL 会结合岗位库佐证与内置证据快照，生成证据分级的前瞻报告。',
+    output: '新兴技术成熟度与培训方向 HTML 报告',
+    sections: [
+      {
+        number: '01',
+        title: '确定预判范围',
+        description: '地区用于岗位库查询口径；技术方向决定报告的快照与图表范围。',
+        fields: [
+          { id: 'region', label: '目标地区', type: 'text', required: true, placeholder: '例如：广东省（用于岗位库查询与报告口径）' },
+          { id: 'domains', label: '技术领域方向', type: 'multi', required: true, span: 'full', options: ['人工智能与大模型应用', '具身智能与机器人', '低空经济（无人机）', '新能源汽车与储能', '集成电路', '数据要素与数据治理'] },
+          { id: 'horizon', label: '预判窗口', type: 'select', required: true, options: ['未来 1–3 年', '未来 3–5 年'] },
+          { id: 'institution', label: '院校类型', type: 'choice', required: true, options: ['高职院校', '应用型本科', '中职学校', '社会培训机构'] },
+        ],
+      },
+      {
+        number: '02',
+        title: '聚焦专业与输出重点',
+        description: '专业群用于匹配建议；约束越具体，培训方向越可落地。',
+        fields: [
+          { id: 'majors', label: '关注专业群', type: 'text', placeholder: '例如：软件技术、工业机器人技术（可留空）' },
+          { id: 'context', label: '已有材料或特别要求', type: 'textarea', span: 'full', placeholder: '例如：用于新专业申报与培训立项，希望聚焦智能制造方向，并区分库内实测与推断结论……' },
+        ],
+      },
+    ],
+    example: {
+      region: '广东省',
+      domains: ['人工智能与大模型应用', '具身智能与机器人'],
+      horizon: '未来 1–3 年',
+      institution: '高职院校',
+      majors: '软件技术、工业机器人技术',
+      context: '用于新专业申报与培训项目立项，需要雷达图与桑基图，并区分库内实测与推断结论。',
+    },
+    autoFillExample: true,
+    uploads: [
+      {
+        id: 'materials',
+        label: '上传行业资料（可选）',
+        accept: '.pdf,.docx,.doc,.md,.txt',
+        help: '可作为内置文档层证据，报告引用时保留来源与日期。',
+      },
+    ],
+    knowledge: [
+      { id: 'tech-snapshots', title: '新兴技术与专业对照快照', meta: '技术清单 · 演进对照 · 专业映射 · 内置', tag: '快照', default: true },
+      { id: 'job-market', title: '岗位库白名单查询', meta: '岗位名排序与薪资区间 · 实时', tag: '岗位', default: true },
+      { id: 'chart-specs', title: '共享图表规范', meta: '雷达图 · 桑基图 · 内联 SVG', tag: '图表' },
+    ],
+  },
+  {
     slug: 'classroom-assistant',
     eyebrow: '课程教学工作台',
     lead: '用结构化选项说明课程、对象和教学任务，再限定本次允许引用的知识范围。',

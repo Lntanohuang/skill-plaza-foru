@@ -10,3 +10,6 @@
 [submodule ".agents/skills/chart-visualization"]
 	path = .agents/skills/chart-visualization
 	url = https://github.com/Lntanohuang/chart-visualization-skill.git
+[submodule ".agents/skills/tech-forecast"]
+	path = .agents/skills/tech-forecast
+	url = https://github.com/Lntanohuang/tech-forecast-skill.git

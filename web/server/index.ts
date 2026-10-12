@@ -37,7 +37,7 @@ import {
 } from './lib/htmlReport.ts'
 import { serverEnv } from './lib/agentEnv.ts'
 import { loadLocalEnv } from './lib/env.ts'
-import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS } from './lib/skills.ts'
+import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, HTML_REPORT_CONTRACTS, HTML_REPORT_SKILLS } from './lib/skills.ts'
 import {
   extractSidecar,
   validateMeta,
@@ -562,7 +562,10 @@ async function handleChat(req: any, res: any) {
       recorder.note({ htmlReportError, htmlReportSource: source })
       return false
     }
-    const validation = validateCompleteHtmlReport(reportHtml)
+    /* 热点图专项检查只对声明了该契约的技能生效（career-guidance） */
+    const validation = validateCompleteHtmlReport(reportHtml, {
+      heatmapChecks: HTML_REPORT_CONTRACTS[skill]?.heatmapChecks === true,
+    })
     htmlReportValidation = validation
     recorder.note({ htmlReport: validation, htmlReportSource: source })
     if (!validation.pass) {
@@ -588,7 +591,7 @@ async function handleChat(req: any, res: any) {
    * oversized files fall back to the legacy terminal response.
    */
   const captureWorkspaceHtmlReport = (): boolean => {
-    if (skill !== 'career-guidance' || htmlReportFile || !entry?.workspaceDir) return Boolean(htmlReportFile)
+    if (!HTML_REPORT_SKILLS.has(skill) || htmlReportFile || !entry?.workspaceDir) return Boolean(htmlReportFile)
     const report = readWorkspaceHtmlReport(entry.workspaceDir)
     if (!report.found) {
       const error = 'error' in report ? report.error : undefined
@@ -836,7 +839,7 @@ async function handleChat(req: any, res: any) {
         sse({ type: 'usage', usage: ev.usage })
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
         const workspaceReport = captureWorkspaceHtmlReport()
-        if (skill === 'career-guidance' && !workspaceReport) {
+        if (HTML_REPORT_SKILLS.has(skill) && !workspaceReport) {
           /* Backward compatibility only: a plain short status is not a report.
              Legacy agents may still return a complete HTML document in text. */
           const legacyReport = normalizeLegacyHtmlDocument(finalText)
@@ -845,14 +848,14 @@ async function handleChat(req: any, res: any) {
         const reportFailure = htmlReportError
           ? `报告未生成：${htmlReportError}`
           : '报告未生成：未找到有效的 workspace/report.html，且最终回复未包含可转换内容。'
+        const isHtmlReportSkill = HTML_REPORT_SKILLS.has(skill)
         sse({
           type: 'done',
-          content:
-            skill === 'career-guidance'
-              ? htmlReportFile
-                ? ''
-                : reportFailure
-              : finalText,
+          content: isHtmlReportSkill
+            ? htmlReportFile
+              ? ''
+              : reportFailure
+            : finalText,
           resultType: ev.resultType,
           charts: checkedCharts,
           runId,
@@ -860,7 +863,7 @@ async function handleChat(req: any, res: any) {
         })
         const finalOutcome: RunOutcome = clientGone
           ? 'aborted'
-          : skill === 'career-guidance' && !htmlReportFile
+          : isHtmlReportSkill && !htmlReportFile
             ? 'error'
             : 'success'
         finalizeRun(finalOutcome)

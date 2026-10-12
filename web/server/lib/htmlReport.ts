@@ -11,6 +11,12 @@ import { join, resolve } from 'node:path'
 
 export type HeatmapReportStatus = 'present' | 'unassessed' | 'omitted'
 
+/** 校验选项：heatmapChecks=false 时跳过热点图专项检查（无热点图契约的
+    HTML 报告技能，如 tech-forecast 的雷达图/桑基图报告）。 */
+export interface HtmlReportValidationOptions {
+  heatmapChecks?: boolean
+}
+
 export interface HtmlReportFigure {
   chartSkill?: string
   chartId?: string
@@ -161,7 +167,8 @@ function failureReason(html: string): string | undefined {
  * not assessed, the status and the adjacent reason are captured.  A present
  * heatmap must use the stable CH_CITY id so downstream checks can find it.
  */
-export function validateHtmlReport(html: string): HtmlReportValidation {
+export function validateHtmlReport(html: string, options?: HtmlReportValidationOptions): HtmlReportValidation {
+  const heatmapChecks = options?.heatmapChecks !== false
   const errors: string[] = []
   const warnings: string[] = []
   const pushError = (message: string) => {
@@ -198,7 +205,7 @@ export function validateHtmlReport(html: string): HtmlReportValidation {
     else if (chartStatus?.toLowerCase() !== 'unassessed' && !/<svg\b/i.test(body))
       pushError(`${chartSkill} 图表缺少内联 SVG`)
 
-    if (chartSkill?.toLowerCase() === 'heatmap-chart') {
+    if (heatmapChecks && chartSkill?.toLowerCase() === 'heatmap-chart') {
       const normalizedStatus = chartStatus?.toLowerCase()
       heatmapBlocks.push({ body, status: normalizedStatus })
       if (chartId !== 'CH_CITY') pushError(`热点图 data-chart-id 必须为 CH_CITY（当前为 ${chartId ?? '缺失'}）`)
@@ -219,18 +226,20 @@ export function validateHtmlReport(html: string): HtmlReportValidation {
   const failureHint = /(?:跨城市查询|city-distribution|城市分布(?:查询|统计|结果)|热点图).{0,100}(?:失败|超时|不可用|未返回|无结果|未获得|未获取|无法)/i.test(plain)
 
   let status: HeatmapReportStatus = 'omitted'
-  if (heatmapBlocks.some((block) => block.status === 'unassessed')) status = 'unassessed'
-  else if (heatmapBlocks.length > 0) status = 'present'
-  else if (hasUnassessed) status = 'unassessed'
-  else pushWarning('未发现 data-chart-skill="heatmap-chart"；若中国跨城市查询已成功，报告应生成 CH_CITY 热点图')
+  if (heatmapChecks) {
+    if (heatmapBlocks.some((block) => block.status === 'unassessed')) status = 'unassessed'
+    else if (heatmapBlocks.length > 0) status = 'present'
+    else if (hasUnassessed) status = 'unassessed'
+    else pushWarning('未发现 data-chart-skill="heatmap-chart"；若中国跨城市查询已成功，报告应生成 CH_CITY 热点图')
 
-  const hasAssessedHeatmap = heatmapBlocks.some((block) => block.status !== 'unassessed')
-  if (hasAssessedHeatmap && hasUnassessed)
-    pushError('报告同时包含热点图和“热点图未评估”，状态互相矛盾')
-  if (failureHint && !hasUnassessed)
-    pushError('跨城市查询失败时必须显示“热点图未评估”及失败原因')
-  if (status === 'unassessed' && !reason)
-    pushError('“热点图未评估”缺少失败原因')
+    const hasAssessedHeatmap = heatmapBlocks.some((block) => block.status !== 'unassessed')
+    if (hasAssessedHeatmap && hasUnassessed)
+      pushError('报告同时包含热点图和“热点图未评估”，状态互相矛盾')
+    if (failureHint && !hasUnassessed)
+      pushError('跨城市查询失败时必须显示“热点图未评估”及失败原因')
+    if (status === 'unassessed' && !reason)
+      pushError('“热点图未评估”缺少失败原因')
+  }
 
   return {
     pass: errors.length === 0,
@@ -246,8 +255,8 @@ export function validateHtmlReport(html: string): HtmlReportValidation {
 }
 
 /** Validate the complete document contract used for persisted report files. */
-export function validateCompleteHtmlReport(html: string): HtmlReportValidation {
-  const result = validateHtmlReport(html)
+export function validateCompleteHtmlReport(html: string, options?: HtmlReportValidationOptions): HtmlReportValidation {
+  const result = validateHtmlReport(html, options)
   const errors = [...result.errors]
   const add = (message: string) => {
     if (!errors.includes(message) && errors.length < MAX_ERRORS) errors.push(message)

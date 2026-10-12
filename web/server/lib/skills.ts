@@ -9,8 +9,30 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const CAREER_GUIDANCE_FILE_PROTOCOL =
-  '报告文件协议：必须在当前会话 workspace 根目录写入 report.html。报告必须是完整 HTML 文档，包含 <!doctype html>、<html>、<head>、<body>，图表使用带 data-chart-skill 的内联 SVG；中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略。写入后只做最小的存在性/结构检查，不要再次读取 report.html 全文。最终回复只输出简短完成说明，例如“报告已生成，请点击查看。”；写入或校验失败时说明原因并明确报告未生成，不得伪造链接，不得复制 HTML、SVG、Markdown、JSON 或文件内容。'
+/** HTML 报告技能的输出契约：固定章节、用户结构约束、文件协议与首轮附加规则。
+    新增 HTML 报告技能时在 HTML_REPORT_CONTRACTS 登记一份，index.ts / piRunner.ts
+    的报告捕获与提示词拼装按集合判断，不再按技能名单写死。 */
+export interface HtmlReportContract {
+  sections: readonly string[]
+  userReportContract: string
+  fileProtocol: string
+  /** 首轮 /skill: 展开后追加的技能专属规则（含契约与文件协议） */
+  firstTurnRules: string
+  /** 校验该技能报告时是否执行热点图专项检查（htmlReport.ts） */
+  heatmapChecks: boolean
+}
+
+function sectionsContract(sections: readonly string[]): string {
+  return '用户可见的正式 HTML 报告只使用以下 h2 章节，标题和顺序固定，不改名、不增删：' + sections.join('；') + '。'
+}
+
+function reportFileProtocol(chartRule: string): string {
+  return (
+    '报告文件协议：必须在当前会话 workspace 根目录写入 report.html。报告必须是完整 HTML 文档，包含 <!doctype html>、<html>、<head>、<body>，图表使用带 data-chart-skill 的内联 SVG；' +
+    chartRule +
+    '。写入后只做最小的存在性/结构检查，不要再次读取 report.html 全文。最终回复只输出简短完成说明，例如“报告已生成，请点击查看。”；写入或校验失败时说明原因并明确报告未生成，不得伪造链接，不得复制 HTML、SVG、Markdown、JSON 或文件内容。'
+  )
+}
 
 /** 仅约束 career-guidance 正式报告；与 Skill 的 HTML 骨架保持一致。 */
 export const CAREER_GUIDANCE_REPORT_SECTIONS = [
@@ -22,9 +44,12 @@ export const CAREER_GUIDANCE_REPORT_SECTIONS = [
   '六、需要核实的问题',
 ] as const
 
-export const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
-  '用户可见的正式 HTML 报告只使用以下六个 h2 章节，标题和顺序固定，不改名、不增删：' +
-  CAREER_GUIDANCE_REPORT_SECTIONS.join('；') + '。' +
+const CAREER_GUIDANCE_FILE_PROTOCOL = reportFileProtocol(
+  '中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略',
+)
+
+const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
+  sectionsContract(CAREER_GUIDANCE_REPORT_SECTIONS) +
   'h1 后直接进入结论与优先动作，具体建议写在段落而非标题中；子标题只用于岗位、图表、简历项目等用户内容。' +
   '资料不足或章节不适用时在原章节简短注明未评估及原因，不补造事实。需要核实的问题最多三项，无关键问题时写暂无。' +
   '不得以任何层级章节、表格或清单呈现任务复述、输入摘要、已提供事实汇总、完整缺失信息清单、分析/思考过程、工具调用或模型/Agent/Skill 说明。' +
@@ -32,6 +57,71 @@ export const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
   '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
   '章节中的岗位、地点和经历只来自当前任务、用户材料与相符查询，不沿用示例默认值。' +
   '仅当用户明确只需局部改写或简短答疑而非正式报告时，直接交付所需内容，不强行展开六章。'
+
+/** 仅约束 tech-forecast 正式报告；与 Skill 的 HTML 骨架保持一致。 */
+export const TECH_FORECAST_REPORT_SECTIONS = [
+  '一、结论与优先动作',
+  '二、新兴技术成熟度分析',
+  '三、技能演进路径',
+  '四、新兴岗位预测',
+  '五、新兴技能预测',
+  '六、培训方向建议',
+  '七、数据口径与未评估项',
+] as const
+
+const TECH_FORECAST_FILE_PROTOCOL = reportFileProtocol(
+  '技术成熟度必须按雷达图规范生成 radar-chart、技能演进路径必须按桑基图规范生成 sankey-chart，数据不足时写明“未评估”和原因，不绘制无数据的 SVG',
+)
+
+const TECH_FORECAST_USER_REPORT_CONTRACT =
+  sectionsContract(TECH_FORECAST_REPORT_SECTIONS) +
+  'h1 后直接进入结论与优先动作，具体建议写在段落而非标题中；子标题只用于技术、图表、课程等用户内容。' +
+  '资料不足或章节不适用时在原章节简短注明未评估及原因，不补造事实。第七章最多再列三项需要核实的关键问题，无关键问题时写暂无。' +
+  '不得以任何层级章节、表格或清单呈现任务复述、输入摘要、已提供事实汇总、完整缺失信息清单、分析/思考过程、工具调用或模型/Agent/Skill 说明。' +
+  '不隐瞒影响决策的限制：必要来源与口径放在图注，推断标注就地呈现，未评估项归入末章，不复述内部证据和推理链。' +
+  '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
+  '章节中的技术方向、地区和窗口只来自当前任务与相符查询，不沿用示例默认值。' +
+  '预测字段的每个取值必须标注证据等级（库内实测 / 内置文档 / 分析推断）；预计薪资只给区间并写口径，趋势无真实月度数据时标推断或未评估，不编造增长百分比。' +
+  '仅当用户明确只需简短答疑而非正式报告时，直接交付所需内容，不强行展开七章。'
+
+const CAREER_GUIDANCE_FIRST_TURN_RULES =
+  '（先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+  '报告必须写入当前 workspace/report.html。' +
+  CAREER_GUIDANCE_USER_REPORT_CONTRACT +
+  '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
+  '简历修改建议必须基于用户材料，给出可直接替换的表达和待补证据。' +
+  '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +
+  CAREER_GUIDANCE_FILE_PROTOCOL +
+  '不要读取 report.html 的完整内容，也不要把报告文件内容复制到最终回复。）'
+
+const TECH_FORECAST_FIRST_TURN_RULES =
+  '（先读取 Skill 参考资料（technology-snapshots、skill-evolution-map、major-mapping）和共享 chart-visualization Skill 的 radar-chart、sankey-chart 规范；涉及目标地区的新兴岗位名称、岗位热度排序或薪资区间时必须调用岗位库只读查询工具（title-top、salary-distribution 等），不能用通用行业常识替代。' +
+  '报告必须写入当前 workspace/report.html。' +
+  TECH_FORECAST_USER_REPORT_CONTRACT +
+  '技术成熟度分析必须给出雷达图与同数据评分表并逐项标注证据等级；技能演进必须给出桑基图并在图注写明流量口径与证据来源；新兴岗位预测、新兴技能预测与培训方向建议表的每个字段标注证据等级，预计薪资只给区间。' +
+  '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +
+  TECH_FORECAST_FILE_PROTOCOL +
+  '不要读取 report.html 的完整内容，也不要把报告文件内容复制到最终回复。）'
+
+export const HTML_REPORT_CONTRACTS: Record<string, HtmlReportContract> = {
+  'career-guidance': {
+    sections: CAREER_GUIDANCE_REPORT_SECTIONS,
+    userReportContract: CAREER_GUIDANCE_USER_REPORT_CONTRACT,
+    fileProtocol: CAREER_GUIDANCE_FILE_PROTOCOL,
+    firstTurnRules: CAREER_GUIDANCE_FIRST_TURN_RULES,
+    heatmapChecks: true,
+  },
+  'tech-forecast': {
+    sections: TECH_FORECAST_REPORT_SECTIONS,
+    userReportContract: TECH_FORECAST_USER_REPORT_CONTRACT,
+    fileProtocol: TECH_FORECAST_FILE_PROTOCOL,
+    firstTurnRules: TECH_FORECAST_FIRST_TURN_RULES,
+    heatmapChecks: false,
+  },
+}
+
+/** 产出 workspace/report.html 的技能集合（终态捕获/校验/下载见 index.ts 与 htmlReport.ts） */
+export const HTML_REPORT_SKILLS = new Set(Object.keys(HTML_REPORT_CONTRACTS))
 
 export const SKILL_PROMPTS: Record<string, string> = {
   'industry-education-report':
@@ -62,10 +152,16 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '你正在按 training-data-qa SKILL 工作。根据治理数据、任务模板和标注规则构造黄金种子、' +
     '扩增样本与难例，规划训练/验证/测试/独立评测划分，并检查 Schema、事实证据、业务规则、' +
     '重复、泄漏和分布。未经专家确认的结果只能标为候选；负责数据构造与验收，不执行模型训练。',
+  'tech-forecast':
+    '你正在按 tech-forecast SKILL 工作。面向院校与培训机构，围绕目标地区、技术领域方向与预判窗口，' +
+    '分析新兴技术成熟度与技能演进路径，预测新兴岗位与新兴技能并给出培训方向建议。' +
+    '预测字段必须标注证据等级（库内实测 / 内置文档 / 分析推断）；薪资只给区间并写口径，' +
+    '趋势无实测数据时标推断或未评估，不编造增长率或市场规模。完整报告以 HTML 写入 workspace/report.html，' +
+    '最终回复只保留短状态。',
 }
 
 /** 已安装为真实技能的 slug（仓库 .agents/skills/ 下） */
-export const INSTALLED_SKILLS = new Set(['industry-education-report', 'career-guidance'])
+export const INSTALLED_SKILLS = new Set(['industry-education-report', 'career-guidance', 'tech-forecast'])
 
 /** 启用 report-meta 侧车输出的技能（终态剥离/校验见 lib/reportMeta.ts；
     设计记录 .agents/skills/plaza-dev-notes 001） */

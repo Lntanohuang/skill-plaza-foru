@@ -102,6 +102,41 @@ export const SKILLS: Skill[] = [
     repositoryLabel: 'Lntanohuang/industry-education-report-skill',
   },
   {
+    slug: 'tech-forecast',
+    name: '新岗位·新技术预判',
+    identifier: 'tech-forecast',
+    categoryId: 'industry',
+    audiences: ['manager', 'teacher', 'data'],
+    summary: '面向院校与培训机构的新兴技术成熟度、技能演进与新兴岗位预判，输出证据分级的 HTML 决策报告。',
+    tags: ['技术预判', '新兴岗位', '培训方向'],
+    compatibility: ['Codex', 'Claude Code', 'Cursor', 'WorkBuddy', '豆包'],
+    preconditions: '目标地区 + 技术领域方向',
+    outputs: [
+      '技术成熟度雷达图报告（HTML）',
+      '技能演进桑基图',
+      '新兴岗位与新兴技能预测表',
+      '培训方向建议表',
+    ],
+    dependencies: [
+      '岗位库查询（岗位名与薪资区间佐证，可选）',
+      '技能内置技术与专业对照文档',
+    ],
+    limitations: [
+      '预测字段区分证据等级（库内实测 / 内置文档 / 分析推断），分析推断不作为事实呈现。',
+      '无真实月度趋势数据时，需求与增长趋势标注为推断或未评估。',
+    ],
+    installation: [
+      '从公开 GitHub 仓库获取完整目录。',
+      '安装时保留 SKILL.md、references 和 agents 等配套文件。',
+    ],
+    installPrompt:
+      '请从 https://github.com/Lntanohuang/tech-forecast-skill.git 安装 tech-forecast SKILL，保留仓库完整目录，并在安装后检查依赖、说明调用方式。',
+    minimalInput:
+      '使用 $tech-forecast，面向广东省高职院校，预判未来 1–3 年人工智能与机器人方向的新兴岗位与培训建议。',
+    repository: 'https://github.com/Lntanohuang/tech-forecast-skill',
+    repositoryLabel: 'Lntanohuang/tech-forecast-skill',
+  },
+  {
     slug: 'classroom-assistant',
     name: '课堂助教',
     identifier: 'classroom-assistant',
