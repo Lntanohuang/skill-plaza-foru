@@ -351,11 +351,11 @@
   function route() {
     const raw=location.hash.startsWith('#/')?location.hash.slice(1):'/';const pos=raw.indexOf('?');const path=pos===-1?raw:raw.slice(0,pos);const p=new URLSearchParams(pos===-1?'':raw.slice(pos+1));
     closeNav();
-    if(path==='/guide'){showPage('guide');setCurrentNav('guide');document.title='使用指南 · SKILL 广场';window.scrollTo(0,0);return;}
-    if(path==='/use'||path.startsWith('/use/')){const requested=path==='/use'?'':decodeURIComponent(path.slice(5));const skill=skills.find(item=>item.slug===requested)||skills[0];if(path==='/use')history.replaceState(null,'',useHash(skill.slug));renderUse(skill);showPage('use');setCurrentNav('use');document.title='直接使用 '+skill.name+' · SKILL 广场';window.scrollTo(0,0);return;}
-    if(path.startsWith('/skill/')){const skill=skills.find(item=>item.slug===path.slice(7));if(skill){renderDetail(skill,p.get('return'));showPage('detail');setCurrentNav('catalog');document.title=skill.name+' · SKILL 广场';window.scrollTo(0,0);return;}}
+    if(path==='/guide'){showPage('guide');setCurrentNav('guide');document.title='使用指南 · 智能体广场';window.scrollTo(0,0);return;}
+    if(path==='/use'||path.startsWith('/use/')){const requested=path==='/use'?'':decodeURIComponent(path.slice(5));const skill=skills.find(item=>item.slug===requested)||skills[0];if(path==='/use')history.replaceState(null,'',useHash(skill.slug));renderUse(skill);showPage('use');setCurrentNav('use');document.title='直接使用 '+skill.name+' · 智能体广场';window.scrollTo(0,0);return;}
+    if(path.startsWith('/skill/')){const skill=skills.find(item=>item.slug===path.slice(7));if(skill){renderDetail(skill,p.get('return'));showPage('detail');setCurrentNav('catalog');document.title=skill.name+' · 智能体广场';window.scrollTo(0,0);return;}}
     state.q=p.get('q')||'';state.category=categories.includes(p.get('category'))?p.get('category'):'全部';state.sort=['featured','updated','name'].includes(p.get('sort'))?p.get('sort'):'featured';
-    $('#search-input').value=state.q;$('#sort-select').value=state.sort;renderCatalog();showPage('home');document.title='SKILL 广场 · FORU 风格 Demo';
+    $('#search-input').value=state.q;$('#sort-select').value=state.sort;renderCatalog();showPage('home');document.title='智能体广场 · FORU 风格 Demo';
     if(path==='/catalog'||path.startsWith('/role/')){setCurrentNav('catalog');requestAnimationFrame(()=>$('#catalog').scrollIntoView());}
     else{setCurrentNav('home');window.scrollTo(0,0);}
   }

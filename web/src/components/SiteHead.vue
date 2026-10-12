@@ -80,7 +80,7 @@ watch(() => route.fullPath, () => { closeNav(); closeMenu() })
   <header class="site-head" id="site-head" :class="{ 'is-open': open, 'is-scrolled': scrolled || open }">
     <div class="wrap head-inner">
       <RouterLink class="brand" to="/">
-        <span class="brand-mark"><img src="/logo.png" alt="Skill搭子"></span>
+        <span class="brand-mark"><img src="/logo.png" alt="智能体搭子"></span>
       </RouterLink>
       <button ref="navToggle" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="head-panel" @click="toggleNav">
         {{ open ? '关闭' : '菜单' }}
@@ -88,7 +88,7 @@ watch(() => route.fullPath, () => { closeNav(); closeMenu() })
       <div class="head-panel" id="head-panel">
         <nav class="site-nav" id="site-nav" aria-label="主导航">
           <RouterLink to="/" :aria-current="route.name === 'home' ? 'page' : undefined">首页</RouterLink>
-          <RouterLink to="/skills" :aria-current="route.name === 'skills' || route.name === 'detail' ? 'page' : undefined">SKILL 广场</RouterLink>
+          <RouterLink to="/skills" :aria-current="route.name === 'skills' || route.name === 'detail' ? 'page' : undefined">智能体广场</RouterLink>
           <RouterLink to="/use" :aria-current="route.name === 'use' ? 'page' : undefined">在线运行</RouterLink>
           <RouterLink to="/experience" :aria-current="route.name === 'experience' ? 'page' : undefined">在线对话</RouterLink>
           <RouterLink v-if="isRunsTabVisible()" to="/runs" :aria-current="route.name === 'runs' || route.name === 'runDetail' ? 'page' : undefined">运行记录</RouterLink>

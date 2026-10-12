@@ -5,7 +5,7 @@ import Icon from '../components/Icon.vue'
 import Codebox from '../components/Codebox.vue'
 
 /* 多 AI 工具接入：每个工具给出接入步骤与验证方式；安装提示词全工具通用 */
-const INSTALL_PROMPT = '根据 https://github.com/Lntanohuang/skill-plaza-foru 安装 Skill搭子精选。'
+const INSTALL_PROMPT = '根据 https://github.com/Lntanohuang/skill-plaza-foru 安装 智能体搭子精选。'
 
 interface ToolGuide {
   id: string
@@ -28,7 +28,7 @@ const TOOLS: ToolGuide[] = [
       '在 Codex 对话框中粘贴并发送，它会从 GitHub 拉取完整目录',
       '完成后让它列出已安装的 SKILL，确认安装成功',
     ],
-    verify: '# 安装完成后，在 Codex 中输入：\n列出我已安装的 SKILL，并说明各自的用途\n# → 能看到 Skill搭子的全部 SKILL 即安装成功',
+    verify: '# 安装完成后，在 Codex 中输入：\n列出我已安装的 SKILL，并说明各自的用途\n# → 能看到 智能体搭子的全部 SKILL 即安装成功',
   },
   {
     id: 'claude-code',
@@ -52,7 +52,7 @@ const TOOLS: ToolGuide[] = [
       '粘贴安装提示词并发送，允许其访问网络与执行命令',
       '完成后让 Cursor 列出已安装的 SKILL',
     ],
-    verify: '# 在 Agent 对话框中输入：\n列出刚安装的 Skill搭子 SKILL，以及每个的用途\n# → 全部可见即安装成功',
+    verify: '# 在 Agent 对话框中输入：\n列出刚安装的 智能体搭子 SKILL，以及每个的用途\n# → 全部可见即安装成功',
   },
   {
     id: 'workbuddy',
@@ -76,7 +76,7 @@ const TOOLS: ToolGuide[] = [
       '在豆包对话框中粘贴并发送',
       '完成后询问已安装的 SKILL 确认',
     ],
-    verify: '# 在对话框中输入：\n根据 Skill搭子 的安装结果，列出可用的 SKILL\n# → 能看到完整清单即安装成功',
+    verify: '# 在对话框中输入：\n根据 智能体搭子 的安装结果，列出可用的 SKILL\n# → 能看到完整清单即安装成功',
     tip: '若豆包无法访问 GitHub，可先手动下载仓库，再让它把文件放入技能目录。',
   },
   {
@@ -89,7 +89,7 @@ const TOOLS: ToolGuide[] = [
       '粘贴到该工具的对话框发送',
       '若工具不支持自动拉取仓库，可手动下载后放入它的技能目录',
     ],
-    verify: '# 通用验证方式：\n列出你当前可用的 SKILL\n# → 与 Skill搭子 清单一致即安装成功',
+    verify: '# 通用验证方式：\n列出你当前可用的 SKILL\n# → 与 智能体搭子 清单一致即安装成功',
   },
 ]
 

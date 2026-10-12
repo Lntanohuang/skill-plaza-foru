@@ -33,8 +33,8 @@ const audiences = computed(() => props.skill.audiences.map(id => audOf(id).name)
       </div>
     </div>
     <div class="card-actions">
-      <RouterLink class="card-go is-quiet" :to="{ name: 'use', params: { slug: skill.slug } }">在线运行</RouterLink>
-      <RouterLink class="card-go" :to="`/skill/${skill.slug}`">查看详情<Icon name="chev" :size="15" /></RouterLink>
+      <RouterLink class="card-go is-quiet" :to="`/skill/${skill.slug}`">查看详情<Icon name="chev" :size="15" /></RouterLink>
+      <RouterLink class="card-go" :to="{ name: 'use', params: { slug: skill.slug } }">在线运行</RouterLink>
     </div>
   </article>
 </template>

@@ -44,7 +44,7 @@ const DEMOS: Demo[] = [
   },
 ]
 
-const FALLBACK = `这个问题需要在本地 AI 工具中调用对应的 SKILL 来完成。\n\n在线对话页展示的是各 SKILL 的结果形态（可点击上方示例问题查看）。要获得完整结果：\n\n1. 回到 SKILL 广场，找到匹配的 SKILL\n2. 复制安装提示词，发送给你的 AI 工具\n3. 用最小输入示例开始第一次运行`
+const FALLBACK = `这个问题需要在本地 AI 工具中调用对应的 SKILL 来完成。\n\n在线对话页展示的是各 SKILL 的结果形态（可点击上方示例问题查看）。要获得完整结果：\n\n1. 回到 智能体广场，找到匹配的 SKILL\n2. 复制安装提示词，发送给你的 AI 工具\n3. 用最小输入示例开始第一次运行`
 
 const textarea = ref('')
 const sending = ref(false)
@@ -75,7 +75,7 @@ const HKEY = 'skill-plaza:history'
 
 /* 模型选择器：演示选项，仅影响显示 */
 const MODELS = [
-  { id: 'skill-agent', name: 'Skill搭子 Agent' },
+  { id: 'skill-agent', name: '智能体搭子 Agent' },
   { id: 'deepseek', name: 'DeepSeek V4 Pro' },
   { id: 'gpt', name: 'GPT-5' },
   { id: 'qwen', name: '通义千问 Max' },
@@ -105,7 +105,7 @@ async function probeApi() {
   apiReady.value = result.ok
   apiModel.value = result.ok ? (result.model ?? '') : ''
   if (result.ok) {
-    MODELS[0].name = 'Skill搭子 Agent（真实运行）'
+    MODELS[0].name = '智能体搭子 Agent（真实运行）'
   }
 }
 
@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
 
     <div class="wrap-exp" :class="{ 'is-empty': messages.length === 0 }">
       <div class="exp-top" :class="{ 'is-compact': messages.length > 0 }">
-        <h1 class="exp-title">Skill搭子，把产教领域的方法装进你的 AI</h1>
+        <h1 class="exp-title">智能体搭子，把产教领域的方法装进你的 AI</h1>
         <p class="exp-sub">输入你的问题，看看每个 SKILL 会产出什么样的结果</p>
       </div>
 
@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
           <div v-if="msg.role === 'user'" class="exp-msg-user">{{ msg.text }}</div>
           <div v-else class="exp-msg-ai">
             <div class="exp-ai-head">
-              <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : 'Skill搭子' }}</span>
+              <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : '智能体搭子' }}</span>
               <span class="exp-ai-badge" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
                 {{ msg.skill ? skillCat(msg.skill.slug) : (msg.real ? '在线' : '演示') }}
               </span>

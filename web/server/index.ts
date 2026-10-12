@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ============================================================
-   SKILL 广场 · Node 后端（Pi 引擎）
+   智能体广场 · Node 后端（Pi 引擎）
    ------------------------------------------------------------
    职责：把浏览器 /api/chat 桥接到本地 pi agent 引擎，SSE 流式回传。
    Pi 通过 --mode rpc 按会话启动独立进程，统一使用 docs/pi-runner.md
@@ -905,7 +905,7 @@ async function handleChat(req: any, res: any) {
 }
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`SKILL 广场 Node 后端：http://127.0.0.1:${PORT}/`)
+  console.log(`智能体广场 Node 后端：http://127.0.0.1:${PORT}/`)
   /* PLAZA_ENV 前后端共用（前端经 vite envPrefix 暴露）；test 时工作台带演示默认值 */
   const plazaEnv = (process.env.PLAZA_ENV || '').trim().toLowerCase() || 'prod'
   console.log(`运行环境：${plazaEnv}${plazaEnv === 'test' ? '（测试环境：工作台自动带入示例与测试简历）' : '（生产环境：不预填演示默认值）'}`)
