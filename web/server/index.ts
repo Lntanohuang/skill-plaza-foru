@@ -1119,6 +1119,8 @@ async function runChatTurn(res: any, params: TurnParams) {
         const reportFailure = htmlReportError
           ? `报告未生成：${htmlReportError}`
           : '报告未生成：未找到有效的 workspace/report.html，且最终回复未包含可转换内容。'
+        /* HTML_REPORT_SKILLS 泛化重构漏定义的局部布尔（wlc 分支终态 ReferenceError 修复） */
+        const isHtmlReportSkill = HTML_REPORT_SKILLS.has(skill)
         wire.done({
           content: isHtmlReportSkill
             ? htmlReportFile
@@ -1130,7 +1132,7 @@ async function runChatTurn(res: any, params: TurnParams) {
           runId,
           reportUrl: htmlReportFile ? `/api/reports/${encodeURIComponent(runId)}` : undefined,
           usage: ev.usage ?? lastUsage,
-          failure: skill === 'career-guidance' && !htmlReportFile,
+          failure: isHtmlReportSkill && !htmlReportFile,
         })
         const finalOutcome: RunOutcome = clientGone
           ? 'aborted'
