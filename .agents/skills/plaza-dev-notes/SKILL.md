@@ -84,3 +84,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 039 | tech-forecast 第三次广场沙箱运行（roleTerms 显式口径、检索可靠性、六图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [039-tech-forecast-third-sandbox-run-roleterms.md](references/039-tech-forecast-third-sandbox-run-roleterms.md) |
 | 040 | tech-forecast SKILL.md 按投标规格整体替换与新七章结构 | 已实现（v3 运行验证见记录） | [040-tech-forecast-spec-replacement.md](references/040-tech-forecast-spec-replacement.md) |
 | 041 | tech-forecast 库内快照层（references/data/）与第四次广场沙箱运行 | 已实现（快照首次引用；提交与 parseReport 回归待办） | [041-tech-forecast-snapshot-layer-and-fourth-run.md](references/041-tech-forecast-snapshot-layer-and-fourth-run.md) |
+| 042 | tech-forecast 第五次广场沙箱运行（快照+高职切片补查稳定复用、四图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [042-tech-forecast-fifth-sandbox-run.md](references/042-tech-forecast-fifth-sandbox-run.md) |

@@ -45,3 +45,4 @@
 - `technology-snapshots.md` 标准关键词表补“建议 roleTerms”列（同 039 结论）。
 - `web-search.mjs` 相关性过滤/换源（同 038/039）；`fetch` 超时与 PDF 类型判定顺序对齐。
 - 提交快照层与 SKILL.md 改动；`parseReport` 对 HTML 报告的链路仍待回归（同 035/037/039/040）。
+- **补充（2026-10-13 17:00）**：并行合并的 openai 兼容端点分支（43b630）重构出 `wire.*` 收尾抽象，但丢失了 `index.ts` 终态处 `const isHtmlReportSkill = HTML_REPORT_SKILLS.has(skill)` 的定义，导致第五次运行在 done 事件触发 `isHtmlReportSkill is not defined`（runId 20261013-164624-85r7 的前一轮）；已修复并把同处残留的 `skill === 'career-guidance'` 硬编码一并泛化。修复后重跑成功：10.5 分钟 / 38 次工具调用（v2 为 94 次），报告 31.9KB，新七章结构逐字对齐契约，快照日期 2026-10-13 被引用，四级证据标注 32/23/20/15。
