@@ -3,6 +3,7 @@
 供外部项目调用本服务（智能体广场后端，Pi 引擎）的接口说明。以 `web/server/index.ts` 实际实现为准。
 
 - **Base URL**：`http://127.0.0.1:8767`（服务只监听本机回环；端口可用环境变量 `PORT` 覆盖）
+- **公网部署**：后端 `http://115.231.218.150:18767`（前端 :14188）；服务端调用可直接使用，`/api/reports/*` 支持浏览器直接打开，其余接口对跨源浏览器页面返回 403（需后端转发或同源反代）
 - **认证**：无鉴权
 - **数据格式**：请求/响应均为 JSON（`/api/chat` 与 `/v1/chat/completions` 例外，为 SSE 流）
 - **跨域限制**：浏览器调用时 `Origin` 必须是本机/内网地址（localhost、127.0.0.1、`*.local`、10.x、192.168.x、172.16-31.x）；服务端对服务端调用（不带 Origin 头）不受限制
@@ -64,7 +65,12 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
   -d '{"skill":"ai-interview","stream":true,"messages":[{"role":"user","content":"我是应届生，目标岗位是前端开发，请开始模拟面试"}]}'
 ```
 
-说明：附件用法同 `/api/chat`——先 `POST /api/upload`（可不传 `sessionId`，从响应里拿），再把返回的 `sessionId` 与 `path` 作为本端点的 `sessionId` / `attachments` 传入；`.md`/`.txt` 内联进 prompt（截断 1.6 万字），其余格式由 Agent 读取会话工作目录文件。超时上限同 `/api/chat`（报告类 20 分钟）。
+说明：附件用法同 `/api/chat`——先 `POST /api/upload`（可不传 `sessionId`，从响应里拿），再把返回的 `sessionId` 与 `path` 作为本端点的 `sessionId` / `attachments` 传入。超时上限同 `/api/chat`（报告类 20 分钟）。
+
+**附件解析方式**（两种格式路径不同）：
+
+- `.md` / `.txt`：**服务端直接内联**——文件文本（截断 1.6 万字）拼进发给模型的 prompt，不依赖 Agent 解析，可靠性最高；对接方方便的话建议简历转成 md/txt 再传。
+- `.pdf` / `.docx` / `.doc`：文件落会话沙箱 `workspace/<sessionId>/uploads/`（即 Agent 工作目录），**由 Agent 运行时自行解析**（bash/read 工具抽取文本）；解析成败依赖运行环境工具与模型发挥，失败时技能按纪律在报告中登记缺口（如"简历材料未读取"），不会编造内容。
 
 **career-guidance（就业指导报告）完整示例**：
 
@@ -155,7 +161,7 @@ curl -N http://127.0.0.1:8767/api/chat \
 
 ## 3. POST /api/upload（附件上传）
 
-上传附件到会话沙箱，供 `/api/chat` 引用。应在同 `sessionId` 的 chat 之前调用。
+上传附件到会话沙箱，供 `/api/chat` 与 `/v1/chat/completions` 引用。应在同 `sessionId` 的 chat 之前调用。
 
 **请求体**（≤10MB）：`{ "sessionId": "可选，新会话可不传", "filename": "简历.pdf", "dataBase64": "…base64…" }`
 
@@ -168,7 +174,7 @@ curl -N http://127.0.0.1:8767/api/chat \
 { "sessionId": "sess-…", "name": "简历.pdf", "path": "uploads/简历.pdf", "size": 123456 }
 ```
 
-之后在 `/api/chat` 的 `attachments` 里传 `{ "name", "path" }`。`.md`/`.txt` 会内联进 prompt（截断 1.6 万字），其余格式由 Agent 自行读取工作目录文件。
+之后在 `/api/chat` 或 `/v1/chat/completions` 的 `attachments` 里传 `{ "name", "path" }`。解析方式见第 0 节"附件解析方式"：`.md`/`.txt` 服务端内联进 prompt（截断 1.6 万字），其余格式由 Agent 自行读取工作目录文件。
 
 ## 4. GET /api/reports/:runId（HTML 报告）
 
