@@ -494,7 +494,9 @@ async function handleOpenAiChat(req: any, res: any) {
     messages: coreMessages,
     sessionId,
     taskTitle,
-    attachments: undefined,
+    /* 附件与 plaza 同规：{name, path}，path 为 /api/upload 返回的相对路径；
+       沙箱防穿越、5 个上限、md/txt 内联均在共享核心处理 */
+    attachments: Array.isArray((body as any).attachments) ? (body as any).attachments : undefined,
   })
 }
 

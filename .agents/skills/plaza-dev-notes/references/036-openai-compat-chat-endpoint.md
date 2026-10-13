@@ -48,6 +48,7 @@
 
 ## 后续扩展路线
 
-- 附件接入：`/api/upload` 产物以可选 `attachments` 字段接入 openai 入口。
+- ~~附件接入~~：已实现（2026-10-13）——`/v1` 接受与 plaza 同规的 `attachments`（`{name, path}`，path 为 /api/upload 相对路径；沙箱防穿越/5 个上限/md-txt 内联在共享核心，入口只做透传）。
 - 会话复用优化：对方稳定后建议用返回的 sessionId 续聊，避免每轮重注入历史。
 - `reasonContent` 的 plaza 侧展示（008 预留的折叠区路线）如需要，消费同一 thinking_delta 事件即可。
+- 按请求选模型：`model` 字段已预留（当前忽略不校验），需要时透传 createSession 的 `--model` 并配白名单。

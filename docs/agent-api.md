@@ -21,6 +21,7 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 | `stream` | boolean | 否 | 默认 `false`；`true` 时输出 SSE 流 |
 | `sessionId` | string | 否 | 非标准扩展：复用服务端会话（多轮只发最新一条，省 token）；不传则每次新会话 |
 | `taskTitle` | string | 否 | 任务标题，≤120 字符；用于运行记录展示与报告下载文件名，不传则回退消息摘要 |
+| `attachments` | array | 否 | 附件列表 `[{ "name": "简历.pdf", "path": "uploads/简历.pdf" }]`，`path` 为 `/api/upload` 返回的相对路径，最多 5 个 |
 
 `model` 字段被忽略（服务端模型由 `PI_MODEL` 配置决定，该字段预留给将来按请求选模型的扩展）。其他 OpenAI 常见字段（`temperature` 等）同样忽略。
 
@@ -63,7 +64,7 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
   -d '{"skill":"ai-interview","stream":true,"messages":[{"role":"user","content":"我是应届生，目标岗位是前端开发，请开始模拟面试"}]}'
 ```
 
-说明：附件上传（attachments）本期未接入该端点，需要时以可选字段扩展；超时上限同 `/api/chat`（报告类 20 分钟）。
+说明：附件用法同 `/api/chat`——先 `POST /api/upload`（可不传 `sessionId`，从响应里拿），再把返回的 `sessionId` 与 `path` 作为本端点的 `sessionId` / `attachments` 传入；`.md`/`.txt` 内联进 prompt（截断 1.6 万字），其余格式由 Agent 读取会话工作目录文件。超时上限同 `/api/chat`（报告类 20 分钟）。
 
 **career-guidance（就业指导报告）完整示例**：
 
@@ -188,6 +189,15 @@ curl -N http://127.0.0.1:8767/api/chat \
 | `GET /api/runs/{runId}/file/md` | trace 的 Markdown 版（按需生成） |
 
 ## 典型接入流程
+
+**路线 A：`/v1/chat/completions`（外部项目推荐）**
+
+1. `GET /api/health` 确认服务可用。
+2. 需要附件时：`POST /api/upload`（可不传 `sessionId`，响应里返回），拿到 `sessionId` 与 `path`。
+3. `POST /v1/chat/completions`（带 `skill`、`messages`，附件场景带上 `sessionId` 与 `attachments`），流式则拼 `content` 增量、等 `[DONE]`（失败看 `error` 帧）。
+4. career-guidance 场景：终态报告帧的 `reportUrl` 拼后端地址即为报告链接。
+
+**路线 B：`/api/chat`（广场前端协议）**
 
 1. `GET /api/health` 确认服务可用。
 2. 需要附件时：`POST /api/upload`（可先不传 sessionId，从响应里拿）。
