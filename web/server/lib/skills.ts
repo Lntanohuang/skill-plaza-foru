@@ -81,7 +81,7 @@ const TECH_FORECAST_USER_REPORT_CONTRACT =
   '不隐瞒影响决策的限制：必要来源与口径放在图注，推断标注就地呈现，未评估项归入末章，不复述内部证据和推理链。' +
   '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
   '章节中的技术方向、地区和窗口只来自当前任务与相符查询，不沿用示例默认值。' +
-  '预测字段的每个取值必须标注证据等级（库内实测 / 内置文档 / 分析推断）；预计薪资只给区间并写口径，趋势无真实月度数据时标推断或未评估，不编造增长百分比。' +
+  '预测字段的每个取值必须标注证据等级（库内实测 / 公开来源 / 内置文档 / 分析推断）；预计薪资只给区间并写口径，需求趋势与增长趋势只能标注公开来源（联网检索，注明标题、网站、日期）或分析推断——岗位库没有真实发布时间，禁止用月度聚合计数充当需求趋势，不编造增长百分比。' +
   '仅当用户明确只需简短答疑而非正式报告时，直接交付所需内容，不强行展开七章。'
 
 const CAREER_GUIDANCE_FIRST_TURN_RULES =
@@ -95,7 +95,9 @@ const CAREER_GUIDANCE_FIRST_TURN_RULES =
   '不要读取 report.html 的完整内容，也不要把报告文件内容复制到最终回复。）'
 
 const TECH_FORECAST_FIRST_TURN_RULES =
-  '（先读取 Skill 参考资料（technology-snapshots、skill-evolution-map、major-mapping）和共享 chart-visualization Skill 的 radar-chart、sankey-chart 规范；涉及目标地区的新兴岗位名称、岗位热度排序或薪资区间时必须调用岗位库只读查询工具（title-top、salary-distribution 等），不能用通用行业常识替代。' +
+  '（先读取 Skill 参考资料（technology-snapshots、skill-evolution-map、major-mapping）和共享 chart-visualization Skill 的 radar-chart、sankey-chart 规范。' +
+  '按 technology-snapshots 的标准关键词表执行岗位库查询：每个技术领域至少覆盖新兴切片与传统对照切片两组（keywords 之间 AND、roleTerms 之间 OR），完成经验门槛、薪资区间、学历构成的横截面对比；涉及目标地区的新兴岗位名称、岗位热度排序或薪资区间时必须调用岗位库只读查询工具（title-top、salary-distribution 等），不能用通用行业常识替代；禁止用月度聚合计数充当需求趋势。' +
+  '每个技术领域用会话提供的联网检索工具（node scripts/web-search.mjs --query 搜索、--fetch 抓取正文）至少检索一次最新动态，中英文查询词各一次，引用公开来源必须注明标题、网站与发布日期，关键结论两个独立来源印证。' +
   '报告必须写入当前 workspace/report.html。' +
   TECH_FORECAST_USER_REPORT_CONTRACT +
   '技术成熟度分析必须给出雷达图与同数据评分表并逐项标注证据等级；技能演进必须给出桑基图并在图注写明流量口径与证据来源；新兴岗位预测、新兴技能预测与培训方向建议表的每个字段标注证据等级，预计薪资只给区间。' +
@@ -155,8 +157,9 @@ export const SKILL_PROMPTS: Record<string, string> = {
   'tech-forecast':
     '你正在按 tech-forecast SKILL 工作。面向院校与培训机构，围绕目标地区、技术领域方向与预判窗口，' +
     '分析新兴技术成熟度与技能演进路径，预测新兴岗位与新兴技能并给出培训方向建议。' +
-    '预测字段必须标注证据等级（库内实测 / 内置文档 / 分析推断）；薪资只给区间并写口径，' +
-    '趋势无实测数据时标推断或未评估，不编造增长率或市场规模。完整报告以 HTML 写入 workspace/report.html，' +
+    '按标准关键词表做岗位库横截面实测（新兴 vs 传统对照），并用联网检索工具补充公开来源的最新动态。' +
+    '预测字段必须标注证据等级（库内实测 / 公开来源 / 内置文档 / 分析推断）；薪资只给区间并写口径，' +
+    '趋势不得使用岗位库月度聚合计数，只能标公开来源或推断，不编造增长率或市场规模。完整报告以 HTML 写入 workspace/report.html，' +
     '最终回复只保留短状态。',
 }
 
