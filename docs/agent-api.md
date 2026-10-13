@@ -2,8 +2,7 @@
 
 供外部项目调用本服务（智能体广场后端，Pi 引擎）的接口说明。以 `web/server/index.ts` 实际实现为准。
 
-- **Base URL**：`http://127.0.0.1:8767`（服务只监听本机回环；端口可用环境变量 `PORT` 覆盖）
-- **公网部署**：后端 `http://115.231.218.150:18767`（前端 :14188）；服务端调用可直接使用，`/api/reports/*` 支持浏览器直接打开，其余接口对跨源浏览器页面返回 403（需后端转发或同源反代）
+- **Base URL**：`http://115.231.218.150:18767`（公网部署，前端 :14188）；服务端调用可直接使用，`/api/reports/*` 支持浏览器直接打开链接，其余接口对跨源浏览器页面返回 403（需后端转发或同源反代）
 - **认证**：无鉴权
 - **数据格式**：请求/响应均为 JSON（`/api/chat` 与 `/v1/chat/completions` 例外，为 SSE 流）
 - **跨域限制**：浏览器调用时 `Origin` 必须是本机/内网地址（localhost、127.0.0.1、`*.local`、10.x、192.168.x、172.16-31.x）；服务端对服务端调用（不带 Origin 头）不受限制
@@ -60,7 +59,7 @@ data: [DONE]
 **调用示例（career-guidance）**：
 
 ```bash
-curl -N http://127.0.0.1:8767/v1/chat/completions \
+curl -N http://115.231.218.150:18767/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "skill": "career-guidance",
@@ -138,7 +137,7 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 **调用示例**（curl，`-N` 关闭缓冲）：
 
 ```bash
-curl -N http://127.0.0.1:8767/api/chat \
+curl -N http://115.231.218.150:18767/api/chat \
   -H 'Content-Type: application/json' \
   -d '{
     "skill": "career-guidance",
