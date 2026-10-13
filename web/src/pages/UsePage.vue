@@ -696,7 +696,7 @@ onBeforeUnmount(endRun)
   <section class="page page-use">
     <div class="wrap">
       <RouterLink class="crumb-back" :to="{ name: 'skills' }">
-        <Icon name="back" :size="14" /> 返回 SKILL 广场
+        <Icon name="back" :size="14" /> 返回智能体广场
       </RouterLink>
 
       <header class="use-head">

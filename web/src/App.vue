@@ -83,7 +83,7 @@ const hideFoot = computed(() => route.name === 'experience')
       <path d="M4.8 13.4 12 17.2l7.2-3.8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round" />
     </symbol>
     <symbol id="i-logo" viewBox="0 0 24 24">
-      <!-- Skill搭子：两块拼图（页头品牌标） -->
+      <!-- 智能体搭子：两块拼图（页头品牌标） -->
       <g transform="rotate(-4 7.5 9)">
         <circle cx="7.5" cy="4.4" r="2.1" fill="#2E7CF6" />
         <rect x="2.6" y="4.8" width="10" height="10" rx="2.6" fill="#2E7CF6" />
