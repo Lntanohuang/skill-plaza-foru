@@ -25,14 +25,31 @@ function parseArgs(argv) {
   return args
 }
 
-async function get(url) {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6', Accept: 'text/html,application/xhtml+xml' },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    redirect: 'follow',
-  })
+async function get(url, cookieJar) {
+  const headers = { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6', Accept: 'text/html,application/xhtml+xml' }
+  if (cookieJar && cookieJar.length) headers.Cookie = cookieJar.join('; ')
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'follow' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (cookieJar) {
+    const fresh = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : []
+    for (const c of fresh) {
+      const pair = c.split(';')[0]
+      if (!cookieJar.some((x) => x.split('=')[0] === pair.split('=')[0])) cookieJar.push(pair)
+    }
+  }
   return res.text()
+}
+
+/** 带 cookie 引导的必应搜索：先访问首页取 cookie，可显著降低被降级为无关结果的概率 */
+async function bingHtml(query, count) {
+  const jar = []
+  try {
+    await get('https://cn.bing.com/', jar)
+  } catch {
+    /* 首页失败不阻断搜索 */
+  }
+  const params = new URLSearchParams({ q: query, count: String(count), ensearch: '1', setmkt: 'zh-CN', setlang: 'zh-hans' })
+  return get(`https://cn.bing.com/search?${params}`, jar)
 }
 
 function decodeEntities(s) {
@@ -79,10 +96,60 @@ function parseResults(html, limit) {
   return out
 }
 
+/** 360 搜索兜底：so.com 对自动化请求较宽容；link 重定向页里有明文真实地址 */
+async function so360(query, count) {
+  const params = new URLSearchParams({ q: query, rn: String(Math.min(Math.max(1, count), MAX_COUNT)) })
+  const html = await get(`https://www.so.com/s?${params}`)
+  const blocks = []
+  const re = /<h3\s+class="res-title"><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<h3\s+class="res-title"|$)/gi
+  for (const m of html.matchAll(re)) {
+    blocks.push({ rawUrl: decodeEntities(m[1]), title: stripTags(m[2]), rest: m[3] })
+  }
+  const out = []
+  for (const b of blocks.slice(0, MAX_COUNT)) {
+    let url = b.rawUrl
+    if (/so\.com\/link\?m=/.test(url)) {
+      try {
+        const page = await get(url)
+        const real = /window\.location\.replace\("([^"]+)"\)/.exec(page)?.[1]
+          ?? /content="0;URL='([^']+)'"/.exec(page)?.[1]
+        if (real) url = real
+      } catch {
+        /* 解析失败保留原链接 */
+      }
+    }
+    const p = /<p[^>]*class="[^"]*res-desc[^"]*"[^>]*>([\s\S]*?)<\/p>/i.exec(b.rest)
+    out.push({ title: b.title, url, snippet: p ? stripTags(p[1]).slice(0, 300) : '' })
+  }
+  return out
+}
+
+/** 查询词是否在标题/摘要里出现过——用于识别必应反爬降级（返回完全无关结果） */
+function looksRelevant(query, results) {
+  if (!results.length) return false
+  const tokens = query.split(/[\s,，、]+/).filter((t) => t.length >= 2)
+  if (!tokens.length) return true
+  const hay = results.map((r) => r.title + r.snippet).join(' ')
+  return tokens.some((t) => hay.includes(t))
+}
+
 async function search(query, count) {
-  const params = new URLSearchParams({ q: query, count: String(Math.min(Math.max(1, count), MAX_COUNT)), ensearch: '1' })
-  const html = await get(`https://cn.bing.com/search?${params}`)
-  return parseResults(html, Math.min(Math.max(1, count), MAX_COUNT))
+  const capped = Math.min(Math.max(1, count), MAX_COUNT)
+  let results = []
+  try {
+    results = parseResults(await bingHtml(query, capped), capped)
+  } catch {
+    /* 必应失败转 360 */
+  }
+  if (!looksRelevant(query, results)) {
+    try {
+      const alt = await so360(query, capped)
+      if (alt.length) results = alt
+    } catch {
+      /* 360 也失败则交回必应结果（可能为空） */
+    }
+  }
+  return results
 }
 
 async function fetchPage(url, maxChars) {

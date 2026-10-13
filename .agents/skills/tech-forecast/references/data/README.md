@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | [guangdong-ai.md](guangdong-ai.md) | 广东省 × 人工智能（大模型） | 2026-10-13 | 新兴：大模型；对照：Java、软件测试；城市：广州、深圳 |
 | [guangdong-robotics.md](guangdong-robotics.md) | 广东省 × 具身智能与机器人 | 2026-10-13 | 新兴：机器人；对照：数控；城市：广州、深圳 |
+| [guangdong-textile.md](guangdong-textile.md) | 广东省 × 纺织服装 | 2026-10-13 | 切片：面料（中游）vs 服装（下游）；城市：广州、深圳；**库内纺织制造覆盖极薄，新兴方向以公开来源为主** |
 
 ## 扩充约定
 
