@@ -85,3 +85,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 040 | tech-forecast SKILL.md 按投标规格整体替换与新七章结构 | 已实现（v3 运行验证见记录） | [040-tech-forecast-spec-replacement.md](references/040-tech-forecast-spec-replacement.md) |
 | 041 | tech-forecast 库内快照层（references/data/）与第四次广场沙箱运行 | 已实现（快照首次引用；提交与 parseReport 回归待办） | [041-tech-forecast-snapshot-layer-and-fourth-run.md](references/041-tech-forecast-snapshot-layer-and-fourth-run.md) |
 | 042 | tech-forecast 第五次广场沙箱运行（快照+高职切片补查稳定复用、四图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [042-tech-forecast-fifth-sandbox-run.md](references/042-tech-forecast-fifth-sandbox-run.md) |
+| 043 | 纺织服装快照（含公开来源节）与 web-search 检索源修复 | 已实现（guangdong-textile.md 交付审阅） | [043-textile-snapshot-and-search-fallback.md](references/043-textile-snapshot-and-search-fallback.md) |
+| 043 | 就业指导广场沙箱真实运行：广州 Java 后端实习（内联 SVG 五图 + 城市热点图） | 已实现观察（2026-10-13 本报告会话；服务端校验/浏览器回归待跑） | [043-career-guidance-guangzhou-java-intern-run.md](references/043-career-guidance-guangzhou-java-intern-run.md) |
