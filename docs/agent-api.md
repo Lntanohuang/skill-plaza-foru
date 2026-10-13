@@ -20,6 +20,7 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 | `messages` | array | 是 | OpenAI 消息数组，最后一条必须是内容非空的 `user` 消息；无 `sessionId` 时历史会被拍平注入本轮上下文（无状态客户端直接带全量历史即可） |
 | `stream` | boolean | 否 | 默认 `false`；`true` 时输出 SSE 流 |
 | `sessionId` | string | 否 | 非标准扩展：复用服务端会话（多轮只发最新一条，省 token）；不传则每次新会话 |
+| `taskTitle` | string | 否 | 任务标题，≤120 字符；用于运行记录展示与报告下载文件名，不传则回退消息摘要 |
 
 `model` 字段被忽略（服务端模型由 `PI_MODEL` 配置决定，该字段预留给将来按请求选模型的扩展）。其他 OpenAI 常见字段（`temperature` 等）同样忽略。
 
