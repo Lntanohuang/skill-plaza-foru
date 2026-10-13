@@ -75,3 +75,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 036 | tech-forecast 技能接入与 HTML 报告契约泛化 | 已实现（真实运行回归见记录；浏览器截图待用户执行） | [036-tech-forecast-skill-integration.md](references/036-tech-forecast-skill-integration.md) |
 | 037 | tech-forecast 第二次广场沙箱运行（省级口径复现、任务提示与工具可用性矛盾） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [037-tech-forecast-second-sandbox-run.md](references/037-tech-forecast-second-sandbox-run.md) |
 | 038 | tech-forecast 证据链 v2：title-trend 否决、横截面关键词计划与联网检索工具 | 已实现（v2 运行验证见记录） | [038-tech-forecast-evidence-v2.md](references/038-tech-forecast-evidence-v2.md) |
+| 039 | tech-forecast 第三次广场沙箱运行（roleTerms 显式口径、检索可靠性、六图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [039-tech-forecast-third-sandbox-run-roleterms.md](references/039-tech-forecast-third-sandbox-run-roleterms.md) |
