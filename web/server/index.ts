@@ -449,13 +449,15 @@ async function handleOpenAiChat(req: any, res: any) {
     sendJson(res, 400, openAiErrorBody(exc?.message || '请求格式不正确。', 'invalid_request_error'))
     return
   }
-  const { model, messages, sessionId } = body || {}
-  const skill = typeof model === 'string' ? model.trim() : ''
+  /* 技能走独立 skill 字段；model 字段彻底释放（忽略不校验，
+     预留给将来按请求选模型的扩展）。 */
+  const { skill: skillRaw, messages, sessionId } = body || {}
+  const skill = typeof skillRaw === 'string' ? skillRaw.trim() : ''
   if (!skill || !(skill in SKILL_PROMPTS)) {
     sendJson(res, 400, openAiErrorBody(
-      `未知的 model（技能）${JSON.stringify(skill)}。model 须为技能 id，可用值：${Object.keys(SKILL_PROMPTS).join('、')}。`,
+      `缺少或未知的 skill：${JSON.stringify(skillRaw ?? null)}。可用值：${Object.keys(SKILL_PROMPTS).join('、')}。`,
       'invalid_request_error',
-      'unknown_skill_model',
+      'unknown_skill',
     ))
     return
   }
@@ -573,9 +575,10 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
   const isSse = protocol === 'plaza' || stream
 
   return {
-    begin(r: any, skill: string) {
+    begin(r: any) {
       res = r
-      model = skill
+      /* 非流式 JSON 的 model 字段回显真实服务模型（PI_MODEL），不再指技能 */
+      model = runner.describe()
       created = Math.floor(Date.now() / 1000)
       if (!isSse) return /* JSON 模式终态再写头 */
       res.writeHead(200, {
@@ -689,7 +692,7 @@ async function runChatTurn(res: any, params: TurnParams) {
   const { messages, sessionId } = params
 
   const wire = createChatWire(params.protocol, params.stream)
-  wire.begin(res, skill)
+  wire.begin(res)
   const finish = () => wire.finish()
   const taskTitle = params.taskTitle
   const latest = messages[messages.length - 1]

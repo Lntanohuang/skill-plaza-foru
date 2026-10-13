@@ -16,12 +16,12 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `model` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
+| `skill` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
 | `messages` | array | 是 | OpenAI 消息数组，最后一条必须是内容非空的 `user` 消息；无 `sessionId` 时历史会被拍平注入本轮上下文（无状态客户端直接带全量历史即可） |
 | `stream` | boolean | 否 | 默认 `false`；`true` 时输出 SSE 流 |
 | `sessionId` | string | 否 | 非标准扩展：复用服务端会话（多轮只发最新一条，省 token）；不传则每次新会话 |
 
-其他 OpenAI 常见字段（`temperature` 等）忽略。
+`model` 字段被忽略（服务端模型由 `PI_MODEL` 配置决定，该字段预留给将来按请求选模型的扩展）。其他 OpenAI 常见字段（`temperature` 等）同样忽略。
 
 **流式输出**（`stream: true`，每帧 `data: {JSON}\n\n`，按序）：
 
@@ -39,27 +39,27 @@ data: [DONE]
 - career-guidance 成功时正文增量为空、结果在 `reportUrl`；其余技能结果在 `content` 增量拼接。
 - `cost_usd` 为非标准扩展字段，标准客户端可忽略。
 
-**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；career-guidance 成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
+**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；`model` 回显服务端实际模型；career-guidance 成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
 
 ```json
 {
   "id": "chatcmpl-20261013-023806-g0vj",
   "object": "chat.completion",
   "created": 1791873486,
-  "model": "ai-interview",
+  "model": "deepseek-v4-pro (DeepSeek · pi)",
   "choices": [{ "index": 0, "message": { "role": "assistant", "content": "…" }, "finish_reason": "stop" }],
   "usage": { "prompt_tokens": 14706, "completion_tokens": 3, "total_tokens": 17013, "cost_usd": 0.0195 }
 }
 ```
 
-**流前校验错误**：HTTP 400，`{"error":{"message":"…","type":"invalid_request_error","code":"unknown_skill_model"}}`；会话占用时非流式返回 HTTP 429。
+**流前校验错误**：HTTP 400，`{"error":{"message":"…","type":"invalid_request_error","code":"unknown_skill"}}`；会话占用时非流式返回 HTTP 429。
 
 **调用示例**：
 
 ```bash
 curl -N http://127.0.0.1:8767/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"ai-interview","stream":true,"messages":[{"role":"user","content":"我是应届生，目标岗位是前端开发，请开始模拟面试"}]}'
+  -d '{"skill":"ai-interview","stream":true,"messages":[{"role":"user","content":"我是应届生，目标岗位是前端开发，请开始模拟面试"}]}'
 ```
 
 说明：附件上传（attachments）本期未接入该端点，需要时以可选字段扩展；超时上限同 `/api/chat`（报告类 20 分钟）。
