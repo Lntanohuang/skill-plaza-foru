@@ -483,13 +483,17 @@ async function handleOpenAiChat(req: any, res: any) {
       coreMessages = [{ role: 'user', content: `【对话历史】\n${history}\n\n【当前消息】\n${latest.content}` }]
     }
   }
+  /* taskTitle 同 plaza 入口的清洗规则；不传则运行记录回退 promptDigest */
+  const taskTitle = typeof body?.taskTitle === 'string'
+    ? body.taskTitle.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
+    : ''
   await runChatTurn(res, {
     protocol: 'openai',
     stream: body.stream === true,
     skill,
     messages: coreMessages,
     sessionId,
-    taskTitle: '',
+    taskTitle,
     attachments: undefined,
   })
 }

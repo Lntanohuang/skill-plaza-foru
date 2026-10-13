@@ -64,6 +64,27 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 
 说明：附件上传（attachments）本期未接入该端点，需要时以可选字段扩展；超时上限同 `/api/chat`（报告类 20 分钟）。
 
+**career-guidance（就业指导报告）完整示例**：
+
+```bash
+curl -N http://127.0.0.1:8767/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "skill": "career-guidance",
+    "taskTitle": "Java 后端实习岗位匹配分析",
+    "stream": true,
+    "messages": [{
+      "role": "user",
+      "content": "使用 $career-guidance 完成以下任务：\n- 目标岗位或方向：Java 后端实习\n- 当前阶段：在校找实习\n- 本次任务：岗位匹配\n- 目标地区：广州\n- 每周可投入时间：5–10 小时\n- 匿名经历摘要：计算机相关专业，完成过 Spring Boot 校园二手交易平台项目，负责接口设计与 MySQL 建模；暂无实习经历。\n\n请先复述任务边界与缺失信息，再按该 SKILL 的方法推进。"
+    }]
+  }'
+```
+
+- `taskTitle` 可选，透传为运行标题（运行记录展示与报告下载文件名）。
+- 任务通常运行数分钟；期间先收到若干 `reasonContent`（思考）帧，正文增量近空。
+- 成功终态依次为：报告帧（`"content":"","reportUrl":"/api/reports/<runId>"`）→ usage 帧 → `[DONE]`。前端拿 `reportUrl` 拼后端地址给用户即可打开/下载报告（同 `/api/chat` 的报告获取方式）。
+- 报告未生成时终态为错误帧（`reportUrl` 缺失即失败，原因在 `error.message`）。
+
 ## 1. GET /api/health
 
 健康检查，返回服务与模型信息。
