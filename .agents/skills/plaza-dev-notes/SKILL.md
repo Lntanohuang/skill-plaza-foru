@@ -70,9 +70,11 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |
 | 032 | industry-education-report 在广场沙箱内首次端到端运行观察 | 已实现观察（parseReport 链路回归待验证） | [032-industry-education-report-sandbox-run.md](references/032-industry-education-report-sandbox-run.md) |
 | 033 | industry-education-report 沙箱内第二次端到端运行（更丰富产物与语义审核） | 已实现观察（parseReport 链路回归待验证） | [033-industry-education-report-second-sandbox-run.md](references/033-industry-education-report-second-sandbox-run.md) |
-| 034 | 就业指导真实会话中岗位库查询工具未声明的观察 | 已实现观察（2026-10-12 广州 Java 后端实习会话） | [034-career-guidance-mysql-tool-not-declared.md](references/034-career-guidance-mysql-tool-not-declared.md) |
+| 034 | 就业指导真实会话中岗位库查询工具未声明的观察 | 已实现观察（2026-10-12 未声明复现；2026-10-13 工具节已声明） | [034-career-guidance-mysql-tool-not-declared.md](references/034-career-guidance-mysql-tool-not-declared.md) |
 | 035 | tech-forecast 广场沙箱首次端到端运行观察（省级口径、雷达/桑基图、报告校验） | 已实现观察（2026-10-12 广东省 AI/机器人高职预判会话） | [035-tech-forecast-sandbox-first-run.md](references/035-tech-forecast-sandbox-first-run.md) |
 | 036 | tech-forecast 技能接入与 HTML 报告契约泛化 | 已实现（真实运行回归见记录；浏览器截图待用户执行） | [036-tech-forecast-skill-integration.md](references/036-tech-forecast-skill-integration.md) |
 | 037 | tech-forecast 第二次广场沙箱运行（省级口径复现、任务提示与工具可用性矛盾） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [037-tech-forecast-second-sandbox-run.md](references/037-tech-forecast-second-sandbox-run.md) |
 | 038 | tech-forecast 证据链 v2：title-trend 否决、横截面关键词计划与联网检索工具 | 已实现（v2 运行验证见记录） | [038-tech-forecast-evidence-v2.md](references/038-tech-forecast-evidence-v2.md) |
+| 039 | tech-forecast 第三次广场沙箱运行（roleTerms 上限、检索降级、横截面证据落地） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [039-tech-forecast-third-sandbox-run.md](references/039-tech-forecast-third-sandbox-run.md) |
 | 039 | tech-forecast 第三次广场沙箱运行（roleTerms 显式口径、检索可靠性、六图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [039-tech-forecast-third-sandbox-run-roleterms.md](references/039-tech-forecast-third-sandbox-run-roleterms.md) |
+| 040 | tech-forecast SKILL.md 按投标规格整体替换与新七章结构 | 已实现（v3 运行验证见记录） | [040-tech-forecast-spec-replacement.md](references/040-tech-forecast-spec-replacement.md) |
