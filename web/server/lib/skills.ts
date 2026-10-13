@@ -60,13 +60,13 @@ const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
 
 /** 仅约束 tech-forecast 正式报告；与 Skill 的 HTML 骨架保持一致。 */
 export const TECH_FORECAST_REPORT_SECTIONS = [
-  '一、结论与优先动作',
+  '一、分析摘要',
   '二、新兴技术成熟度分析',
-  '三、技能演进路径',
-  '四、新兴岗位预测',
-  '五、新兴技能预测',
-  '六、培训方向建议',
-  '七、数据口径与未评估项',
+  '三、技能演进路径分析',
+  '四、新兴岗位预测分析',
+  '五、新兴技能预测分析',
+  '六、人才培养方向研判',
+  '七、数据说明与评估局限',
 ] as const
 
 const TECH_FORECAST_FILE_PROTOCOL = reportFileProtocol(
@@ -75,8 +75,8 @@ const TECH_FORECAST_FILE_PROTOCOL = reportFileProtocol(
 
 const TECH_FORECAST_USER_REPORT_CONTRACT =
   sectionsContract(TECH_FORECAST_REPORT_SECTIONS) +
-  'h1 后直接进入结论与优先动作，具体建议写在段落而非标题中；子标题只用于技术、图表、课程等用户内容。' +
-  '资料不足或章节不适用时在原章节简短注明未评估及原因，不补造事实。第七章最多再列三项需要核实的关键问题，无关键问题时写暂无。' +
+  'h1 后直接进入分析摘要，综合研判观点写在段落而非标题中；子标题只用于技术、图表、课程等用户内容。' +
+  '资料不足或章节不适用时在原章节简短注明未评估及原因，不补造事实。第七章数据说明与评估局限最多再列三项需要核实的关键问题，无关键问题时写暂无。' +
   '不得以任何层级章节、表格或清单呈现任务复述、输入摘要、已提供事实汇总、完整缺失信息清单、分析/思考过程、工具调用或模型/Agent/Skill 说明。' +
   '不隐瞒影响决策的限制：必要来源与口径放在图注，推断标注就地呈现，未评估项归入末章，不复述内部证据和推理链。' +
   '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
