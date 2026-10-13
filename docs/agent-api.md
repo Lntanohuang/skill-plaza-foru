@@ -57,22 +57,7 @@ data: [DONE]
 
 **流前校验错误**：HTTP 400，`{"error":{"message":"…","type":"invalid_request_error","code":"unknown_skill"}}`；会话占用时非流式返回 HTTP 429。
 
-**调用示例**：
-
-```bash
-curl -N http://127.0.0.1:8767/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"skill":"ai-interview","stream":true,"messages":[{"role":"user","content":"我是应届生，目标岗位是前端开发，请开始模拟面试"}]}'
-```
-
-说明：附件用法同 `/api/chat`——先 `POST /api/upload`（可不传 `sessionId`，从响应里拿），再把返回的 `sessionId` 与 `path` 作为本端点的 `sessionId` / `attachments` 传入。超时上限同 `/api/chat`（报告类 20 分钟）。
-
-**附件解析方式**（两种格式路径不同）：
-
-- `.md` / `.txt`：**服务端直接内联**——文件文本（截断 1.6 万字）拼进发给模型的 prompt，不依赖 Agent 解析，可靠性最高；对接方方便的话建议简历转成 md/txt 再传。
-- `.pdf` / `.docx` / `.doc`：文件落会话沙箱 `workspace/<sessionId>/uploads/`（即 Agent 工作目录），**由 Agent 运行时自行解析**（bash/read 工具抽取文本）；解析成败依赖运行环境工具与模型发挥，失败时技能按纪律在报告中登记缺口（如"简历材料未读取"），不会编造内容。
-
-**career-guidance（就业指导报告）完整示例**：
+**调用示例（career-guidance）**：
 
 ```bash
 curl -N http://127.0.0.1:8767/v1/chat/completions \
@@ -92,6 +77,12 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 - 任务通常运行数分钟；期间先收到若干 `reasonContent`（思考）帧，正文增量近空。
 - 成功终态依次为：报告帧（`"content":"","reportUrl":"/api/reports/<runId>"`）→ usage 帧 → `[DONE]`。前端拿 `reportUrl` 拼后端地址给用户即可打开/下载报告（同 `/api/chat` 的报告获取方式）。
 - 报告未生成时终态为错误帧（`reportUrl` 缺失即失败，原因在 `error.message`）。
+- 附件用法：先 `POST /api/upload`（可不传 `sessionId`，从响应里拿），再把返回的 `sessionId` 与 `path` 作为本端点的 `sessionId` / `attachments` 传入；超时上限同 `/api/chat`（报告类 20 分钟）。
+
+**附件解析方式**（两种格式路径不同）：
+
+- `.md` / `.txt`：**服务端直接内联**——文件文本（截断 1.6 万字）拼进发给模型的 prompt，不依赖 Agent 解析，可靠性最高；对接方方便的话建议简历转成 md/txt 再传。
+- `.pdf` / `.docx` / `.doc`：文件落会话沙箱 `workspace/<sessionId>/uploads/`（即 Agent 工作目录），**由 Agent 运行时自行解析**（bash/read 工具抽取文本）；解析成败依赖运行环境工具与模型发挥，失败时技能按纪律在报告中登记缺口（如"简历材料未读取"），不会编造内容。
 
 ## 1. GET /api/health
 
@@ -150,9 +141,10 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 curl -N http://127.0.0.1:8767/api/chat \
   -H 'Content-Type: application/json' \
   -d '{
-    "skill": "ai-interview",
+    "skill": "career-guidance",
+    "taskTitle": "Java 后端实习岗位匹配分析",
     "messages": [
-      { "role": "user", "content": "我是应届生，目标岗位是前端开发，请开始模拟面试" }
+      { "role": "user", "content": "使用 $career-guidance 完成以下任务：\n- 目标岗位或方向：Java 后端实习\n- 当前阶段：在校找实习\n- 本次任务：岗位匹配\n- 目标地区：广州\n- 匿名经历摘要：计算机相关专业，完成过 Spring Boot 校园二手交易平台项目，负责接口设计与 MySQL 建模；暂无实习经历。\n\n请先复述任务边界与缺失信息，再按该 SKILL 的方法推进。" }
     ]
   }'
 ```
