@@ -69,4 +69,9 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 029 | DeepResearch 主子 Agent 编排与可视化拓扑 | 设计定稿，待实现 | [029-deep-research-multi-agent-topology.md](references/029-deep-research-multi-agent-topology.md) |
 | 030 | DeepResearch 分阶段实施计划 | 计划确定，待实现 | [030-deep-research-implementation-plan.md](references/030-deep-research-implementation-plan.md) |
 | 031 | DeepResearch Lead 上下文预算、压缩与会话交接 | 设计定稿，待实现 | [031-deep-research-lead-context-budget-and-handoff.md](references/031-deep-research-lead-context-budget-and-handoff.md) |
+| 032 | Anthropic 基础工作流对研究编排的启发 | 设计建议，待验证 | [032-anthropic-basic-workflow-patterns.md](references/032-anthropic-basic-workflow-patterns.md) |
+| 033 | DeepResearch 任务拆分、状态归属与冲突控制 | 设计定稿，待实现 | [033-deep-research-decomposition-and-conflict-control.md](references/033-deep-research-decomposition-and-conflict-control.md) |
+| 034 | DeepResearch 架构相关论文检索与启发 | 研究输入已整理，架构结论待验证 | [034-research-papers-for-deep-research-architecture.md](references/034-research-papers-for-deep-research-architecture.md) |
+| 035 | Pi 子 Agent 模型选择与计费来源 | 已实现 Skill 规范，运行时接入待实现 | [035-pi-model-selection-and-billing-source.md](references/035-pi-model-selection-and-billing-source.md) |
+| 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（本地验证通过；公网 career-guidance 端到端待跑） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
 | 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |

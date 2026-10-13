@@ -306,7 +306,11 @@ export class PiRunner extends AgentRunner {
       const ev = msg.assistantMessageEvent
       if (ev?.type === 'text_delta' && ev.delta)
         this.emit(sid, { kind: 'text_delta', delta: ev.delta })
-      else if (ev?.type === 'thinking_delta' && ev.delta) this.emitThinking(sid, ev.delta.length)
+      else if (ev?.type === 'thinking_delta' && ev.delta) {
+        /* 计数照发（plaza 前端进度条），原文同时外发（OpenAI 端点 reasonContent） */
+        this.emitThinking(sid, ev.delta.length)
+        this.emit(sid, { kind: 'thinking_delta', delta: ev.delta })
+      }
       else if (ev?.type === 'toolcall_start' && ev.toolName)
         this.emit(sid, {
           kind: 'status', phase: 'tool', state: 'active',

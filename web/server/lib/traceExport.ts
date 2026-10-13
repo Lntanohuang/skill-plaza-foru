@@ -138,6 +138,8 @@ export interface RunRecord {
   clientSessionId: string
   /** 执行引擎；历史记录可能保留旧版 zcode 值。 */
   engine?: 'zcode' | 'pi'
+  /** 入口协议：plaza=广场 /api/chat，openai=/v1/chat/completions；旧记录缺省视为 plaza */
+  protocol?: 'plaza' | 'openai'
   engineSessionId?: string
   skill: string
   /** 用户可读的运行标题；旧记录缺省时回退到 promptDigest。 */

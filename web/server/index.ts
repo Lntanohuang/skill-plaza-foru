@@ -197,6 +197,10 @@ const server = createServer((req, res) => {
     handleChat(req, res)
     return
   }
+  if (req.method === 'POST' && path === '/v1/chat/completions') {
+    handleOpenAiChat(req, res)
+    return
+  }
   if (req.method === 'POST' && path === '/api/upload') {
     handleUpload(req, res)
     return
@@ -393,6 +397,102 @@ async function handleUpload(req: any, res: any) {
   })
 }
 
+/* ------------------------------------------------------------
+   两套入口协议共用一套编排核心（runChatTurn）：
+   - /api/chat（plaza）：广场前端专用，type 事件流，协议冻结不再演进；
+   - /v1/chat/completions（openai）：外部项目唯一接入入口，输出
+     content/reasonContent 增量与 [DONE]，后续需求以可选字段在此扩展。
+   两者的差异全部收敛在 createChatWire 适配器里（相邻放置，
+   新事件映射改动时两份都在眼前）。
+   ------------------------------------------------------------ */
+
+type ChatProtocol = 'plaza' | 'openai'
+
+interface TurnParams {
+  protocol: ChatProtocol
+  /** openai 非流式时终态一次性回 JSON；plaza 恒为流式 */
+  stream: boolean
+  skill: string
+  /** 已完成协议侧预处理（附件注入、历史拍平）的消息，最后一条必须是 user */
+  messages: any[]
+  sessionId?: unknown
+  taskTitle: string
+  attachments?: any[]
+}
+
+function openAiErrorBody(message: string, type: string, code?: string) {
+  return { error: { message, type, ...(code ? { code } : {}) } }
+}
+
+/** OpenAI 风格 usage 映射（cost_usd 为非标准扩展字段，客户端可忽略） */
+function openAiUsage(u?: UsageSummary | null) {
+  if (!u) return undefined
+  const v: Record<string, number> = {
+    prompt_tokens: u.inputTokens ?? 0,
+    completion_tokens: u.outputTokens ?? 0,
+    total_tokens: u.totalTokens ?? 0,
+  }
+  if (typeof u.costUsd === 'number') v.cost_usd = u.costUsd
+  return v
+}
+
+/** POST /v1/chat/completions：model=技能 id；流式输出 reasonContent/content/[DONE]。 */
+async function handleOpenAiChat(req: any, res: any) {
+  let body: any
+  try {
+    if (!originAllowed(req.headers.origin)) {
+      sendJson(res, 403, openAiErrorBody('不允许跨站调用本地 API。', 'invalid_request_error'))
+      return
+    }
+    body = JSON.parse((await readBody(req)).toString('utf8'))
+  } catch (exc: any) {
+    sendJson(res, 400, openAiErrorBody(exc?.message || '请求格式不正确。', 'invalid_request_error'))
+    return
+  }
+  const { model, messages, sessionId } = body || {}
+  const skill = typeof model === 'string' ? model.trim() : ''
+  if (!skill || !(skill in SKILL_PROMPTS)) {
+    sendJson(res, 400, openAiErrorBody(
+      `未知的 model（技能）${JSON.stringify(skill)}。model 须为技能 id，可用值：${Object.keys(SKILL_PROMPTS).join('、')}。`,
+      'invalid_request_error',
+      'unknown_skill_model',
+    ))
+    return
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    sendJson(res, 400, openAiErrorBody('messages 必须是非空数组。', 'invalid_request_error'))
+    return
+  }
+  const latest = messages[messages.length - 1]
+  if (latest?.role !== 'user' || typeof latest.content !== 'string' || !latest.content.trim()) {
+    sendJson(res, 400, openAiErrorBody('messages 最后一条必须是内容非空的 user 消息。', 'invalid_request_error'))
+    return
+  }
+  /* 无状态客户端每次带全量历史：新会话（未提供或服务端不认识的 sessionId）时
+     拍平进本轮 prompt；复用已知会话则按多轮只发最新一条。 */
+  const knownSession = typeof sessionId === 'string' && Boolean(sessionId) && sessions.has(sessionId)
+  let coreMessages = messages
+  if (!knownSession && messages.length > 1) {
+    const history = messages.slice(0, -1)
+      .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim())
+      .map((m: any) => `${m.role === 'user' ? '用户' : '助手'}：${m.content.trim()}`)
+      .join('\n\n')
+    if (history) {
+      coreMessages = [{ role: 'user', content: `【对话历史】\n${history}\n\n【当前消息】\n${latest.content}` }]
+    }
+  }
+  await runChatTurn(res, {
+    protocol: 'openai',
+    stream: body.stream === true,
+    skill,
+    messages: coreMessages,
+    sessionId,
+    taskTitle: '',
+    attachments: undefined,
+  })
+}
+
+/** POST /api/chat：广场前端入口（plaza 协议，帧格式见 plaza wire）。 */
 async function handleChat(req: any, res: any) {
   let body: any
   try {
@@ -421,7 +521,6 @@ async function handleChat(req: any, res: any) {
     sendJson(res, 400, { error: 'engine 仅支持 pi。' })
     return
   }
-  const engine: EngineName = engineRaw
   if (!Array.isArray(messages) || messages.length === 0) {
     sendJson(res, 400, { error: '请至少输入一条消息。' })
     return
@@ -432,32 +531,177 @@ async function handleChat(req: any, res: any) {
     return
   }
 
-  // 切到 SSE
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-store',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
+  await runChatTurn(res, {
+    protocol: 'plaza',
+    stream: true,
+    skill,
+    messages,
+    sessionId,
+    taskTitle,
+    attachments: Array.isArray((body as any).attachments) ? (body as any).attachments : undefined,
   })
-  res.flushHeaders?.()
+}
+
+/* ---------- 输出协议适配器 ---------- */
+
+interface WireDonePayload {
+  content: string
+  resultType?: string
+  charts?: Array<Record<string, unknown>>
+  runId: string
+  reportUrl?: string
+  usage?: UsageSummary | null
+  /** career-guidance 报告未生成：content 为失败原因，openai 按错误帧输出 */
+  failure?: boolean
+}
+
+/**
+ * plaza：与既有 /api/chat 帧逐字节一致（回归安全）。
+ * openai 流式：{"id","reasonContent"/"content","role"} 增量 + 终帧 + [DONE]；
+ * openai JSON：不写 SSE 头，终态一次性回 chat.completion（reportUrl 为顶层扩展字段）。
+ */
+function createChatWire(protocol: ChatProtocol, stream: boolean) {
+  let res: any = null
+  let heartbeat: ReturnType<typeof setInterval> | undefined
+  let id = 'chatcmpl-pending'
+  let model = ''
+  let created = 0
+
   const sse = (obj: any) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(': ping\n\n')
-  }, HEARTBEAT_MS)
-  const finish = () => {
-    clearInterval(heartbeat)
-    if (!res.writableEnded) res.end()
+  const sseDone = () => res.write('data: [DONE]\n\n')
+  const frame = (extra: Record<string, unknown>) => sse({ id, role: 'assistant', ...extra })
+  const isSse = protocol === 'plaza' || stream
+
+  return {
+    begin(r: any, skill: string) {
+      res = r
+      model = skill
+      created = Math.floor(Date.now() / 1000)
+      if (!isSse) return /* JSON 模式终态再写头 */
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      res.flushHeaders?.()
+      heartbeat = setInterval(() => {
+        if (!res.writableEnded) res.write(': ping\n\n')
+      }, HEARTBEAT_MS)
+    },
+    stopHeartbeat() {
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = undefined
+      }
+    },
+    finish() {
+      this.stopHeartbeat()
+      if (res && !res.writableEnded) res.end()
+    },
+    started(runId: string, startedAt: number) {
+      id = `chatcmpl-${runId}`
+      if (protocol === 'plaza') sse({ type: 'started', runId, startedAt })
+    },
+    initializing() {
+      if (protocol === 'plaza') sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
+    },
+    session(sessionId: string) {
+      if (protocol === 'plaza') sse({ type: 'session', sessionId })
+    },
+    busy() {
+      const message = '该会话正在执行任务，请稍候。'
+      if (protocol === 'plaza') {
+        sse({ type: 'error', message })
+      } else if (stream) {
+        sse({ error: { message, type: 'agent_error' } })
+        sseDone()
+      } else {
+        sendJson(res, 429, openAiErrorBody(message, 'rate_limit_error'))
+      }
+    },
+    thinkingDelta(delta: string) {
+      if (protocol === 'openai' && stream) frame({ reasonContent: delta })
+    },
+    textDelta(delta: string) {
+      if (protocol === 'plaza') sse({ type: 'text', delta })
+      else if (stream) frame({ content: delta })
+    },
+    status(ev: { phase: string; state?: string; chars?: number; tool?: string; id?: string }) {
+      if (protocol === 'plaza') {
+        sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+      }
+    },
+    usage(usage: UsageSummary | null | undefined, content?: string) {
+      if (protocol === 'plaza') sse({ type: 'usage', usage, content })
+    },
+    done(p: WireDonePayload) {
+      if (protocol === 'plaza') {
+        sse({
+          type: 'done',
+          content: p.content,
+          resultType: p.resultType,
+          charts: p.charts,
+          runId: p.runId,
+          reportUrl: p.reportUrl,
+        })
+        return
+      }
+      if (p.failure) {
+        this.error(p.content)
+        return
+      }
+      const usage = openAiUsage(p.usage)
+      if (stream) {
+        if (p.reportUrl) frame({ content: '', reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
+        if (usage) frame({ usage })
+        sseDone()
+      } else {
+        sendJson(res, 200, {
+          id,
+          object: 'chat.completion',
+          created,
+          model,
+          choices: [{ index: 0, message: { role: 'assistant', content: p.content }, finish_reason: 'stop' }],
+          ...(usage ? { usage } : {}),
+          ...(p.reportUrl ? { reportUrl: p.reportUrl, runId: p.runId } : {}),
+        })
+      }
+    },
+    error(message: string) {
+      if (protocol === 'plaza') {
+        sse({ type: 'error', message })
+      } else if (stream) {
+        sse({ error: { message, type: 'agent_error' } })
+        sseDone()
+      } else {
+        sendJson(res, 500, openAiErrorBody(message, 'agent_error'))
+      }
+    },
   }
+}
+
+/* ---------- 编排核心：会话、runner、trace、报告捕获（两入口共用） ---------- */
+
+async function runChatTurn(res: any, params: TurnParams) {
+  const engine: EngineName = 'pi'
+  const { skill } = params
+  const { messages, sessionId } = params
+
+  const wire = createChatWire(params.protocol, params.stream)
+  wire.begin(res, skill)
+  const finish = () => wire.finish()
+  const taskTitle = params.taskTitle
+  const latest = messages[messages.length - 1]
 
   /* 浏览器未带 sessionId 时新开一个：时间格式，兼作沙箱目录名（便于按时间定位 workspace） */
   const clientSessionId: string =
     typeof sessionId === 'string' && sessionId ? sessionId : newRunId('sess-')
   const existingEntry = sessions.get(clientSessionId)
   if (existingEntry && existingEntry.engine !== engine) {
-    sse({
-      type: 'error',
-      message: `该会话由「${existingEntry.engine}」引擎创建，请刷新页面用新会话使用「${engine}」。`,
-    })
+    wire.error(
+      `该会话由「${existingEntry.engine}」引擎创建，请刷新页面用新会话使用「${engine}」。`,
+    )
     finish()
     return
   }
@@ -473,16 +717,23 @@ async function handleChat(req: any, res: any) {
   const runId = newRunId()
   const startedAt = Date.now()
   /* 首包立即确认在线运行已开始；不要等会话创建或模型首个 delta。 */
-  sse({ type: 'started', runId, startedAt })
-  sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
-  const promptDigest = taskTitle || String(latest.content).replace(/\s+/g, ' ').slice(0, 80)
+  wire.started(runId, startedAt)
+  wire.initializing()
+  /* openai 历史拍平后 digest 取「当前消息」段，避免运行记录标题全是【对话历史】 */
+  const digestSource = (() => {
+    const s = String(latest.content)
+    if (params.protocol !== 'openai') return s
+    const at = s.indexOf('【当前消息】')
+    return at >= 0 ? s.slice(at + '【当前消息】'.length) : s
+  })()
+  const promptDigest = taskTitle || digestSource.replace(/\s+/g, ' ').slice(0, 80)
   /* 附件说明在 digest 之后注入 prompt：路径必须落在本会话沙箱内（防穿越）；
      .md/.txt 直接内联内容（截断 16000 字保底），其余格式指示引擎读工作目录文件 */
   const attachmentNotes: string[] = []
   const attachmentNames: string[] = []
-  if (Array.isArray((body as any).attachments)) {
+  if (Array.isArray(params.attachments)) {
     const workspaceRoot = resolve(workspaceDirFor(clientSessionId))
-    for (const item of ((body as any).attachments as any[]).slice(0, 5)) {
+    for (const item of (params.attachments as any[]).slice(0, 5)) {
       const rel = typeof item?.path === 'string' ? item.path : ''
       if (!rel) continue
       const abs = resolve(workspaceRoot, rel)
@@ -620,6 +871,7 @@ async function handleChat(req: any, res: any) {
       ts: new Date(startedAt).toISOString(),
       clientSessionId,
       engine,
+      protocol: params.protocol,
       engineSessionId: entry?.engineSessionId,
       skill,
       taskTitle: taskTitle || undefined,
@@ -730,15 +982,15 @@ async function handleChat(req: any, res: any) {
     if (recovered) {
       /* A recovered report is a usable result; do not send error first because
          the browser treats error as terminal and would discard the link. */
-      sse({
-        type: 'done',
+      wire.done({
         content: '报告已生成，但本次任务已超时。',
         resultType: 'timeout',
         runId,
         reportUrl: `/api/reports/${encodeURIComponent(runId)}`,
+        usage: lastUsage,
       })
     } else {
-      sse({ type: 'error', message: '任务超时，报告未生成。' })
+      wire.error('任务超时，报告未生成。')
     }
     finalizeRun('timeout')
     cleanup()
@@ -758,7 +1010,7 @@ async function handleChat(req: any, res: any) {
       finalizeRun('aborted')
       cleanup()
     }
-    clearInterval(heartbeat)
+    wire.stopHeartbeat()
   })
 
   try {
@@ -770,10 +1022,10 @@ async function handleChat(req: any, res: any) {
       mergeContextInfo(runner.modelInfoForSession(engineSessionId))
       recorder.updateStart({ ...currentTokenUsage(), usageRounds: [] })
       recorder.note({ created: engineSessionId, engine, workspaceDir: dir })
-      sse({ type: 'session', sessionId: clientSessionId })
+      wire.session(clientSessionId)
     }
     if (entry.busy) {
-      sse({ type: 'error', message: '该会话正在执行任务，请稍候。' })
+      wire.busy()
       finalizeRun('error')
       cleanup()
       finish()
@@ -803,25 +1055,28 @@ async function handleChat(req: any, res: any) {
             hiddenFrom = at
             const visible = fullText.slice(0, at)
             if (visible.length > forwarded) {
-              sse({ type: 'text', delta: visible.slice(forwarded) })
+              wire.textDelta(visible.slice(forwarded))
               forwarded = visible.length
             }
           } else {
             const safeEnd = Math.max(forwarded, fullText.length - (SIDECAR_MARKER.length - 1))
             if (safeEnd > forwarded) {
-              sse({ type: 'text', delta: fullText.slice(forwarded, safeEnd) })
+              wire.textDelta(fullText.slice(forwarded, safeEnd))
               forwarded = safeEnd
             }
           }
         }
+      } else if (ev.kind === 'thinking_delta') {
+        /* 思考原文增量：仅 openai 流式输出（reasonContent）；plaza 仍用节流 status */
+        wire.thinkingDelta(ev.delta)
       } else if (ev.kind === 'status') {
         /* 思考/工具阶段的过程信号：正文 delta 之前前端也有"正在推进"的体感 */
-        sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+        wire.status(ev)
       } else if (ev.kind === 'usage') {
         lastUsage = ev.usage ?? lastUsage
         mergeContextInfo(ev.context)
         addUsageRounds(ev.round ? [ev.round] : undefined)
-        sse({ type: 'usage', usage: ev.usage, content: ev.content })
+        wire.usage(ev.usage, ev.content)
       } else if (ev.kind === 'terminal') {
         lastUsage = ev.usage ?? lastUsage
         mergeContextInfo(ev.context)
@@ -831,9 +1086,9 @@ async function handleChat(req: any, res: any) {
         finalText = sidecar.cleanText
         if (hiddenFrom < 0 && fullText.length > forwarded) {
           /* 未出现围栏：补发被扣留的尾部（ExperiencePage 等按 delta 聚合展示） */
-          sse({ type: 'text', delta: fullText.slice(forwarded) })
+          wire.textDelta(fullText.slice(forwarded))
         }
-        sse({ type: 'usage', usage: ev.usage })
+        wire.usage(ev.usage)
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
         const workspaceReport = captureWorkspaceHtmlReport()
         if (skill === 'career-guidance' && !workspaceReport) {
@@ -845,8 +1100,7 @@ async function handleChat(req: any, res: any) {
         const reportFailure = htmlReportError
           ? `报告未生成：${htmlReportError}`
           : '报告未生成：未找到有效的 workspace/report.html，且最终回复未包含可转换内容。'
-        sse({
-          type: 'done',
+        wire.done({
           content:
             skill === 'career-guidance'
               ? htmlReportFile
@@ -857,6 +1111,8 @@ async function handleChat(req: any, res: any) {
           charts: checkedCharts,
           runId,
           reportUrl: htmlReportFile ? `/api/reports/${encodeURIComponent(runId)}` : undefined,
+          usage: ev.usage ?? lastUsage,
+          failure: skill === 'career-guidance' && !htmlReportFile,
         })
         const finalOutcome: RunOutcome = clientGone
           ? 'aborted'
@@ -867,7 +1123,7 @@ async function handleChat(req: any, res: any) {
         cleanup()
         finish()
       } else if (ev.kind === 'error') {
-        sse({ type: 'error', message: ev.message })
+        wire.error(ev.message)
         finalizeRun('error')
         cleanup()
         finish()
@@ -897,7 +1153,7 @@ async function handleChat(req: any, res: any) {
       await runner.send(engineSessionId, runner.buildPrompt(skill, messages, true))
     }
   } catch (exc: any) {
-    sse({ type: 'error', message: exc.message || '执行失败，请稍后重试。' })
+    wire.error(exc.message || '执行失败，请稍后重试。')
     finalizeRun('error')
     cleanup()
     finish()
