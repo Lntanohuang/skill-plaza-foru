@@ -572,7 +572,10 @@ interface WireDonePayload {
 
 /**
  * plaza：与既有 /api/chat 帧逐字节一致（回归安全）。
- * openai 流式：{"id","reasonContent"/"content","role"} 增量 + 终帧 + [DONE]；
+ * openai 流式：标准 chat.completion.chunk 外壳，正文/思考在 choices[0].delta
+ *   （reasoning_content 为思考增量），工具活动走 choices:[] + 顶层 status 扩展帧，
+ *   报告/usage 为 choices:[] 终帧扩展；帧规范见 docs/agent-api.md 第 0 节与
+ *   docs/openai-stream-upgrade.md。
  * openai JSON：不写 SSE 头，终态一次性回 chat.completion（reportUrl 为顶层扩展字段）。
  */
 function createChatWire(protocol: ChatProtocol, stream: boolean) {
@@ -584,7 +587,17 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
 
   const sse = (obj: any) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
   const sseDone = () => res.write('data: [DONE]\n\n')
-  const frame = (extra: Record<string, unknown>) => sse({ id, role: 'assistant', ...extra })
+  const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) =>
+    sse({
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })
+  /* 扩展帧（工具 status / 报告 / usage）：choices 置空，标准客户端自然跳过 */
+  const extChunk = (extra: Record<string, unknown>) =>
+    sse({ id, object: 'chat.completion.chunk', created, model, choices: [], ...extra })
   const isSse = protocol === 'plaza' || stream
 
   return {
@@ -618,6 +631,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
     started(runId: string, startedAt: number) {
       id = `chatcmpl-${runId}`
       if (protocol === 'plaza') sse({ type: 'started', runId, startedAt })
+      else if (stream) chunk({ role: 'assistant', content: '' })
     },
     initializing() {
       if (protocol === 'plaza') sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
@@ -637,15 +651,18 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
     },
     thinkingDelta(delta: string) {
-      if (protocol === 'openai' && stream) frame({ reasonContent: delta })
+      if (protocol === 'openai' && stream) chunk({ reasoning_content: delta })
     },
     textDelta(delta: string) {
       if (protocol === 'plaza') sse({ type: 'text', delta })
-      else if (stream) frame({ content: delta })
+      else if (stream) chunk({ content: delta })
     },
     status(ev: { phase: string; state?: string; chars?: number; tool?: string; id?: string }) {
       if (protocol === 'plaza') {
         sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+      } else if (stream && ev.phase === 'tool') {
+        /* 工具活动时间线（仅工具名与状态，不含入参/返回内容）；thinking/text 节流状态不转发 */
+        extChunk({ status: { phase: ev.phase, state: ev.state, tool: ev.tool, id: ev.id } })
       }
     },
     usage(usage: UsageSummary | null | undefined, content?: string) {
@@ -669,8 +686,9 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
       const usage = openAiUsage(p.usage)
       if (stream) {
-        if (p.reportUrl) frame({ content: '', reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
-        if (usage) frame({ usage })
+        chunk({}, 'stop')
+        if (p.reportUrl) extChunk({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
+        if (usage) extChunk({ usage })
         sseDone()
       } else {
         sendJson(res, 200, {

@@ -17,7 +17,7 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `skill` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
+| `skill` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `tech-forecast` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
 | `messages` | array | 是 | OpenAI 消息数组，最后一条必须是内容非空的 `user` 消息；无 `sessionId` 时历史会被拍平注入本轮上下文（无状态客户端直接带全量历史即可） |
 | `stream` | boolean | 否 | 默认 `false`；`true` 时输出 SSE 流 |
 | `sessionId` | string | 否 | 非标准扩展：复用服务端会话（多轮只发最新一条，省 token）；不传则每次新会话 |
@@ -28,21 +28,28 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 
 **流式输出**（`stream: true`，每帧 `data: {JSON}\n\n`，按序）：
 
+所有帧均为标准 OpenAI `chat.completion.chunk` 外壳（`id` / `object` / `created` / `model` / `choices`），正文与思考在 `choices[0].delta` 内；帧序示例：
+
 ```
-data: {"id":"chatcmpl-<runId>","reasonContent":"思考片段…","role":"assistant"}   ← 思考增量（有思考阶段时）
-data: {"id":"chatcmpl-<runId>","content":"正文片段…","role":"assistant"}        ← 正文增量
-data: {"id":"chatcmpl-<runId>","content":"","reportUrl":"/api/reports/<runId>","runId":"…","role":"assistant"} ← career-guidance 成功时的报告帧
-data: {"id":"chatcmpl-<runId>","usage":{"prompt_tokens":…,"completion_tokens":…,"total_tokens":…,"cost_usd":…},"role":"assistant"} ← 用量帧
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":1791957176,"model":"<实际模型名>","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}                                   ← role 首帧
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[{"index":0,"delta":{"reasoning_content":"思考片段…"},"finish_reason":null}]}                                                      ← 思考增量（有思考阶段时，0~N 帧）
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[],"status":{"phase":"tool","state":"active","tool":"bash","id":"call_…"}}                                                        ← 工具活动帧（扩展，0~N 帧）
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[{"index":0,"delta":{"content":"正文片段…"},"finish_reason":null}]}                                                                ← 正文增量（0~N 帧）
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}                                                                                  ← 收尾帧
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[],"reportUrl":"/api/reports/<runId>","runId":"…","resultType":"success"}                                                         ← 报告帧（扩展，仅报告类技能成功时）
+data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":…,"model":"…","choices":[],"usage":{"prompt_tokens":…,"completion_tokens":…,"total_tokens":…,"cost_usd":…}}                                               ← 用量帧
 data: [DONE]
 ```
 
+- `reasoning_content`（思考）与 `content`（正文）二选一出现在 delta 里；`choices` 为空数组的帧是扩展信息帧（工具 `status` / `reportUrl` / `usage`），标准客户端自然跳过。
+- 工具 `status` 帧为**活动时间线级别**：只有工具名（`tool`）、状态（`state`: `active`/`completed`/`failed`）与调用 id，不含工具入参和返回内容。
+- `reportUrl` 是相对路径，拼上后端地址使用（如 `http://<host>:<port>/api/reports/<runId>`）；加 `/download` 为下载。`resultType` 为 `success` 或 `timeout`。
+- 报告类技能成功时正文增量为空、结果在 `reportUrl`；其余技能结果在 `content` 增量拼接。
+- `cost_usd`、`status`、`reportUrl`、`runId`、`resultType` 均为非标准扩展字段，标准客户端可忽略；客户端 JSON 反序列化需配置忽略未知字段（Spring Boot 默认即是）。
 - 失败时在 `[DONE]` 前输出 `data: {"error":{"message":"…","type":"agent_error"}}`。
 - 每 15 秒一条 `: ping` 注释行作心跳，客户端忽略即可。
-- `reportUrl` 是相对路径，拼上后端地址使用（如 `http://<host>:<port>/api/reports/<runId>`）；加 `/download` 为下载。
-- career-guidance 成功时正文增量为空、结果在 `reportUrl`；其余技能结果在 `content` 增量拼接。
-- `cost_usd` 为非标准扩展字段，标准客户端可忽略。
 
-**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；`model` 回显服务端实际模型；career-guidance 成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
+**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；`model` 回显服务端实际模型；报告类技能（career-guidance / tech-forecast）成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
 
 ```json
 {
@@ -89,8 +96,8 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 ```
 
 - `taskTitle` 可选，透传为运行标题（运行记录展示与报告下载文件名）。
-- 任务通常运行数分钟；期间先收到若干 `reasonContent`（思考）帧，正文增量近空。
-- 成功终态依次为：报告帧（`"content":"","reportUrl":"/api/reports/<runId>"`）→ usage 帧 → `[DONE]`。前端拿 `reportUrl` 拼后端地址给用户即可打开/下载报告（同 `/api/chat` 的报告获取方式）。
+- 任务通常运行数分钟；期间先收到若干 `reasoning_content`（思考）帧与工具 `status` 活动帧，正文增量近空。
+- 成功终态依次为：`finish_reason:"stop"` 收尾帧 → 报告帧（`choices:[]` + 顶层 `reportUrl`/`runId`/`resultType`）→ usage 帧 → `[DONE]`。前端拿 `reportUrl` 拼后端地址给用户即可打开/下载报告（同 `/api/chat` 的报告获取方式）。
 - 报告未生成时终态为错误帧（`reportUrl` 缺失即失败，原因在 `error.message`）。
 
 ## 1. GET /api/health

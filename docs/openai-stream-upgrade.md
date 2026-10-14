@@ -1,6 +1,6 @@
 # `/v1/chat/completions` 流式输出升级为 OpenAI 标准 chunk 格式 —— 后端修改摘要
 
-> 状态：**改造方案定稿，待实现**（2026-10-14）。实现落地后回填实际 diff 与验证结果，并更新开发手记 036。
+> 状态：**已实现并复验通过**（2026-10-14，落地 commit 见 git log；帧规范以 `docs/agent-api.md` 第 0 节为准）。验证结果见第五节。
 > 背景对接方：外部项目（Java 客户端）已按标准 OpenAI 流式结构定义 `OpenAIChatCompletionChunk`（`choices[]`/`object`/`created`/`model`/`usage`/`id`），当前后端流式帧为简化格式，正文在顶层 `content`，无 `choices` 数组，**对接方无法取到任何正文**。非流式 JSON 已是标准 `chat.completion`，无需改动。
 
 ## 一、改动目标
@@ -66,16 +66,14 @@
 5. Jackson 需忽略未知字段：Spring Boot 默认即是；纯 Jackson 需 `FAIL_ON_UNKNOWN_PROPERTIES=false`（否则 `status`/`role` 等扩展字段会反序列化抛异常）。
 6. SSE 解析按标准处理：`data:` 帧解析 JSON、`[DONE]` 结束、`: ` 注释行忽略。
 
-## 五、验证计划
+## 五、验证结果（2026-10-14 实测，PI_MODEL=deepseek-flash，后端重启后）
 
-重跑开发手记 036 的本地 curl 用例（PI_MODEL=deepseek-v4-pro）：
-
-1. 流式简单问题：仅 role 帧 → content 增量 → stop 帧 → usage 帧 → `[DONE]`（无思考阶段）。
-2. 流式推理型问题：reasoning_content 增量若干 → content 增量 → 收尾序列。
-3. 报告技能（career-guidance）流式端到端：工具活动帧出现 → 报告帧 reportUrl 公网可打开 → usage → `[DONE]`。
-4. 错误用例：假 skill 400、流中失败 error 帧 + `[DONE]`。
-5. 非流式与多轮拍平回归（预期零变化）。
-6. plaza `/api/chat` 事件序回归（预期零变化）。
+1. ✅ 流式简单问题（classroom-assistant）：role 首帧 → `reasoning_content` 增量 1569 帧（deepseek-flash 有思考阶段）→ `content` 增量 362 帧 → `finish_reason:"stop"` 帧 → usage 帧 → `[DONE]`；外壳字段（`object`/`created`/`model`/`id`）齐全。
+2. ✅ 工具活动帧：同一用例出现 32 条 `choices:[]` + 顶层 `status`（bash 工具 active/completed），thinking/text 节流状态未泄漏。
+3. ✅ 报告技能流式端到端（career-guidance，run 20261014-135228-hzyi，6.9 分钟，protocol=openai，outcome=success）：`reasoning_content` 6184 帧 → `content` 160 帧 → 工具活动帧 66 条（岗位库查询 bash）→ stop 帧 → 报告帧 `{reportUrl:"/api/reports/20261014-135228-hzyi", runId, resultType:"success"}` → usage 帧 → `[DONE]`；报告 URL 200/text/html/126KB，6 章结构完整。
+4. ✅ 错误用例：假 skill 流前 400（OpenAI 错误体，`code:"unknown_skill"` 列出可用技能），不变。
+5. ✅ 非流式（ai-interview）：标准 `chat.completion`（`choices[0].message.content`、`object`、`created`、`model`、`usage` 含 `cost_usd`），非报告技能无 `reportUrl`——与升级前一致。
+6. ✅ plaza `/api/chat` 回归（ai-interview）：事件类型序 `started → status → session → status → …(thinking 节流) → text → usage → done`，与旧版形状一致，plaza 分支零改动。
 
 ## 六、成本与取舍
 

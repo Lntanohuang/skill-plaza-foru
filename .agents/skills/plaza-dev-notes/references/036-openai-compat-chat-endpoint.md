@@ -1,6 +1,14 @@
 # 036 · OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口
 
-**状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；公网部署与 career-guidance 端到端待用户执行）
+**状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；2026-10-14 流式升级为标准 `chat.completion.chunk` 并复验通过；公网 career-guidance 成功路径端到端待用户执行）
+
+## 2026-10-14 修订：流式帧升级为标准 chunk 格式
+
+- **动机**：外部项目（Java 客户端）按标准 OpenAI 流式结构定义 `OpenAIChatCompletionChunk`（`choices[]`/`object`/`created`/`model`/`usage`/`id`），原简化帧正文在顶层 `content`、无 `choices` 数组，对接方反序列化后取不到任何正文。升级后对接方现有类零改动可解析。
+- **新帧规范**（详见 `docs/agent-api.md` 第 0 节与 `docs/openai-stream-upgrade.md`）：所有帧为 `{id, object:"chat.completion.chunk", created, model, choices}` 外壳；role 首帧（`started` 时发出）；思考 `delta.reasoning_content`（DeepSeek 通行字段）；正文 `delta.content`；`finish_reason:"stop"` 收尾帧；报告帧与 usage 帧为 `choices:[]` + 顶层扩展（`reportUrl`/`runId`/`resultType`、`usage`）。
+- **工具活动帧（新增）**：`status()` 原 openai 协议直接丢弃，现仅转发 `phase:'tool'` 事件为 `choices:[]` + 顶层 `status:{phase,state,tool,id}`——**活动时间线级别**，只有工具名与状态，不含入参/返回内容（runner 层流式事件本就没有参数；完整输入输出仅落盘 trace）。thinking/text 的 chars 节流状态不转发（全文已流式，冗余）。否决参数级 `tool_calls` 流（需扩 RunnerEvent，报告类技能外部展示只需进度级别）与 SSE 注释行方案（标准客户端不可解析）。
+- **改动点**：仅 `web/server/index.ts` `createChatWire` openai 流式分支——`frame()` 拆为 `chunk(delta, finishReason)` 与 `extChunk(extra)` 两个出口；`started`/`thinkingDelta`/`textDelta`/`status`/`done` 五处。plaza 分支逐字节不变（`/api/chat` 事件序回归一致），非流式 JSON 不变，`busy`/`error` 流中帧不变。
+- **复验**（2026-10-14，PI_MODEL=deepseek-flash）：流式简单问题 role → reasoning_content 1569 帧 → content 362 帧 → stop → usage → `[DONE]`，工具活动帧 32 条（classroom-assistant bash 工具）；career-guidance 流式端到端（run 20261014-135228-hzyi，6.9 分钟）终态 stop → 报告帧 `reportUrl`/`resultType:"success"` → usage → `[DONE]`，报告 URL 200/126KB 六章完整；400 假 skill 错误体不变；非流式标准 `chat.completion` 不变；plaza 事件序回归一致。公网浏览器侧打开报告仍待用户验证。
 
 ## 动机
 
@@ -20,7 +28,7 @@
 - `web/server/index.ts:399-428`：`TurnParams`（protocol/stream/skill/messages/sessionId/taskTitle/attachments）；`handleOpenAiChat`（校验 + 历史拍平）与 `handleChat`（plaza 校验，行为与旧版一致）都调 `runChatTurn`。
 - `web/server/index.ts` `createChatWire(protocol, stream)`：两套 wire 相邻放置——
   - **plaza wire**：输出与旧版 `/api/chat` 逐字节一致的 `type` 事件帧（回归安全）；
-  - **openai wire**：流式输出 `{"id":"chatcmpl-<runId>","reasonContent"/"content","role":"assistant"}` 增量，终态 usage 帧 + `[DONE]`；JSON 模式不写 SSE 头，终态一次性回 `chat.completion`（career-guidance 成功时顶层 `reportUrl`/`runId` 扩展字段，`content` 空串）。
+  - **openai wire**：流式输出标准 `chat.completion.chunk`（2026-10-14 升级，见顶部修订节；初版为 `{"id","reasonContent"/"content","role"}` 简化帧，已被替代）；JSON 模式不写 SSE 头，终态一次性回 `chat.completion`（career-guidance 成功时顶层 `reportUrl`/`runId` 扩展字段，`content` 空串）。
 - 错误映射：流前校验 400（`unknown_skill_model` 列出可用技能）；流中失败 `{"error":{...,"type":"agent_error"}}` + `[DONE]`；非流式 agent 错误 500、会话占用 429。
 - 会话与多轮：技能走**独立 `skill` 字段**（2026-10-13 修订，最初设计为复用 `model` 字段；因语义混淆改为独立字段，`model` 彻底释放——忽略不校验，预留给将来按请求选模型；错误码 `unknown_skill` 并列出可用技能）。`taskTitle` 可选透传（同 plaza 清洗规则，用于运行标题与报告文件名）。无 `sessionId` 或服务端不认识时，messages>1 则历史拍平为「【对话历史】…【当前消息】…」注入首轮 prompt（复用 buildPrompt，不动 runner）；promptDigest 对拍平消息取【当前消息】段。非流式 JSON 的 `model` 字段回显 `runner.describe()` 真实服务模型。
 - trace：`RunRecord.protocol: 'plaza' | 'openai'`（`web/server/lib/traceExport.ts:141-142`），运行记录页可区分两类流量；其余落盘（events/trace/报告校验/agentEnv）两入口完全一致。
