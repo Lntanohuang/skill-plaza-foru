@@ -201,6 +201,22 @@ curl -N http://127.0.0.1:8767/api/chat \
 | `GET /api/runs/{runId}/file/report` | 结构化报告数据（json） |
 | `GET /api/runs/{runId}/file/md` | trace 的 Markdown 版（按需生成） |
 
+## 6. GET /api/skills（技能清单）
+
+返回当前可运行的技能列表（与 `/v1/chat/completions` 的 `skill` 合法值同源）。智能体广场的技能卡片数随此接口动态增减；公开数据，无鉴权、无跨源限制。
+
+```json
+{
+  "skills": [
+    { "id": "career-guidance", "name": "career-guidance", "description": "为学生、求职者和在职转型者提供…", "installed": true },
+    { "id": "classroom-assistant", "name": "classroom-assistant", "description": "只在用户明确提供或授权的课程资料范围内…", "installed": false }
+  ]
+}
+```
+
+- `installed: true` 表示仓库 `.agents/skills/<id>/` 下有真实技能文件夹，`name`/`description` 读自该 SKILL.md 的 frontmatter（`name` 是技能加载键，非中文展示名）。
+- `installed: false` 为外部仓库接入的技能（提示词内置），`description` 取回落提示词首句。
+
 ## 典型接入流程
 
 **路线 A：`/v1/chat/completions`（外部项目推荐）**

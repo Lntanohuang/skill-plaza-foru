@@ -37,7 +37,7 @@ import {
 } from './lib/htmlReport.ts'
 import { serverEnv } from './lib/agentEnv.ts'
 import { loadLocalEnv } from './lib/env.ts'
-import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, HTML_REPORT_CONTRACTS, HTML_REPORT_SKILLS } from './lib/skills.ts'
+import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, HTML_REPORT_CONTRACTS, HTML_REPORT_SKILLS, listPlazaSkills } from './lib/skills.ts'
 import {
   extractSidecar,
   validateMeta,
@@ -198,6 +198,11 @@ const server = createServer((req, res) => {
       engines: [{ id: DEFAULT_ENGINE, available: true, model: runner.describe(), version: runner.envInfo().agentVersion }],
       message: 'API 已配置',
     })
+    return
+  }
+  if (req.method === 'GET' && path === '/api/skills') {
+    /* 广场技能清单：SKILL_PROMPTS 键为可运行权威集合，名称/描述取技能文件夹 frontmatter */
+    sendJson(res, 200, { skills: listPlazaSkills() })
     return
   }
   if (req.method === 'POST' && path === '/api/chat') {

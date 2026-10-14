@@ -1,36 +1,54 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { AGENTS, AUDIENCES, CATEGORIES, SKILLS, bySlug, type Skill } from '../data/skills'
+import { AUDIENCES, CATEGORIES, SKILLS, bySlug, type Skill } from '../data/skills'
 import SkillCard from '../components/SkillCard.vue'
 
-/* 列表 = 24 个智能体：已上线的渲染真实 SKILL 卡，未上线的置灰占位 */
-interface Entry {
-  kind: 'skill' | 'ghost'
-  code: string
+/* 列表 = 后端可运行技能清单（GET /api/skills，随技能注册表/技能文件夹动态增减）。
+   后端不可达时回落静态 SKILLS；后端有而前端文案未跟进的技能渲染基础卡。 */
+interface RemoteSkill {
+  id: string
   name: string
-  categoryId: string
-  audiences: string[]
-  skill?: Skill
+  description: string
+  installed: boolean
 }
 
-const entries: Entry[] = AGENTS
-  .map((a): Entry => {
-    const skill = a.skillSlug ? bySlug.get(a.skillSlug) : undefined
-    return {
-      kind: skill ? 'skill' : 'ghost',
-      code: a.code,
-      name: skill ? skill.name : a.name,
-      categoryId: a.categoryId,
-      audiences: a.audiences,
-      skill,
-    }
-  })
-  /* 已上线的排前面，未上线置灰的排后面，各自按编号升序 */
-  .sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'skill' ? -1 : 1
-    return a.code.localeCompare(b.code)
-  })
+const remote = ref<RemoteSkill[] | null>(null)
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/api/skills')
+    if (res.ok) remote.value = (await res.json()).skills
+  } catch { /* 后端未启动：回落静态清单 */ }
+})
+
+/* 后端已上线但静态文案还没写的基础卡（正常应尽快补 SKILLS 条目拿详情页） */
+function basicSkill(r: RemoteSkill): Skill {
+  return {
+    slug: r.id,
+    name: r.name,
+    identifier: r.id,
+    categoryId: 'industry',
+    audiences: [],
+    summary: r.description,
+    tags: [r.installed ? '已上线' : '可运行'],
+    compatibility: [],
+    preconditions: '',
+    outputs: [],
+    dependencies: [],
+    limitations: [],
+    installation: [],
+    installPrompt: '',
+    minimalInput: '',
+    repository: '',
+    repositoryLabel: '',
+  }
+}
+
+const entries = computed<Skill[]>(() => {
+  if (!remote.value) return SKILLS
+  return remote.value.map(r => bySlug.get(r.id) ?? basicSkill(r))
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -53,13 +71,13 @@ watch(() => route.fullPath, () => {
   category.value = nextCategory
 })
 
-function matches(entry: Entry, except: 'q' | 'role' | 'category' | null, r: string, c: string, needle: string) {
+function matches(skill: Skill, except: 'q' | 'role' | 'category' | null, r: string, c: string, needle: string) {
   if (except !== 'q' && needle) {
-    const hay = [entry.name, entry.code, entry.categoryId].join(' ').toLowerCase()
+    const hay = [skill.name, skill.identifier, skill.summary, ...skill.tags].join(' ').toLowerCase()
     if (!hay.includes(needle)) return false
   }
-  if (except !== 'role' && r !== 'all' && !entry.audiences.includes(r)) return false
-  if (except !== 'category' && c !== 'all' && entry.categoryId !== c) return false
+  if (except !== 'role' && r !== 'all' && !skill.audiences.includes(r)) return false
+  if (except !== 'category' && c !== 'all' && skill.categoryId !== c) return false
   return true
 }
 
@@ -67,17 +85,17 @@ const needle = computed(() => q.value.trim().toLowerCase())
 const isFiltered = computed(() => Boolean(q.value.trim()) || role.value !== 'all' || category.value !== 'all')
 
 const visible = computed(() =>
-  entries.filter(e => matches(e, null, role.value, category.value, needle.value)),
+  entries.value.filter(s => matches(s, null, role.value, category.value, needle.value)),
 )
 
 const roleItems = computed(() => [{ id: 'all', name: '全部' }, ...AUDIENCES].map(item => ({
   ...item,
-  count: entries.filter(e => matches(e, 'role', role.value, category.value, needle.value) && (item.id === 'all' || e.audiences.includes(item.id))).length,
+  count: entries.value.filter(s => matches(s, 'role', role.value, category.value, needle.value) && (item.id === 'all' || s.audiences.includes(item.id))).length,
 })))
 
 const catItems = computed(() => [{ id: 'all', name: '全部' }, ...CATEGORIES].map(item => ({
   ...item,
-  count: entries.filter(e => matches(e, 'category', role.value, category.value, needle.value) && (item.id === 'all' || e.categoryId === item.id)).length,
+  count: entries.value.filter(s => matches(s, 'category', role.value, category.value, needle.value) && (item.id === 'all' || s.categoryId === item.id)).length,
 })))
 
 function commit() {
@@ -154,29 +172,18 @@ function clearFilters(focusSearch: boolean) {
       <div class="list-status" role="status" aria-live="polite" v-reveal="140">
         <span id="list-status">
           <template v-if="isFiltered">筛选出 <strong>{{ visible.length }}</strong> 个 · 全部 <strong>{{ entries.length }}</strong> 个</template>
-          <template v-else>共 <strong>{{ entries.length }}</strong> 个智能体 · <strong>{{ SKILLS.length }}</strong> 个已上线 SKILL</template>
+          <template v-else>共 <strong>{{ entries.length }}</strong> 个 SKILL</template>
         </span>
         <button type="button" class="text-btn" :hidden="!isFiltered" @click="clearFilters(true)">清除筛选</button>
       </div>
 
       <div class="grid" id="skill-grid" :hidden="visible.length === 0">
-        <template v-for="entry in visible" :key="entry.code">
-          <SkillCard v-if="entry.skill" v-reveal="Math.min(entries.indexOf(entry), 8) * 40" :skill="entry.skill" />
-          <article v-else class="card is-ghost" v-reveal="Math.min(entries.indexOf(entry), 8) * 40">
-            <div class="card-top">
-              <span class="card-pic is-ghost-pic">{{ entry.code }}</span>
-              <div class="card-head">
-                <h2 class="card-name">{{ entry.name }}</h2>
-                <p class="card-id">{{ entry.code }}</p>
-              </div>
-            </div>
-            <span class="card-cat is-ghost-cat">{{ (CATEGORIES.find(c => c.id === entry.categoryId) || { name: entry.categoryId }).name }}</span>
-            <p class="card-summary">智能体已在规划中，上线后即可安装使用。</p>
-            <div class="card-foot">
-              <span class="ghost-soon">即将上线</span>
-            </div>
-          </article>
-        </template>
+        <SkillCard
+          v-for="(skill, i) in visible"
+          :key="skill.slug"
+          v-reveal="Math.min(i, 8) * 40"
+          :skill="skill"
+        />
       </div>
     </div>
   </section>
