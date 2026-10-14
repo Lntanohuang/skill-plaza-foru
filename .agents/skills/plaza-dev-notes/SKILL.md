@@ -86,7 +86,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 041 | tech-forecast 库内快照层（references/data/）与第四次广场沙箱运行 | 已实现（快照首次引用；提交与 parseReport 回归待办） | [041-tech-forecast-snapshot-layer-and-fourth-run.md](references/041-tech-forecast-snapshot-layer-and-fourth-run.md) |
 | 042 | tech-forecast 第五次广场沙箱运行（快照+高职切片补查稳定复用、四图报告） | 已实现观察（2026-10-13 广东省 AI/大模型·机器人会话） | [042-tech-forecast-fifth-sandbox-run.md](references/042-tech-forecast-fifth-sandbox-run.md) |
 | 043 | 纺织服装快照（含公开来源节）与 web-search 检索源修复 | 已实现（guangdong-textile.md 交付审阅） | [043-textile-snapshot-and-search-fallback.md](references/043-textile-snapshot-and-search-fallback.md) |
-| 044 | 外部评审意见转化：研判判定规则与报告方法论强化 | 已实现（v6 纺织报告逐项验证通过） | [044-review-rules-hardening.md](references/044-review-rules-hardening.md) |
+| 044 | 外部评审意见转化：研判判定规则与报告方法论强化 | 已废弃（用户审阅后回退，详见记录） | [044-review-rules-hardening.md](references/044-review-rules-hardening.md) |
 | 043 | 就业指导广场沙箱真实运行：广州 Java 后端实习（内联 SVG 五图 + 城市热点图） | 已实现观察（2026-10-13 本报告会话；服务端校验/浏览器回归待跑） | [043-career-guidance-guangzhou-java-intern-run.md](references/043-career-guidance-guangzhou-java-intern-run.md) |
 | 044 | tech-forecast 纺织服装（广东）沙箱运行：快照复用、库内零样本边界、英文检索降级 | 已实现观察（2026-10-13 会话；parseReport/浏览器回归待跑） | [044-tech-forecast-textile-sandbox-run.md](references/044-tech-forecast-textile-sandbox-run.md) |
 | 045 | tech-forecast 纺织服装第二次沙箱运行：快照+实时复核一致性、检索相关性放行与 GBK 取数踩坑 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [045-tech-forecast-textile-second-run.md](references/045-tech-forecast-textile-second-run.md) |
