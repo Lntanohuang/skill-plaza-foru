@@ -136,12 +136,24 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 | type | 载荷 | 说明 |
 |---|---|---|
 | `started` | `runId`, `startedAt` | 首包，运行已开始 |
-| `status` | `phase`, `message` | 过程状态（如 initializing、思考/工具执行进度） |
+| `status` | `phase`, `state`?, `chars`?, `tool`?, `id`? | 过程状态，枚举见下表 |
 | `session` | `sessionId` | 新会话创建时返回，调用方需保存用于后续多轮 |
 | `text` | `delta` | 正文增量片段，拼接即为完整回答 |
 | `usage` | `usage`, `content` | token 用量信息 |
-| `done` | `content`, `resultType`, `charts`, `runId`, `reportUrl?` | **终态**。`reportUrl` 仅 career-guidance 成功生成报告时有值；此时 `content` 为空串，报告走该 URL 获取 |
+| `done` | `content`, `resultType`, `charts`, `runId`, `reportUrl?` | **终态**。`resultType` 为 `success` / `timeout`；`reportUrl` 仅报告类技能（career-guidance / tech-forecast）成功生成报告时有值；此时 `content` 为空串，报告走该 URL 获取 |
 | `error` | `message` | **终态**，运行失败 |
+
+**`status` 事件枚举**（前端判别"正在做什么"的依据）：
+
+| phase | state | 附加字段 | 含义 |
+|---|---|---|---|
+| `initializing` | —（无 state） | `message` | 正在启动运行环境（每轮一条） |
+| `thinking` | `active` | `chars`（已积累思考字数） | 模型思考中，约 700ms 一条节流进度 |
+| `text` | `active` | — | 正文输出中（text 增量本身走 `text` 事件，此状态只标记块开始） |
+| `tool` | `active` | `tool`（工具名，如 bash/read）、`id`（调用 id） | 正在执行工具调用 |
+| `tool` | `completed` / `failed` | `tool`、`id` | 工具调用结束（成功/失败） |
+
+即：看到 `phase:"tool"` 就是工具调用；`thinking` 或 `chars` 在涨就是思考；`text` 增量就是正文。
 
 说明：
 
