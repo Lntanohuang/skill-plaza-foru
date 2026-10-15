@@ -43,6 +43,7 @@ import {
   validateMeta,
   SIDECAR_MARKER,
   EMPTY_META_COUNTS,
+  type MetaChart,
   type SidecarExtract,
 } from './lib/reportMeta.ts'
 import { PiRunner, resolvePiCli, piModelRef } from './lib/piRunner.ts'
@@ -58,6 +59,8 @@ const RUN_TIMEOUT_MS = 10 * 60_000
 /** 已安装真实技能的运行要读资料、做检索、跑脚本，放宽到 20 分钟（可用 RUN_TIMEOUT_MS 环境变量覆盖） */
 const RUN_TIMEOUT_MS_INSTALLED = Number(process.env.RUN_TIMEOUT_MS || 20 * 60_000)
 const HEARTBEAT_MS = 15_000
+/** openai 流式工具 active 帧压帧时长：亚秒级工具只发终态帧，长任务超时才发 active */
+const TOOL_ACTIVE_HOLD_MS = 300
 const MAX_BODY_BYTES = 512_000
 /* 附件上传：文件落会话沙箱 workspace/<sessionId>/uploads/；
    base64 膨胀 4/3，6MB 文件 ≈ 8MB body，上限放宽到 10MB */
@@ -407,8 +410,9 @@ async function handleUpload(req: any, res: any) {
 /* ------------------------------------------------------------
    两套入口协议共用一套编排核心（runChatTurn）：
    - /api/chat（plaza）：广场前端专用，type 事件流，协议冻结不再演进；
-   - /v1/chat/completions（openai）：外部项目唯一接入入口，输出
-     content/reasonContent 增量与 [DONE]，后续需求以可选字段在此扩展。
+   - /v1/chat/completions（openai）：外部项目唯一接入入口，流式输出
+     标准 chat.completion.chunk（delta.content/reasoning_content）与 [DONE]，
+     后续需求以可选字段在此扩展。
    两者的差异全部收敛在 createChatWire 适配器里（相邻放置，
    新事件映射改动时两份都在眼前）。
    ------------------------------------------------------------ */
@@ -443,7 +447,7 @@ function openAiUsage(u?: UsageSummary | null) {
   return v
 }
 
-/** POST /v1/chat/completions：model=技能 id；流式输出 reasonContent/content/[DONE]。 */
+/** POST /v1/chat/completions：model=技能 id；流式输出标准 chunk（reasoning_content/content）与 [DONE]。 */
 async function handleOpenAiChat(req: any, res: any) {
   let body: any
   try {
@@ -562,7 +566,7 @@ async function handleChat(req: any, res: any) {
 interface WireDonePayload {
   content: string
   resultType?: string
-  charts?: Array<Record<string, unknown>>
+  charts?: MetaChart[]
   runId: string
   reportUrl?: string
   usage?: UsageSummary | null
@@ -572,7 +576,9 @@ interface WireDonePayload {
 
 /**
  * plaza：与既有 /api/chat 帧逐字节一致（回归安全）。
- * openai 流式：{"id","reasonContent"/"content","role"} 增量 + 终帧 + [DONE]；
+ * openai 流式：标准 chat.completion.chunk 外壳（choices[0].delta 增量）；
+ *   正文按叙述缓冲定性后发出（见 createChatWire 内注释），工具活动与报告/用量
+ *   为 choices:[] + 顶层扩展帧；终态 stop/报告/usage 帧后 [DONE]。
  * openai JSON：不写 SSE 头，终态一次性回 chat.completion（reportUrl 为顶层扩展字段）。
  */
 function createChatWire(protocol: ChatProtocol, stream: boolean) {
@@ -584,8 +590,65 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
 
   const sse = (obj: any) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
   const sseDone = () => res.write('data: [DONE]\n\n')
-  const frame = (extra: Record<string, unknown>) => sse({ id, role: 'assistant', ...extra })
   const isSse = protocol === 'plaza' || stream
+
+  /* openai 流式帧辅助（plaza 分支不走）：frame 出标准 choices[0].delta 增量帧
+     （finishReason 仅收尾帧非空）；extFrame 出 choices:[] 的顶层扩展帧
+     （status/reportUrl/usage），标准客户端按未知字段忽略 */
+  const frame = (delta: Record<string, unknown>, finishReason: string | null = null) =>
+    sse({
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })
+  const extFrame = (extra: Record<string, unknown>) =>
+    sse({ id, object: 'chat.completion.chunk', created, model, choices: [], ...extra })
+
+  /* 叙述缓冲：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与最终
+     答复同为 text 块，wire 无法事前区分；规律（trace 验证）是叙述块之后必跟
+     工具调用、最终答复块之后直接 done。正文先缓冲不外发，工具活动一到即定性为
+     过程叙述并入思考通道（flushNarration），坚持到 done 的才是最终答案。 */
+  let contentBuf = ''
+  const flushNarration = () => {
+    if (!contentBuf) return
+    frame({ reasoning_content: contentBuf })
+    contentBuf = ''
+  }
+
+  /* 工具状态聚合：active 帧压 TOOL_ACTIVE_HOLD_MS，终态先到即吞掉（亚秒级工具
+     只见终态帧），超时仍未终态的长任务才补发 active，避免状态帧刷屏 */
+  const heldActive = new Map<string, { ev: any; timer: ReturnType<typeof setTimeout> }>()
+  const emitToolStatus = (ev: { phase: string; state?: string; tool?: string; id?: string }) =>
+    extFrame({ status: { phase: ev.phase, state: ev.state, tool: ev.tool, id: ev.id } })
+  const toolStatus = (ev: { phase: string; state?: string; tool?: string; id?: string }) => {
+    if (ev.state === 'active') {
+      const key = ev.id
+      if (!key) {
+        emitToolStatus(ev)
+        return
+      }
+      const timer = setTimeout(() => {
+        heldActive.delete(key)
+        emitToolStatus(ev)
+      }, TOOL_ACTIVE_HOLD_MS)
+      heldActive.set(key, { ev, timer })
+      return
+    }
+    /* 终态：吞掉压住的 active 帧；终态自身缺 tool/id（旧事件兼容）时从压帧条目回填 */
+    const held = ev.id ? heldActive.get(ev.id) : undefined
+    if (held && ev.id) {
+      clearTimeout(held.timer)
+      heldActive.delete(ev.id)
+    }
+    emitToolStatus({
+      phase: ev.phase,
+      state: ev.state,
+      tool: ev.tool ?? held?.ev.tool,
+      id: ev.id ?? held?.ev.id,
+    })
+  }
 
   return {
     begin(r: any) {
@@ -613,11 +676,15 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
     },
     finish() {
       this.stopHeartbeat()
+      /* 清掉未决的工具 active 压帧定时器，避免流结束后还往连接写帧 */
+      for (const { timer } of heldActive.values()) clearTimeout(timer)
+      heldActive.clear()
       if (res && !res.writableEnded) res.end()
     },
     started(runId: string, startedAt: number) {
       id = `chatcmpl-${runId}`
       if (protocol === 'plaza') sse({ type: 'started', runId, startedAt })
+      else if (stream) frame({ role: 'assistant', content: '' }) /* role 首帧：id 就绪即发 */
     },
     initializing() {
       if (protocol === 'plaza') sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
@@ -630,6 +697,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
+        contentBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -637,16 +705,30 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
     },
     thinkingDelta(delta: string) {
-      if (protocol === 'openai' && stream) frame({ reasonContent: delta })
+      if (protocol === 'openai' && stream) frame({ reasoning_content: delta })
     },
     textDelta(delta: string) {
       if (protocol === 'plaza') sse({ type: 'text', delta })
-      else if (stream) frame({ content: delta })
+      else if (stream) contentBuf += delta /* 定性前缓冲，不立即外发 */
     },
     status(ev: { phase: string; state?: string; chars?: number; tool?: string; id?: string }) {
       if (protocol === 'plaza') {
         sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+        return
       }
+      if (!stream) return
+      if (ev.phase === 'message') {
+        /* 新 assistant 消息开始：上一条消息里未定性的缓冲全部是叙述
+           （工具调用之后的 text 后面不会再有工具事件，只能靠消息边界兜底） */
+        flushNarration()
+        return
+      }
+      if (ev.phase !== 'tool') return
+      /* 任一工具状态事件（含终态）都是叙述定性信号：pi 流里 text 增量可能落后于
+         toolcall_start 到达，终态兜底清尾，避免迟到增量漏进最终答案；
+         重分类先于 toolStatus 执行，不随聚合压帧延迟 */
+      flushNarration()
+      toolStatus(ev)
     },
     usage(usage: UsageSummary | null | undefined, content?: string) {
       if (protocol === 'plaza') sse({ type: 'usage', usage, content })
@@ -669,8 +751,14 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
       const usage = openAiUsage(p.usage)
       if (stream) {
-        if (p.reportUrl) frame({ content: '', reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
-        if (usage) frame({ usage })
+        /* 缓冲未被工具活动定性 = 最终答复：done 时刻一次性发出 */
+        if (contentBuf) {
+          frame({ content: contentBuf })
+          contentBuf = ''
+        }
+        frame({}, 'stop')
+        if (p.reportUrl) extFrame({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
+        if (usage) extFrame({ usage })
         sseDone()
       } else {
         sendJson(res, 200, {
@@ -688,6 +776,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
+        contentBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -1086,7 +1175,7 @@ async function runChatTurn(res: any, params: TurnParams) {
           }
         }
       } else if (ev.kind === 'thinking_delta') {
-        /* 思考原文增量：仅 openai 流式输出（reasonContent）；plaza 仍用节流 status */
+        /* 思考原文增量：仅 openai 流式输出（reasoning_content）；plaza 仍用节流 status */
         wire.thinkingDelta(ev.delta)
       } else if (ev.kind === 'status') {
         /* 思考/工具阶段的过程信号：正文 delta 之前前端也有"正在推进"的体感 */

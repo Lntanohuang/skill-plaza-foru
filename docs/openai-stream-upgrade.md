@@ -1,6 +1,6 @@
 # `/v1/chat/completions` 流式输出升级为 OpenAI 标准 chunk 格式 —— 后端修改摘要
 
-> 状态：**改造方案定稿，待实现**（2026-10-14）。实现落地后回填实际 diff 与验证结果，并更新开发手记 036。
+> 状态：**已实现**（2026-10-15 代码落地，typecheck 通过、帧序对照通过；线上真实抓包回归待跑）。实现时在同分支追加了两项流式修复（见 §七 回填）。
 > 背景对接方：外部项目（Java 客户端）已按标准 OpenAI 流式结构定义 `OpenAIChatCompletionChunk`（`choices[]`/`object`/`created`/`model`/`usage`/`id`），当前后端流式帧为简化格式，正文在顶层 `content`，无 `choices` 数组，**对接方无法取到任何正文**。非流式 JSON 已是标准 `chat.completion`，无需改动。
 
 ## 一、改动目标
@@ -81,3 +81,16 @@
 
 - 单文件约 40 行 diff + 两处文档，无新增依赖、无常驻开销。
 - 被否决：① 维持简化帧让对接方适配——丢失"标准 OpenAI 兼容"的端点定位，后续每个接入方重复适配；② 工具调用做参数级 `tool_calls` 流——需扩 RunnerEvent 协议转发 pi 工具入参/结果，改动面大，且报告类技能的外部展示只需进度级别；③ 工具时间线走 SSE 注释行——标准客户端不可解析，时间线无从展示。
+
+## 七、实现回填（2026-10-15）
+
+- 代码落点：`web/server/index.ts` `createChatWire`（frame/extFrame 标准外壳、role 首帧、reasoning_content、status 扩展帧、stop/报告/usage 终态序）与 `web/server/lib/piRunner.ts` `toolcall_end` 字段路径修复（id/name 从 `ev.toolCall` 下取，顶层字段保留回落）。plaza 分支逐字节不变。
+- 实现时追加的两项流式修复（本方案定稿后按线上 trace 确定）：
+  1. **叙述缓冲与重分类**：Agent 工具调用前的过渡语与最终答复同为 text 块，无法事前区分；规律（trace 验证）为叙述块之后必跟工具调用、最终答复块之后直接 done。openai 流式正文先缓冲（`contentBuf`），任一工具状态事件一到即整段并入 `reasoning_content`（pi 流里 text 增量可能落后于 toolcall_start 到达，终态兜底清尾），坚持到 done 的缓冲一次性作为 `delta.content` 发出。代价：`delta.content` 不再逐 delta 流式（定性前无法区分）；`flushNarration` 在工具状态聚合之外无条件先行执行，重分类不随压帧延迟。
+  2. **工具状态帧聚合**：active 帧压 300ms（`TOOL_ACTIVE_HOLD_MS`），终态先到即吞掉 active——亚秒级工具只见终态帧，长任务超时才补发 active；终态自身缺 tool/id（旧事件兼容）时从压帧条目回填。`finish()` 清空压帧定时器。
+- 验证（2026-10-15 本地实测，PI_MODEL=deepseek-flash）：
+  1. typecheck 零错误（`charts: checkedCharts` 一处 HEAD 既有的 `MetaChart[]` 与 `Record<string,unknown>[]` 不匹配，已顺手把 `WireDonePayload.charts` 改为 `MetaChart[]` 修复）。
+  2. openai 流式（ai-interview，同题对照线上旧版）：帧序 role 首帧 → reasoning×4132 → status×21 → content×1 → stop → usage($0.015) → [DONE]。content 仅 1 帧纯中文最终答复（英文过渡语全部落在 reasoning 通道，问题一修复生效）；status 帧同题旧版线上 36 帧 → 21 帧（12 工具仅 9 个 >300ms 长任务发 active，3 个亚秒工具只出终态帧；终态帧 0 匿名，全部带 tool/id，问题二修复生效）。
+  3. plaza `/api/chat` 回归（ai-interview）：帧序 started→status→session→…→text×69→usage→done，done 载荷键形不变，text 仍逐字直播（缓冲只作用于 openai 分支），13/13 工具终态帧带 tool/id（piRunner 字段修复的 plaza 侧增量收益）。
+  4. 假 skill 400：OpenAI 错误体 + 可用技能列表。
+  线上部署后真实抓包回归（§五）待跑。

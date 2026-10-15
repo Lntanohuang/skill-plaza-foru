@@ -27,7 +27,7 @@ export type TapFn = (dir: 'out' | 'in', msg: any) => void
 export type RunnerEvent =
   | { kind: 'text_delta'; delta: string }
   /* 思考原文增量（pi thinking_delta）：plaza 协议只消费节流计数（status），
-     OpenAI 兼容端点用它填 reasonContent；广场 /api/chat 忽略本事件 */
+     OpenAI 兼容端点用它填 reasoning_content；广场 /api/chat 忽略本事件 */
   | { kind: 'thinking_delta'; delta: string }
   | {
       kind: 'status'

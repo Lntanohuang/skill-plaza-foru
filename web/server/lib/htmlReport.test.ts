@@ -66,6 +66,44 @@ test('flags a failed city-distribution query when the report silently omits the 
   assert.match(result.errors.join('\n'), /热点图未评估/)
 })
 
+test('does not flag neutral-fill data notes as a failed cross-city query', () => {
+  /* Production false positive: the heatmap title mentions 热点图 and the SVG desc
+     explains that one city returned no records under the current filter, which the
+     old subject-anchored regex misread as a query failure. */
+  const html = `<!doctype html><html><body>
+    <figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">
+      <svg viewBox="0 0 10 10"><title>广东省内城市分布热点图</title><desc>云浮市未返回记录使用中性色</desc>
+        <path data-adcode="445300" fill="#94a3b8" d="M0 0h1v1H0z" />
+      </svg>
+      <figcaption>来源：岗位库；快照日期：2026-09-29；暂无结果的城市使用中性色。</figcaption>
+    </figure>
+  </body></html>`
+  const result = validateHtmlReport(html)
+  assert.equal(result.pass, true)
+  assert.equal(result.heatmap.status, 'present')
+  assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/)
+})
+
+test('flags real cross-city query failure phrasings without an unassessed status', () => {
+  const failures = [
+    '跨城市查询失败，请稍后重试。',
+    '城市分布数据获取超时。',
+    '热点图查询调用不可用。',
+    '无法生成热点图。',
+    'city-distribution 请求超时。',
+  ]
+  for (const sentence of failures) {
+    const html =
+      '<figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">' +
+      '<svg viewBox="0 0 10 10"><title>广东省内城市分布</title><desc>岗位库记录分布</desc></svg>' +
+      '<figcaption>来源：岗位库。</figcaption></figure>' +
+      `<p>${sentence}</p>`
+    const result = validateHtmlReport(html)
+    assert.equal(result.pass, false, sentence)
+    assert.match(result.errors.join('\n'), /跨城市查询失败时必须显示/, sentence)
+  }
+})
+
 test('allows a report without a China heatmap when no failure is claimed', () => {
   const result = validateHtmlReport('<h2>岗位需求分析</h2><p>目标地点：新加坡。</p>')
   assert.equal(result.pass, true)

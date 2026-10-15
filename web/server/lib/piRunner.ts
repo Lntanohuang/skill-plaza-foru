@@ -306,7 +306,7 @@ export class PiRunner extends AgentRunner {
       if (ev?.type === 'text_delta' && ev.delta)
         this.emit(sid, { kind: 'text_delta', delta: ev.delta })
       else if (ev?.type === 'thinking_delta' && ev.delta) {
-        /* 计数照发（plaza 前端进度条），原文同时外发（OpenAI 端点 reasonContent） */
+        /* 计数照发（plaza 前端进度条），原文同时外发（OpenAI 端点 reasoning_content） */
         this.emitThinking(sid, ev.delta.length)
         this.emit(sid, { kind: 'thinking_delta', delta: ev.delta })
       }
@@ -318,7 +318,9 @@ export class PiRunner extends AgentRunner {
       else if (ev?.type === 'toolcall_end')
         this.emit(sid, {
           kind: 'status', phase: 'tool', state: ev.isError ? 'failed' : 'completed',
-          tool: ev.toolName ?? ev.name, id: ev.toolCallId ?? ev.id,
+          /* id/name 嵌在 ev.toolCall 下（真实载荷顶层无这两个字段），顶层保留为回落 */
+          tool: (ev.toolCall?.name ?? ev.toolName ?? ev.name) || undefined,
+          id: (ev.toolCall?.id ?? ev.toolCallId ?? ev.id) || undefined,
         })
       else if (ev?.type === 'text_start') this.emit(sid, { kind: 'status', phase: 'text', state: 'active' })
       if (msg.usage) {
@@ -331,6 +333,10 @@ export class PiRunner extends AgentRunner {
             usage: sumUsage(this.turnUsage.get(sid), this.callUsage.get(sid)),
           })
       }
+    } else if (type === 'message_start' && msg.message?.role === 'assistant') {
+      /* 新 assistant 消息开始：openai wire 以此为叙述定性兜底（上一条消息里
+         工具调用之后的 text 不再有工具事件可触发重分类） */
+      this.emit(sid, { kind: 'status', phase: 'message', state: 'start' })
     } else if (type === 'message_end') {
       /* 每条 assistant 消息对应一次 LLM 调用：终值入账，累计成本轮总量；
          部分供应商（DeepSeek）message_end 不带细分，回落流式最后上报值 */

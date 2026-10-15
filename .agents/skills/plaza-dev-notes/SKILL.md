@@ -71,7 +71,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 033 | DeepResearch 任务拆分、状态归属与冲突控制 | 设计定稿，待实现 | [033-deep-research-decomposition-and-conflict-control.md](references/033-deep-research-decomposition-and-conflict-control.md) |
 | 034 | DeepResearch 架构相关论文检索与启发 | 研究输入已整理，架构结论待验证 | [034-research-papers-for-deep-research-architecture.md](references/034-research-papers-for-deep-research-architecture.md) |
 | 035 | Pi 子 Agent 模型选择与计费来源 | 已实现 Skill 规范，运行时接入待实现 | [035-pi-model-selection-and-billing-source.md](references/035-pi-model-selection-and-billing-source.md) |
-| 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（本地验证通过；公网 career-guidance 端到端待跑） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
+| 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（2026-10-15 流式升级为标准 chunk 格式 + 叙述重分类/工具帧聚合；线上抓包回归待跑） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
 | 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |
 | 032 | industry-education-report 在广场沙箱内首次端到端运行观察 | 已实现观察（parseReport 链路回归待验证） | [032-industry-education-report-sandbox-run.md](references/032-industry-education-report-sandbox-run.md) |
 | 033 | industry-education-report 沙箱内第二次端到端运行（更丰富产物与语义审核） | 已实现观察（parseReport 链路回归待验证） | [033-industry-education-report-second-sandbox-run.md](references/033-industry-education-report-second-sandbox-run.md) |
@@ -91,3 +91,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 044 | tech-forecast 纺织服装（广东）沙箱运行：快照复用、库内零样本边界、英文检索降级 | 已实现观察（2026-10-13 会话；parseReport/浏览器回归待跑） | [044-tech-forecast-textile-sandbox-run.md](references/044-tech-forecast-textile-sandbox-run.md) |
 | 045 | tech-forecast 纺织服装第二次沙箱运行：快照+实时复核一致性、检索相关性放行与 GBK 取数踩坑 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [045-tech-forecast-textile-second-run.md](references/045-tech-forecast-textile-second-run.md) |
 | 046 | tech-forecast 纺织服装第三次沙箱运行：`--query` 整批失准与 Bing 站内 `--fetch` 兜底 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [046-tech-forecast-textile-third-run-search-fallback.md](references/046-tech-forecast-textile-third-run-search-fallback.md) |
+| 047 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [047-career-guidance-guangzhou-java-intern-20261015.md](references/047-career-guidance-guangzhou-java-intern-20261015.md) |
