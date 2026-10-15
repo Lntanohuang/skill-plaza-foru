@@ -143,8 +143,19 @@ function workspaceDirFor(clientSessionId: string): string {
 
 const PRIVATE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
+/* 公网入口白名单（web/.env 的 PLAZA_ALLOWED_ORIGINS，逗号分隔完整 origin，
+   含端口；loadLocalEnv 在模块顶部已执行）。防跨站默认不放松：只放行
+   显式登记的公网地址，任意公网页面仍被拒。 */
+const EXTRA_ALLOWED_ORIGINS = new Set(
+  (process.env.PLAZA_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, '').toLowerCase())
+    .filter(Boolean),
+)
+
 function originAllowed(origin: string | undefined): boolean {
   if (!origin) return true // 同源或非浏览器
+  if (EXTRA_ALLOWED_ORIGINS.has(origin.trim().replace(/\/+$/, '').toLowerCase())) return true
   try {
     const { hostname } = new URL(origin)
     if (PRIVATE_HOSTS.has(hostname) || hostname.endsWith('.local')) return true
