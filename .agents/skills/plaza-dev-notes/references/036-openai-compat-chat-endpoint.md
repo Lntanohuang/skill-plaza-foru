@@ -1,6 +1,6 @@
 # 036 · OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口
 
-**状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；2026-10-15 流式升级为标准 chunk 格式并修两项流式缺陷，typecheck 与帧序对照通过，线上真实抓包回归待跑）
+**状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；2026-10-15 流式升级为标准 chunk 格式并修两项流式缺陷；同日二次修订：侧车扣留按 `SIDECAR_SKILLS` 门控 + 叙述定性上移消息边界，见下方 bullet 与 `docs/openai-stream-upgrade.md` §七。typecheck 与帧序对照通过，线上真实抓包回归待跑）
 
 ## 动机
 
@@ -34,14 +34,22 @@
 ### 流式升级为标准 chunk + 两项流式修复（2026-10-15，方案 `docs/openai-stream-upgrade.md`）
 
 - **标准 chunk 外壳**：`createChatWire` 内 `frame(delta, finishReason?)` 出 `choices[0].delta` 增量帧、`extFrame(extra)` 出 `choices:[]` 顶层扩展帧（status/reportUrl/usage），`id`/`created`/`model` 复用 `begin()` 就绪值；帧序 role 首帧 → reasoning 增量 → 工具 status 帧 → content（仅最终答案）→ stop 帧 → 报告帧 → usage 帧 → `[DONE]`。仅 openai 分支改动，plaza 分支逐字节不变。
-- **叙述缓冲与重分类**（修"过程叙述混进最终答案"）：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与最终答复同为 text 块无法事前区分；规律（线上 trace 验证）为叙述块之后必跟工具调用（status active）、最终答复块之后直接 done。openai 流式正文进 `contentBuf` 不立即外发：任一工具状态事件（含终态——pi 的 text 增量可能落后于 toolcall_start 到达，2026-10-15 端到端实测曾因此漏出英文尾巴，终态兜底修复）即 `flushNarration()` 整段并入 `reasoning_content`，坚持到 done 的缓冲一次性作 `delta.content` 发出；`error()`/`busy()` 丢弃缓冲。代价是 `delta.content` 不再逐 delta 流式。
-- **工具状态帧聚合**（修"状态帧刷屏/一直跳"）：active 帧压 `TOOL_ACTIVE_HOLD_MS`（300ms，`index.ts` 顶部）存入 `heldActive`，终态先到即 clearTimeout 吞掉 active——亚秒级工具只见终态帧；超时仍未终态才补发 active。终态缺 tool/id（旧事件兼容）从压帧条目回填；`finish()` 清空压帧定时器。`flushNarration` 在聚合之外无条件先行，重分类不随压帧延迟。
+- **叙述缓冲与重分类（2026-10-15 二次修订：定性上移消息边界）**（修"过程叙述混进最终答案"）：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与最终答复同为 text 块。openai 流式正文按消息缓冲（`msgBuf`）不外发；piRunner `message_end` 拿完整块列表一次定性——含 toolCall 块的消息其全部文本是过程叙述（`tool:'toolcall'`），不含则是最终答复（`tool:'final'`）；wire 在消息边界一次分流：叙述整段进 `reasoning_content`、最终答复整段进 `delta.content`。`message`/`start` 兜底上一条消息 end 丢失的残余缓冲（按叙述）、done 残余按最终答复、`error()`/`busy()` 丢弃。代价：content 与叙述按消息粒度突发、不再逐 delta 流式；thinking 增量不受影响。四轮事件级/消息级修复泄漏的实证：`recorde|d`、整段过渡语、`HTM|L`、`inline SVG charts.` 正好 18 字符——根因是事件映射层侧车扣留曾**无条件**滞后 18 字符（`SIDECAR_MARKER.length-1`）才放行，放行时机不定（同句拆在工具事件两侧、词中断裂），而 `SIDECAR_SKILLS` 是空集合，扣留层保护的是空气；现已按 `SIDECAR_SKILLS.has(skill)` 门控（空集合=全员即时透传），非侧车技能消息内全部 text 增量先于 message_end 到达（trace 实证），消息级定性确定性成立。
+- **工具状态帧聚合**（修"状态帧刷屏/一直跳"）：active 帧压 `TOOL_ACTIVE_HOLD_MS`（300ms，`index.ts` 顶部）存入 `heldActive`，终态先到即 clearTimeout 吞掉 active——亚秒级工具只见终态帧；超时仍未终态才补发 active。终态缺 tool/id（旧事件兼容）从压帧条目回填；`finish()` 清空压帧定时器。叙述定性已上移消息级，聚合只管状态帧。
 - **piRunner `toolcall_end` 字段路径修复**（修"completed 帧匿名"）：`web/server/lib/piRunner.ts:318-324` id/name 改从 `ev.toolCall` 下取（真实载荷顶层无这两个字段），顶层字段保留回落；`toolcall_start` 分支不动。plaza 协议同为纯增量字段受益。
 
 ## 成本与取舍
 
 - 无新增常驻开销；无会话复用时对方每次调用技能指令重注入约 +1~2K token（实测 ai-interview 首轮 prompt_tokens ≈ 14.7K）。
 - 被否决方案：① 直接改 `/api/chat` 输出格式——破坏广场前端，否决；② 复制一份完整 handler——trace/报告捕获/自愈全部双份维护，否决；③ reportUrl 走响应头（代理/封装易丢）或轮询接口（复杂+延迟），改为终帧扩展字段，标准客户端忽略未知字段不破坏。
+
+## 验证口径（2026-10-15 消息级定性 + 扣留门控落地后实测，PI_MODEL=deepseek-flash）
+
+- 静态：`tsc --noEmit`（index.ts + piRunner.ts）0 错误（含既有 2 处 TS2322 一并修复）；htmlReport 单测 12/12。
+- 无工具完整运行（classroom-assistant）：role 首帧 → thinking 实时进 reasoning_content → **最终答复单帧完整发出** → stop → usage($0.0047) → [DONE]。对照扣留层行为（答案尾 18 字符会被拆进 done 兜底第二帧），单帧完整即门控生效的直接证据。
+- plaza /api/chat 回归：帧型齐全（started/initializing/session/status/text×N/usage/done），`phase:'message'` 内部定性事件零外泄；text 增量因透传变为词级多帧（原扣留层合并转发），UsePage 按 delta 追加展示不受影响。
+- 重型技能三次运行（career-guidance 18.7min / ai-interview 10min / tech-forecast 14.7min，trace xrvi/8j9s/z2sy）均被环境因素中断——内网 MySQL 断连致 bash 查询黑洞挂死 18min（nc 验证 192.168.8.1:3908 不可达）、DeepSeek flash 晚间响应极慢/首条消息挂起至服务端超时——但**到中断点为止全部帧零泄漏**：content 通道全程为空，叙述 100% 进 reasoning_content（1813/390/1068 字），status 帧 22/3/14 且 0 匿名。
+- 待补：内网与 API 恢复后复跑 career-guidance 完整成功路径（reportUrl 帧 + [DONE]）回填。
 
 ## 验证口径（2026-10-15 流式升级后本地实测，PI_MODEL=deepseek-flash）
 

@@ -334,10 +334,20 @@ export class PiRunner extends AgentRunner {
           })
       }
     } else if (type === 'message_start' && msg.message?.role === 'assistant') {
-      /* 新 assistant 消息开始：openai wire 以此为叙述定性兜底（上一条消息里
-         工具调用之后的 text 不再有工具事件可触发重分类） */
+      /* 新 assistant 消息开始：wire 以此兜底上一条消息 end 丢失时的残余文本缓冲 */
       this.emit(sid, { kind: 'status', phase: 'message', state: 'start' })
     } else if (type === 'message_end') {
+      /* 消息级定性：assistant 消息含 toolCall 块则其全部 text 是过程叙述，否则是
+         最终答复。事件级定性四轮泄漏的教训：text 与工具事件的相对到达序不可靠，
+         只能在消息边界拿完整块列表一次定性（扣留层门控后增量先于 end 完整到达） */
+      if (msg.message?.role === 'assistant') {
+        const blocks = Array.isArray(msg.message.content) ? msg.message.content : []
+        const hasToolCall = blocks.some((b: any) => b?.type === 'toolCall')
+        this.emit(sid, {
+          kind: 'status', phase: 'message', state: 'end',
+          tool: hasToolCall ? 'toolcall' : 'final',
+        })
+      }
       /* 每条 assistant 消息对应一次 LLM 调用：终值入账，累计成本轮总量；
          部分供应商（DeepSeek）message_end 不带细分，回落流式最后上报值 */
       const u = normUsage(msg.message?.usage)

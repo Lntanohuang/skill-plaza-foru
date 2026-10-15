@@ -86,7 +86,8 @@
 
 - 代码落点：`web/server/index.ts` `createChatWire`（frame/extFrame 标准外壳、role 首帧、reasoning_content、status 扩展帧、stop/报告/usage 终态序）与 `web/server/lib/piRunner.ts` `toolcall_end` 字段路径修复（id/name 从 `ev.toolCall` 下取，顶层字段保留回落）。plaza 分支逐字节不变。
 - 实现时追加的两项流式修复（本方案定稿后按线上 trace 确定）：
-  1. **叙述缓冲与重分类**：Agent 工具调用前的过渡语与最终答复同为 text 块，无法事前区分；规律（trace 验证）为叙述块之后必跟工具调用、最终答复块之后直接 done。openai 流式正文先缓冲（`contentBuf`），任一工具状态事件一到即整段并入 `reasoning_content`（pi 流里 text 增量可能落后于 toolcall_start 到达，终态兜底清尾），坚持到 done 的缓冲一次性作为 `delta.content` 发出。代价：`delta.content` 不再逐 delta 流式（定性前无法区分）；`flushNarration` 在工具状态聚合之外无条件先行执行，重分类不随压帧延迟。
+  1. **叙述缓冲与重分类（2026-10-15 二次修订：定性上移消息边界）**：Agent 工具调用前的过渡语与最终答复同为 text 块，无法事前区分。openai 流式正文按消息缓冲（`msgBuf`）不外发；piRunner 在 `message_end` 拿完整块列表一次定性——含 toolCall 块的消息 `tool:'toolcall'`（其全部文本是过程叙述），不含则 `tool:'final'`（最终答复），wire 在消息边界一次分流：叙述整段进 `reasoning_content`、最终答复整段进 `delta.content`。`message`/`start` 兜底上一条消息 end 丢失时的残余缓冲（按叙述）、done 残余按最终答复发出、error/busy 丢弃。代价：content 与叙述按消息粒度突发、不再逐 delta 流式（OpenAI 协议无撤回帧，定性前发出的字无法收回）；thinking 增量不受影响仍实时外发。
+     根因与门控改法：此前四轮事件级/消息级修复均被打穿，根因是事件映射层的侧车扣留曾**无条件**滞后 18 字符（`SIDECAR_MARKER.length-1`）才放行——wire 收到的 text 滞后且放行时机不定（同句被拆在工具事件两侧、词中断裂），叙述定性在事件级与消息级都不可能正确；而 `SIDECAR_SKILLS` 是空集合，扣留层保护的是空气。现已按 `SIDECAR_SKILLS.has(skill)` 门控：非侧车技能 text 增量即时透传，消息内全部增量先于 message_end 到达（trace 实证），消息级定性的确定性成立。
   2. **工具状态帧聚合**：active 帧压 300ms（`TOOL_ACTIVE_HOLD_MS`），终态先到即吞掉 active——亚秒级工具只见终态帧，长任务超时才补发 active；终态自身缺 tool/id（旧事件兼容）时从压帧条目回填。`finish()` 清空压帧定时器。
 - 验证（2026-10-15 本地实测，PI_MODEL=deepseek-flash）：
   1. typecheck 零错误（`charts: checkedCharts` 一处 HEAD 既有的 `MetaChart[]` 与 `Record<string,unknown>[]` 不匹配，已顺手把 `WireDonePayload.charts` 改为 `MetaChart[]` 修复）。
@@ -94,3 +95,4 @@
   3. plaza `/api/chat` 回归（ai-interview）：帧序 started→status→session→…→text×69→usage→done，done 载荷键形不变，text 仍逐字直播（缓冲只作用于 openai 分支），13/13 工具终态帧带 tool/id（piRunner 字段修复的 plaza 侧增量收益）。
   4. 假 skill 400：OpenAI 错误体 + 可用技能列表。
   线上部署后真实抓包回归（§五）待跑。
+- 验证（2026-10-15 晚，消息级定性 + 侧车扣留按 SIDECAR_SKILLS 门控落地后）：typecheck 0 错误（含修复既有 2 处 TS2322）、单测 12/12；无工具完整运行最终答复**单帧完整**（对照扣留层行为答案尾 18 字符会被拆进 done 兜底第二帧，单帧完整即门控生效）；plaza 回归帧型齐全、`phase:'message'` 零外泄；重型技能三次运行（career-guidance/ai-interview/tech-forecast）均被环境中断（内网 MySQL 断连黑洞、DeepSeek flash 晚间挂起），但到中断点全部帧零泄漏——content 通道全程为空、叙述 100% 进 reasoning、status 0 匿名。career-guidance 完整成功路径待环境恢复复跑回填（详见手记 036 验证口径）。

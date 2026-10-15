@@ -577,7 +577,7 @@ interface WireDonePayload {
 /**
  * plaza：与既有 /api/chat 帧逐字节一致（回归安全）。
  * openai 流式：标准 chat.completion.chunk 外壳（choices[0].delta 增量）；
- *   正文按叙述缓冲定性后发出（见 createChatWire 内注释），工具活动与报告/用量
+ *   正文按消息缓冲、消息边界定性后发出（见 createChatWire 内注释），工具活动与报告/用量
  *   为 choices:[] + 顶层扩展帧；终态 stop/报告/usage 帧后 [DONE]。
  * openai JSON：不写 SSE 头，终态一次性回 chat.completion（reportUrl 为顶层扩展字段）。
  */
@@ -606,15 +606,16 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
   const extFrame = (extra: Record<string, unknown>) =>
     sse({ id, object: 'chat.completion.chunk', created, model, choices: [], ...extra })
 
-  /* 叙述缓冲：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与最终
-     答复同为 text 块，wire 无法事前区分；规律（trace 验证）是叙述块之后必跟
-     工具调用、最终答复块之后直接 done。正文先缓冲不外发，工具活动一到即定性为
-     过程叙述并入思考通道（flushNarration），坚持到 done 的才是最终答案。 */
-  let contentBuf = ''
-  const flushNarration = () => {
-    if (!contentBuf) return
-    frame({ reasoning_content: contentBuf })
-    contentBuf = ''
+  /* 消息级文本定性：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与
+     最终答复同为 text 块。正文按消息缓冲不外发，消息边界（piRunner message_end
+     定性）一次分流：含 toolCall 块的消息其全部文本是过程叙述并入思考通道，不含
+     的是最终答复正文。前提是侧车扣留层已按技能门控——非侧车技能 text 增量即时
+     透传，消息内全部增量先于 message_end 到达（trace 实证），定性确定性成立。 */
+  let msgBuf = ''
+  const flushMessageText = (narration: boolean) => {
+    if (!msgBuf) return
+    frame(narration ? { reasoning_content: msgBuf } : { content: msgBuf })
+    msgBuf = ''
   }
 
   /* 工具状态聚合：active 帧压 TOOL_ACTIVE_HOLD_MS，终态先到即吞掉（亚秒级工具
@@ -697,7 +698,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
-        contentBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
+        msgBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -709,25 +710,24 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
     },
     textDelta(delta: string) {
       if (protocol === 'plaza') sse({ type: 'text', delta })
-      else if (stream) contentBuf += delta /* 定性前缓冲，不立即外发 */
+      else if (stream) msgBuf += delta /* 消息级定性前缓冲，不立即外发 */
     },
     status(ev: { phase: string; state?: string; chars?: number; tool?: string; id?: string }) {
       if (protocol === 'plaza') {
-        sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+        /* message 边界是 openai wire 内部定性信号，不进广场协议 */
+        if (ev.phase !== 'message')
+          sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
         return
       }
       if (!stream) return
       if (ev.phase === 'message') {
-        /* 新 assistant 消息开始：上一条消息里未定性的缓冲全部是叙述
-           （工具调用之后的 text 后面不会再有工具事件，只能靠消息边界兜底） */
-        flushNarration()
+        /* start：上一条消息 end 丢失时的兜底，残余缓冲按叙述处理；
+           end：piRunner 定性结果在 tool 字段，非 'final' 一律按叙述（宁漏勿泄） */
+        if (ev.state === 'start') flushMessageText(true)
+        else if (ev.state === 'end') flushMessageText(ev.tool !== 'final')
         return
       }
       if (ev.phase !== 'tool') return
-      /* 任一工具状态事件（含终态）都是叙述定性信号：pi 流里 text 增量可能落后于
-         toolcall_start 到达，终态兜底清尾，避免迟到增量漏进最终答案；
-         重分类先于 toolStatus 执行，不随聚合压帧延迟 */
-      flushNarration()
       toolStatus(ev)
     },
     usage(usage: UsageSummary | null | undefined, content?: string) {
@@ -751,11 +751,8 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
       const usage = openAiUsage(p.usage)
       if (stream) {
-        /* 缓冲未被工具活动定性 = 最终答复：done 时刻一次性发出 */
-        if (contentBuf) {
-          frame({ content: contentBuf })
-          contentBuf = ''
-        }
+        /* 残余缓冲未等到消息边界（异常收尾）：按最终答复发出 */
+        flushMessageText(false)
         frame({}, 'stop')
         if (p.reportUrl) extFrame({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
         if (usage) extFrame({ usage })
@@ -776,7 +773,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
-        contentBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
+        msgBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -901,8 +898,9 @@ async function runChatTurn(res: any, params: TurnParams) {
   }
   let finalText = ''
   let runFinalized = false
-  /* 侧车流式隐藏：围栏标记可能跨 delta 到达，未确认出现前扣留尾部
-     （长度 = 标记-1）不转发；确认出现后从标记处截断，用户全程看不到 */
+  /* 侧车流式隐藏（仅 maskSidecar 技能累积，见 onEvent）：围栏标记可能跨 delta
+     到达，未确认出现前扣留尾部（长度 = 标记-1）不转发；确认出现后从标记处截断，
+     用户全程看不到 */
   let fullText = ''
   let forwarded = 0
   let hiddenFrom = -1
@@ -1151,26 +1149,35 @@ async function runChatTurn(res: any, params: TurnParams) {
       return
     }
 
+    /* 侧车扣留按技能门控：只有真正会输出 report-meta 围栏的技能需要直播遮蔽
+       （SIDECAR_SKILLS 当前为空集合 = 全员即时透传） */
+    const maskSidecar = SIDECAR_SKILLS.has(skill)
     // 归一事件 → SSE（引擎差异已在各 Runner 内消化，这里统一映射）
     const onEvent = (ev: RunnerEvent) => {
       if (ev.kind === 'text_delta') {
-        /* 侧车隐藏：累积全文检测围栏标记；未出现前扣留标记长度-1 的尾部
-           （标记可能跨 delta 到达），出现后从标记处截断不再转发 */
-        fullText += ev.delta
-        if (hiddenFrom < 0) {
-          const at = fullText.indexOf(SIDECAR_MARKER)
-          if (at >= 0) {
-            hiddenFrom = at
-            const visible = fullText.slice(0, at)
-            if (visible.length > forwarded) {
-              wire.textDelta(visible.slice(forwarded))
-              forwarded = visible.length
-            }
-          } else {
-            const safeEnd = Math.max(forwarded, fullText.length - (SIDECAR_MARKER.length - 1))
-            if (safeEnd > forwarded) {
-              wire.textDelta(fullText.slice(forwarded, safeEnd))
-              forwarded = safeEnd
+        if (!maskSidecar) {
+          /* 非侧车技能直接透传：扣留层滞后 18 字符（SIDECAR_MARKER.length-1）且
+             放行时机不定（可跨消息、词中断裂），曾致 wire 叙述定性跨消息错分 */
+          wire.textDelta(ev.delta)
+        } else {
+          /* 侧车隐藏：累积全文检测围栏标记；未出现前扣留标记长度-1 的尾部
+             （标记可能跨 delta 到达），出现后从标记处截断不再转发 */
+          fullText += ev.delta
+          if (hiddenFrom < 0) {
+            const at = fullText.indexOf(SIDECAR_MARKER)
+            if (at >= 0) {
+              hiddenFrom = at
+              const visible = fullText.slice(0, at)
+              if (visible.length > forwarded) {
+                wire.textDelta(visible.slice(forwarded))
+                forwarded = visible.length
+              }
+            } else {
+              const safeEnd = Math.max(forwarded, fullText.length - (SIDECAR_MARKER.length - 1))
+              if (safeEnd > forwarded) {
+                wire.textDelta(fullText.slice(forwarded, safeEnd))
+                forwarded = safeEnd
+              }
             }
           }
         }
@@ -1192,8 +1199,9 @@ async function runChatTurn(res: any, params: TurnParams) {
         /* 剥离侧车：done 只发干净正文；全文见 traces/<runId>.events.jsonl */
         sidecar = extractSidecar(ev.response)
         finalText = sidecar.cleanText
-        if (hiddenFrom < 0 && fullText.length > forwarded) {
-          /* 未出现围栏：补发被扣留的尾部（ExperiencePage 等按 delta 聚合展示） */
+        if (maskSidecar && hiddenFrom < 0 && fullText.length > forwarded) {
+          /* 未出现围栏：补发被扣留的尾部（ExperiencePage 等按 delta 聚合展示）；
+             非侧车技能未扣留，直接透传过，再补发会双重转发 */
           wire.textDelta(fullText.slice(forwarded))
         }
         wire.usage(ev.usage)

@@ -31,8 +31,11 @@ export type RunnerEvent =
   | { kind: 'thinking_delta'; delta: string }
   | {
       kind: 'status'
-      phase: 'thinking' | 'tool' | 'text'
-      state?: 'active' | 'completed' | 'failed'
+      /* message 相位是 assistant 消息边界（piRunner 在 message_start/end 发出），
+         OpenAI wire 以消息级定性分流 text：tool 字段携带定性结果
+         （'toolcall'=过程叙述 | 'final'=最终答复） */
+      phase: 'thinking' | 'tool' | 'text' | 'message'
+      state?: 'active' | 'completed' | 'failed' | 'start' | 'end'
       chars?: number
       tool?: string
       id?: string
