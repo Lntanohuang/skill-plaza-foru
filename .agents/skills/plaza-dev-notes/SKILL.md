@@ -72,6 +72,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 034 | DeepResearch 架构相关论文检索与启发 | 研究输入已整理，架构结论待验证 | [034-research-papers-for-deep-research-architecture.md](references/034-research-papers-for-deep-research-architecture.md) |
 | 035 | Pi 子 Agent 模型选择与计费来源 | 已实现 Skill 规范，运行时接入待实现 | [035-pi-model-selection-and-billing-source.md](references/035-pi-model-selection-and-billing-source.md) |
 | 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（2026-10-14 流式升级为标准 chunk 并复验通过；公网浏览器打开报告待用户执行） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
+| 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（2026-10-15 流式升级为标准 chunk 格式 + 叙述重分类/工具帧聚合；线上抓包回归待跑） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
 | 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |
 | 032 | industry-education-report 在广场沙箱内首次端到端运行观察 | 已实现观察（parseReport 链路回归待验证） | [032-industry-education-report-sandbox-run.md](references/032-industry-education-report-sandbox-run.md) |
 | 033 | industry-education-report 沙箱内第二次端到端运行（更丰富产物与语义审核） | 已实现观察（parseReport 链路回归待验证） | [033-industry-education-report-second-sandbox-run.md](references/033-industry-education-report-second-sandbox-run.md) |
@@ -110,3 +111,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 062 | 就业指导广州 Java 后端实习并行会话复跑（2026-10-15 快照，全 bar-chart 变体 + failureHint 预检） | 已实现观察（2026-10-15 会话；服务端校验通过，浏览器回归待跑） | [062-career-guidance-guangzhou-java-intern-parallel-run.md](references/062-career-guidance-guangzhou-java-intern-parallel-run.md) |
 | 063 | 就业指导「Agent 开发工程师」弱输入运行（仅岗位名、无城市、无简历；深圳参考市场 + 广东热点图 + 相邻 AI 口径对照） | 已实现观察（2026-10-15 会话；服务端校验通过，浏览器回归待跑） | [063-career-guidance-agent-role-shenzhen-run.md](references/063-career-guidance-agent-role-shenzhen-run.md) |
 | 064 | 就业指导第四次广州 Java 后端实习沙箱运行（带简历附件 + 六图 + 服务端校验通过） | 已实现观察（2026-10-15 会话；服务端校验通过，浏览器回归待跑） | [064-career-guidance-guangzhou-java-intern-resume-run.md](references/064-career-guidance-guangzhou-java-intern-resume-run.md) |
+| 065 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [065-career-guidance-guangzhou-java-intern-20261015.md](references/065-career-guidance-guangzhou-java-intern-20261015.md) |

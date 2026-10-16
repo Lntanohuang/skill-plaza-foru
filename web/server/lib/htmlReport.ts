@@ -223,7 +223,11 @@ export function validateHtmlReport(html: string, options?: HtmlReportValidationO
   const plain = textContent(html)
   const reason = failureReason(html)
   const hasUnassessed = /热点图\s*(?:[:：]\s*)?未评估/i.test(plain)
-  const failureHint = /(?:跨城市查询|city-distribution|城市分布(?:查询|统计|结果)|热点图).{0,100}(?:失败|超时|不可用|未返回|无结果|未获得|未获取|无法)/i.test(plain)
+  /* 「从报告措辞猜查询失败」的 failureHint 检查已于 2026-10-16 移除：它把合法的
+     “XX市未返回记录”数据说明（j8z9/uaw0）与“无法统计技能占比”边界声明（58na
+     风格）误判成查询失败，措辞锚定收严也堵不完（模型图注用词随机）。“查询失败
+     必须标热点图未评估”的防线改走权威信号路线：career-market-query 写机器可读
+     结果文件、校验器读文件判定，方案记录在手记 023。 */
 
   let status: HeatmapReportStatus = 'omitted'
   if (heatmapChecks) {
@@ -235,8 +239,6 @@ export function validateHtmlReport(html: string, options?: HtmlReportValidationO
     const hasAssessedHeatmap = heatmapBlocks.some((block) => block.status !== 'unassessed')
     if (hasAssessedHeatmap && hasUnassessed)
       pushError('报告同时包含热点图和“热点图未评估”，状态互相矛盾')
-    if (failureHint && !hasUnassessed)
-      pushError('跨城市查询失败时必须显示“热点图未评估”及失败原因')
     if (status === 'unassessed' && !reason)
       pushError('“热点图未评估”缺少失败原因')
   }

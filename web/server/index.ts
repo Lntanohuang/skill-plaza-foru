@@ -43,6 +43,7 @@ import {
   validateMeta,
   SIDECAR_MARKER,
   EMPTY_META_COUNTS,
+  type MetaChart,
   type SidecarExtract,
 } from './lib/reportMeta.ts'
 import { PiRunner, resolvePiCli, piModelRef } from './lib/piRunner.ts'
@@ -58,6 +59,8 @@ const RUN_TIMEOUT_MS = 10 * 60_000
 /** 已安装真实技能的运行要读资料、做检索、跑脚本，放宽到 20 分钟（可用 RUN_TIMEOUT_MS 环境变量覆盖） */
 const RUN_TIMEOUT_MS_INSTALLED = Number(process.env.RUN_TIMEOUT_MS || 20 * 60_000)
 const HEARTBEAT_MS = 15_000
+/** openai 流式工具 active 帧压帧时长：亚秒级工具只发终态帧，长任务超时才发 active */
+const TOOL_ACTIVE_HOLD_MS = 300
 const MAX_BODY_BYTES = 512_000
 /* 附件上传：文件落会话沙箱 workspace/<sessionId>/uploads/；
    base64 膨胀 4/3，6MB 文件 ≈ 8MB body，上限放宽到 10MB */
@@ -423,8 +426,9 @@ async function handleUpload(req: any, res: any) {
 /* ------------------------------------------------------------
    两套入口协议共用一套编排核心（runChatTurn）：
    - /api/chat（plaza）：广场前端专用，type 事件流，协议冻结不再演进；
-   - /v1/chat/completions（openai）：外部项目唯一接入入口，输出
-     content/reasonContent 增量与 [DONE]，后续需求以可选字段在此扩展。
+   - /v1/chat/completions（openai）：外部项目唯一接入入口，流式输出
+     标准 chat.completion.chunk（delta.content/reasoning_content）与 [DONE]，
+     后续需求以可选字段在此扩展。
    两者的差异全部收敛在 createChatWire 适配器里（相邻放置，
    新事件映射改动时两份都在眼前）。
    ------------------------------------------------------------ */
@@ -459,7 +463,7 @@ function openAiUsage(u?: UsageSummary | null) {
   return v
 }
 
-/** POST /v1/chat/completions：model=技能 id；流式输出 reasonContent/content/[DONE]。 */
+/** POST /v1/chat/completions：model=技能 id；流式输出标准 chunk（reasoning_content/content）与 [DONE]。 */
 async function handleOpenAiChat(req: any, res: any) {
   let body: any
   try {
@@ -578,7 +582,7 @@ async function handleChat(req: any, res: any) {
 interface WireDonePayload {
   content: string
   resultType?: string
-  charts?: Array<Record<string, unknown>>
+  charts?: MetaChart[]
   runId: string
   reportUrl?: string
   usage?: UsageSummary | null
@@ -588,10 +592,9 @@ interface WireDonePayload {
 
 /**
  * plaza：与既有 /api/chat 帧逐字节一致（回归安全）。
- * openai 流式：标准 chat.completion.chunk 外壳，正文/思考在 choices[0].delta
- *   （reasoning_content 为思考增量），工具活动走 choices:[] + 顶层 status 扩展帧，
- *   报告/usage 为 choices:[] 终帧扩展；帧规范见 docs/agent-api.md 第 0 节与
- *   docs/openai-stream-upgrade.md。
+ * openai 流式：标准 chat.completion.chunk 外壳（choices[0].delta 增量）；
+ *   正文按消息缓冲、消息边界定性后发出（见 createChatWire 内注释），工具活动与报告/用量
+ *   为 choices:[] + 顶层扩展帧；终态 stop/报告/usage 帧后 [DONE]。
  * openai JSON：不写 SSE 头，终态一次性回 chat.completion（reportUrl 为顶层扩展字段）。
  */
 function createChatWire(protocol: ChatProtocol, stream: boolean) {
@@ -603,7 +606,12 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
 
   const sse = (obj: any) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
   const sseDone = () => res.write('data: [DONE]\n\n')
-  const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) =>
+  const isSse = protocol === 'plaza' || stream
+
+  /* openai 流式帧辅助（plaza 分支不走）：frame 出标准 choices[0].delta 增量帧
+     （finishReason 仅收尾帧非空）；extFrame 出 choices:[] 的顶层扩展帧
+     （status/reportUrl/usage），标准客户端按未知字段忽略 */
+  const frame = (delta: Record<string, unknown>, finishReason: string | null = null) =>
     sse({
       id,
       object: 'chat.completion.chunk',
@@ -611,10 +619,53 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       model,
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })
-  /* 扩展帧（工具 status / 报告 / usage）：choices 置空，标准客户端自然跳过 */
-  const extChunk = (extra: Record<string, unknown>) =>
+  const extFrame = (extra: Record<string, unknown>) =>
     sse({ id, object: 'chat.completion.chunk', created, model, choices: [], ...extra })
-  const isSse = protocol === 'plaza' || stream
+
+  /* 消息级文本定性：Agent 一次运行产出多条 assistant 消息，工具调用前的过渡语与
+     最终答复同为 text 块。正文按消息缓冲不外发，消息边界（piRunner message_end
+     定性）一次分流：含 toolCall 块的消息其全部文本是过程叙述并入思考通道，不含
+     的是最终答复正文。前提是侧车扣留层已按技能门控——非侧车技能 text 增量即时
+     透传，消息内全部增量先于 message_end 到达（trace 实证），定性确定性成立。 */
+  let msgBuf = ''
+  const flushMessageText = (narration: boolean) => {
+    if (!msgBuf) return
+    frame(narration ? { reasoning_content: msgBuf } : { content: msgBuf })
+    msgBuf = ''
+  }
+
+  /* 工具状态聚合：active 帧压 TOOL_ACTIVE_HOLD_MS，终态先到即吞掉（亚秒级工具
+     只见终态帧），超时仍未终态的长任务才补发 active，避免状态帧刷屏 */
+  const heldActive = new Map<string, { ev: any; timer: ReturnType<typeof setTimeout> }>()
+  const emitToolStatus = (ev: { phase: string; state?: string; tool?: string; id?: string }) =>
+    extFrame({ status: { phase: ev.phase, state: ev.state, tool: ev.tool, id: ev.id } })
+  const toolStatus = (ev: { phase: string; state?: string; tool?: string; id?: string }) => {
+    if (ev.state === 'active') {
+      const key = ev.id
+      if (!key) {
+        emitToolStatus(ev)
+        return
+      }
+      const timer = setTimeout(() => {
+        heldActive.delete(key)
+        emitToolStatus(ev)
+      }, TOOL_ACTIVE_HOLD_MS)
+      heldActive.set(key, { ev, timer })
+      return
+    }
+    /* 终态：吞掉压住的 active 帧；终态自身缺 tool/id（旧事件兼容）时从压帧条目回填 */
+    const held = ev.id ? heldActive.get(ev.id) : undefined
+    if (held && ev.id) {
+      clearTimeout(held.timer)
+      heldActive.delete(ev.id)
+    }
+    emitToolStatus({
+      phase: ev.phase,
+      state: ev.state,
+      tool: ev.tool ?? held?.ev.tool,
+      id: ev.id ?? held?.ev.id,
+    })
+  }
 
   return {
     begin(r: any) {
@@ -642,12 +693,15 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
     },
     finish() {
       this.stopHeartbeat()
+      /* 清掉未决的工具 active 压帧定时器，避免流结束后还往连接写帧 */
+      for (const { timer } of heldActive.values()) clearTimeout(timer)
+      heldActive.clear()
       if (res && !res.writableEnded) res.end()
     },
     started(runId: string, startedAt: number) {
       id = `chatcmpl-${runId}`
       if (protocol === 'plaza') sse({ type: 'started', runId, startedAt })
-      else if (stream) chunk({ role: 'assistant', content: '' })
+      else if (stream) frame({ role: 'assistant', content: '' }) /* role 首帧：id 就绪即发 */
     },
     initializing() {
       if (protocol === 'plaza') sse({ type: 'status', phase: 'initializing', message: '正在启动运行环境…' })
@@ -660,6 +714,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
+        msgBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -667,19 +722,29 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
     },
     thinkingDelta(delta: string) {
-      if (protocol === 'openai' && stream) chunk({ reasoning_content: delta })
+      if (protocol === 'openai' && stream) frame({ reasoning_content: delta })
     },
     textDelta(delta: string) {
       if (protocol === 'plaza') sse({ type: 'text', delta })
-      else if (stream) chunk({ content: delta })
+      else if (stream) msgBuf += delta /* 消息级定性前缓冲，不立即外发 */
     },
     status(ev: { phase: string; state?: string; chars?: number; tool?: string; id?: string }) {
       if (protocol === 'plaza') {
-        sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
-      } else if (stream && ev.phase === 'tool') {
-        /* 工具活动时间线（仅工具名与状态，不含入参/返回内容）；thinking/text 节流状态不转发 */
-        extChunk({ status: { phase: ev.phase, state: ev.state, tool: ev.tool, id: ev.id } })
+        /* message 边界是 openai wire 内部定性信号，不进广场协议 */
+        if (ev.phase !== 'message')
+          sse({ type: 'status', phase: ev.phase, state: ev.state, chars: ev.chars, tool: ev.tool, id: ev.id })
+        return
       }
+      if (!stream) return
+      if (ev.phase === 'message') {
+        /* start：上一条消息 end 丢失时的兜底，残余缓冲按叙述处理；
+           end：piRunner 定性结果在 tool 字段，非 'final' 一律按叙述（宁漏勿泄） */
+        if (ev.state === 'start') flushMessageText(true)
+        else if (ev.state === 'end') flushMessageText(ev.tool !== 'final')
+        return
+      }
+      if (ev.phase !== 'tool') return
+      toolStatus(ev)
     },
     usage(usage: UsageSummary | null | undefined, content?: string) {
       if (protocol === 'plaza') sse({ type: 'usage', usage, content })
@@ -702,9 +767,11 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       }
       const usage = openAiUsage(p.usage)
       if (stream) {
-        chunk({}, 'stop')
-        if (p.reportUrl) extChunk({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
-        if (usage) extChunk({ usage })
+        /* 残余缓冲未等到消息边界（异常收尾）：按最终答复发出 */
+        flushMessageText(false)
+        frame({}, 'stop')
+        if (p.reportUrl) extFrame({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
+        if (usage) extFrame({ usage })
         sseDone()
       } else {
         sendJson(res, 200, {
@@ -722,6 +789,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
       if (protocol === 'plaza') {
         sse({ type: 'error', message })
       } else if (stream) {
+        msgBuf = '' /* 错误帧已携带信息，丢弃缓冲 */
         sse({ error: { message, type: 'agent_error' } })
         sseDone()
       } else {
@@ -846,8 +914,9 @@ async function runChatTurn(res: any, params: TurnParams) {
   }
   let finalText = ''
   let runFinalized = false
-  /* 侧车流式隐藏：围栏标记可能跨 delta 到达，未确认出现前扣留尾部
-     （长度 = 标记-1）不转发；确认出现后从标记处截断，用户全程看不到 */
+  /* 侧车流式隐藏（仅 maskSidecar 技能累积，见 onEvent）：围栏标记可能跨 delta
+     到达，未确认出现前扣留尾部（长度 = 标记-1）不转发；确认出现后从标记处截断，
+     用户全程看不到 */
   let fullText = ''
   let forwarded = 0
   let hiddenFrom = -1
@@ -1096,31 +1165,40 @@ async function runChatTurn(res: any, params: TurnParams) {
       return
     }
 
+    /* 侧车扣留按技能门控：只有真正会输出 report-meta 围栏的技能需要直播遮蔽
+       （SIDECAR_SKILLS 当前为空集合 = 全员即时透传） */
+    const maskSidecar = SIDECAR_SKILLS.has(skill)
     // 归一事件 → SSE（引擎差异已在各 Runner 内消化，这里统一映射）
     const onEvent = (ev: RunnerEvent) => {
       if (ev.kind === 'text_delta') {
-        /* 侧车隐藏：累积全文检测围栏标记；未出现前扣留标记长度-1 的尾部
-           （标记可能跨 delta 到达），出现后从标记处截断不再转发 */
-        fullText += ev.delta
-        if (hiddenFrom < 0) {
-          const at = fullText.indexOf(SIDECAR_MARKER)
-          if (at >= 0) {
-            hiddenFrom = at
-            const visible = fullText.slice(0, at)
-            if (visible.length > forwarded) {
-              wire.textDelta(visible.slice(forwarded))
-              forwarded = visible.length
-            }
-          } else {
-            const safeEnd = Math.max(forwarded, fullText.length - (SIDECAR_MARKER.length - 1))
-            if (safeEnd > forwarded) {
-              wire.textDelta(fullText.slice(forwarded, safeEnd))
-              forwarded = safeEnd
+        if (!maskSidecar) {
+          /* 非侧车技能直接透传：扣留层滞后 18 字符（SIDECAR_MARKER.length-1）且
+             放行时机不定（可跨消息、词中断裂），曾致 wire 叙述定性跨消息错分 */
+          wire.textDelta(ev.delta)
+        } else {
+          /* 侧车隐藏：累积全文检测围栏标记；未出现前扣留标记长度-1 的尾部
+             （标记可能跨 delta 到达），出现后从标记处截断不再转发 */
+          fullText += ev.delta
+          if (hiddenFrom < 0) {
+            const at = fullText.indexOf(SIDECAR_MARKER)
+            if (at >= 0) {
+              hiddenFrom = at
+              const visible = fullText.slice(0, at)
+              if (visible.length > forwarded) {
+                wire.textDelta(visible.slice(forwarded))
+                forwarded = visible.length
+              }
+            } else {
+              const safeEnd = Math.max(forwarded, fullText.length - (SIDECAR_MARKER.length - 1))
+              if (safeEnd > forwarded) {
+                wire.textDelta(fullText.slice(forwarded, safeEnd))
+                forwarded = safeEnd
+              }
             }
           }
         }
       } else if (ev.kind === 'thinking_delta') {
-        /* 思考原文增量：仅 openai 流式输出（reasonContent）；plaza 仍用节流 status */
+        /* 思考原文增量：仅 openai 流式输出（reasoning_content）；plaza 仍用节流 status */
         wire.thinkingDelta(ev.delta)
       } else if (ev.kind === 'status') {
         /* 思考/工具阶段的过程信号：正文 delta 之前前端也有"正在推进"的体感 */
@@ -1137,8 +1215,9 @@ async function runChatTurn(res: any, params: TurnParams) {
         /* 剥离侧车：done 只发干净正文；全文见 traces/<runId>.events.jsonl */
         sidecar = extractSidecar(ev.response)
         finalText = sidecar.cleanText
-        if (hiddenFrom < 0 && fullText.length > forwarded) {
-          /* 未出现围栏：补发被扣留的尾部（ExperiencePage 等按 delta 聚合展示） */
+        if (maskSidecar && hiddenFrom < 0 && fullText.length > forwarded) {
+          /* 未出现围栏：补发被扣留的尾部（ExperiencePage 等按 delta 聚合展示）；
+             非侧车技能未扣留，直接透传过，再补发会双重转发 */
           wire.textDelta(fullText.slice(forwarded))
         }
         wire.usage(ev.usage)

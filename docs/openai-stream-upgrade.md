@@ -1,6 +1,6 @@
 # `/v1/chat/completions` 流式输出升级为 OpenAI 标准 chunk 格式 —— 后端修改摘要
 
-> 状态：**已实现并复验通过**（2026-10-14，落地 commit 见 git log；帧规范以 `docs/agent-api.md` 第 0 节为准）。验证结果见第五节。
+> 状态：**已实现**（2026-10-15 代码落地，typecheck 通过、帧序对照通过；线上真实抓包回归待跑）。实现时在同分支追加了两项流式修复（见 §七 回填）。
 > 背景对接方：外部项目（Java 客户端）已按标准 OpenAI 流式结构定义 `OpenAIChatCompletionChunk`（`choices[]`/`object`/`created`/`model`/`usage`/`id`），当前后端流式帧为简化格式，正文在顶层 `content`，无 `choices` 数组，**对接方无法取到任何正文**。非流式 JSON 已是标准 `chat.completion`，无需改动。
 
 ## 一、改动目标
@@ -79,3 +79,18 @@
 
 - 单文件约 40 行 diff + 两处文档，无新增依赖、无常驻开销。
 - 被否决：① 维持简化帧让对接方适配——丢失"标准 OpenAI 兼容"的端点定位，后续每个接入方重复适配；② 工具调用做参数级 `tool_calls` 流——需扩 RunnerEvent 协议转发 pi 工具入参/结果，改动面大，且报告类技能的外部展示只需进度级别；③ 工具时间线走 SSE 注释行——标准客户端不可解析，时间线无从展示。
+
+## 七、实现回填（2026-10-15）
+
+- 代码落点：`web/server/index.ts` `createChatWire`（frame/extFrame 标准外壳、role 首帧、reasoning_content、status 扩展帧、stop/报告/usage 终态序）与 `web/server/lib/piRunner.ts` `toolcall_end` 字段路径修复（id/name 从 `ev.toolCall` 下取，顶层字段保留回落）。plaza 分支逐字节不变。
+- 实现时追加的两项流式修复（本方案定稿后按线上 trace 确定）：
+  1. **叙述缓冲与重分类（2026-10-15 二次修订：定性上移消息边界）**：Agent 工具调用前的过渡语与最终答复同为 text 块，无法事前区分。openai 流式正文按消息缓冲（`msgBuf`）不外发；piRunner 在 `message_end` 拿完整块列表一次定性——含 toolCall 块的消息 `tool:'toolcall'`（其全部文本是过程叙述），不含则 `tool:'final'`（最终答复），wire 在消息边界一次分流：叙述整段进 `reasoning_content`、最终答复整段进 `delta.content`。`message`/`start` 兜底上一条消息 end 丢失时的残余缓冲（按叙述）、done 残余按最终答复发出、error/busy 丢弃。代价：content 与叙述按消息粒度突发、不再逐 delta 流式（OpenAI 协议无撤回帧，定性前发出的字无法收回）；thinking 增量不受影响仍实时外发。
+     根因与门控改法：此前四轮事件级/消息级修复均被打穿，根因是事件映射层的侧车扣留曾**无条件**滞后 18 字符（`SIDECAR_MARKER.length-1`）才放行——wire 收到的 text 滞后且放行时机不定（同句被拆在工具事件两侧、词中断裂），叙述定性在事件级与消息级都不可能正确；而 `SIDECAR_SKILLS` 是空集合，扣留层保护的是空气。现已按 `SIDECAR_SKILLS.has(skill)` 门控：非侧车技能 text 增量即时透传，消息内全部增量先于 message_end 到达（trace 实证），消息级定性的确定性成立。
+  2. **工具状态帧聚合**：active 帧压 300ms（`TOOL_ACTIVE_HOLD_MS`），终态先到即吞掉 active——亚秒级工具只见终态帧，长任务超时才补发 active；终态自身缺 tool/id（旧事件兼容）时从压帧条目回填。`finish()` 清空压帧定时器。
+- 验证（2026-10-15 本地实测，PI_MODEL=deepseek-flash）：
+  1. typecheck 零错误（`charts: checkedCharts` 一处 HEAD 既有的 `MetaChart[]` 与 `Record<string,unknown>[]` 不匹配，已顺手把 `WireDonePayload.charts` 改为 `MetaChart[]` 修复）。
+  2. openai 流式（ai-interview，同题对照线上旧版）：帧序 role 首帧 → reasoning×4132 → status×21 → content×1 → stop → usage($0.015) → [DONE]。content 仅 1 帧纯中文最终答复（英文过渡语全部落在 reasoning 通道，问题一修复生效）；status 帧同题旧版线上 36 帧 → 21 帧（12 工具仅 9 个 >300ms 长任务发 active，3 个亚秒工具只出终态帧；终态帧 0 匿名，全部带 tool/id，问题二修复生效）。
+  3. plaza `/api/chat` 回归（ai-interview）：帧序 started→status→session→…→text×69→usage→done，done 载荷键形不变，text 仍逐字直播（缓冲只作用于 openai 分支），13/13 工具终态帧带 tool/id（piRunner 字段修复的 plaza 侧增量收益）。
+  4. 假 skill 400：OpenAI 错误体 + 可用技能列表。
+  线上部署后真实抓包回归（§五）待跑。
+- 验证（2026-10-15 晚，消息级定性 + 侧车扣留按 SIDECAR_SKILLS 门控落地后）：typecheck 0 错误（含修复既有 2 处 TS2322）、单测 12/12；无工具完整运行最终答复**单帧完整**（对照扣留层行为答案尾 18 字符会被拆进 done 兜底第二帧，单帧完整即门控生效）；plaza 回归帧型齐全、`phase:'message'` 零外泄；重型技能三次运行（career-guidance/ai-interview/tech-forecast）均被环境中断（内网 MySQL 断连黑洞、DeepSeek flash 晚间挂起），但到中断点全部帧零泄漏——content 通道全程为空、叙述 100% 进 reasoning、status 0 匿名。career-guidance 完整成功路径已于当晚 20:43 复跑通过（run rjfq）：content 单帧纯净、终态 reportUrl/usage/[DONE] 齐全，对照数据详见手记 036 验证口径。
