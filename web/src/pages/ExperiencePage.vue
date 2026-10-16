@@ -744,40 +744,40 @@ onBeforeUnmount(() => {
             <span class="exp-hist-ico"><Icon :name="bySlug.get(group.skill)?.categoryId ?? 'brand'" :size="14" /></span>
             <span class="exp-hist-copy">
               <span class="exp-hist-title">{{ group.title }}</span>
-              <small class="exp-hist-meta">
-                <span class="exp-hist-meta-text">
-                  {{ skillNameOf(group.skill) }} ·
-                  {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
-                </span>
-                <!-- 常规列表只留归档；删除只在已归档视图提供 -->
-                <button
-                  v-if="!group.archived"
-                  type="button"
-                  class="exp-hist-inline"
-                  title="归档对话"
-                  aria-label="归档对话"
-                  @click.stop="archiveConversation(group, true)"
-                ><Icon name="archive" :size="12" /></button>
-                <template v-else>
-                  <button
-                    type="button"
-                    class="exp-hist-inline"
-                    title="恢复到对话列表"
-                    aria-label="恢复到对话列表"
-                    @click.stop="archiveConversation(group, false)"
-                  ><Icon name="restore" :size="12" /></button>
-                  <button
-                    type="button"
-                    class="exp-hist-inline is-danger"
-                    :class="{ 'is-confirm': confirmDeleteKey === group.key }"
-                    :title="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
-                    :aria-label="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
-                    @click.stop="onDeleteClick(group)"
-                  >{{ confirmDeleteKey === group.key ? '确认' : '' }}<Icon name="trash" :size="12" /></button>
-                </template>
+              <small>
+                {{ skillNameOf(group.skill) }} ·
+                {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
               </small>
             </span>
-            <span class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
+            <!-- 右列：结局徽章在上，操作按钮在右下角（常规=归档；已归档=恢复+删除） -->
+            <span class="exp-hist-side">
+              <span class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
+              <button
+                v-if="!group.archived"
+                type="button"
+                class="exp-hist-inline"
+                title="归档对话"
+                aria-label="归档对话"
+                @click.stop="archiveConversation(group, true)"
+              ><Icon name="archive" :size="12" /></button>
+              <span v-else class="exp-hist-side-acts">
+                <button
+                  type="button"
+                  class="exp-hist-inline"
+                  title="恢复到对话列表"
+                  aria-label="恢复到对话列表"
+                  @click.stop="archiveConversation(group, false)"
+                ><Icon name="restore" :size="12" /></button>
+                <button
+                  type="button"
+                  class="exp-hist-inline is-danger"
+                  :class="{ 'is-confirm': confirmDeleteKey === group.key }"
+                  :title="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
+                  :aria-label="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
+                  @click.stop="onDeleteClick(group)"
+                >{{ confirmDeleteKey === group.key ? '确认' : '' }}<Icon name="trash" :size="12" /></button>
+              </span>
+            </span>
           </div>
         </template>
         <button
