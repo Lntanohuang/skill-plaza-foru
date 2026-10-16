@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { bySlug, catOf, SKILLS, GENERAL_SKILL_ID, GENERAL_SKILL_NAME, type Skill } from '../data/skills'
 import { checkHealth, streamChat, type ChatAttachment, type ChatEvent } from '../composables/useChatApi'
 import { takePendingFormTask } from '../composables/pendingTask'
-import { fetchRunDetail, fetchRuns, runFileUrl, runReportUrl } from '../api/runsApi'
+import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
 import { OUTCOME_LABEL, type RunListItem } from '../data/runsMock'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import Icon from '../components/Icon.vue'
@@ -464,11 +464,14 @@ function copyInstall(slug: string) {
 const skillTitle = (slug: string) => bySlug.get(slug)?.name ?? ''
 const skillCat = (slug: string) => { const s = bySlug.get(slug); return s ? catOf(s.categoryId).name : '' }
 
-/* ---------- 历史运行记录：侧栏按对话（clientSessionId）分组，详情为整段对话 ---------- */
+/* ---------- 历史运行记录：侧栏按对话（clientSessionId）分组，点开直接载入对话流 ---------- */
 const historyRuns = ref<RunListItem[]>([])
 const historyLive = ref(false)
 const historyLoading = ref(true)
-const selectedHistoryId = ref<string | null>(null)
+/** 当前选中的对话（key = clientSessionId，旧记录退化为其 runId） */
+const selectedSessionKey = ref<string | null>(null)
+/** 历史对话载入中（主区显示一行提示，避免空态示例闪现） */
+const loadingConversation = ref(false)
 
 /** 一个对话 = 同一 clientSessionId 的全部运行；换技能/新建对话会开新会话，天然分组边界 */
 interface HistoryGroup {
@@ -480,19 +483,13 @@ interface HistoryGroup {
   count: number
 }
 
-type HistoryDetailStatus = 'loading' | 'ok' | 'fallback' | 'error'
 interface HistoryDetail {
-  status: HistoryDetailStatus
   conversation: Array<{ role: 'user' | 'assistant'; text: string }>
-  /** Agent 产物（有则展示打开/下载）：HTML 报告与结构化 report.json */
+  /** 该对话生成的 HTML 报告（内联在最后一条 AI 消息上，与实时对话一致） */
   reportUrl?: string
-  hasReportJson?: boolean
 }
 const historyDetails = reactive<Record<string, HistoryDetail>>({})
-let historyRequestSeq = 0
-const historyRequestTokens: Record<string, number> = {}
-const selectedHistory = computed(() => historyGroups.value.find(g => g.latest.runId === selectedHistoryId.value))
-const selectedHistoryDetail = computed(() => selectedHistoryId.value ? historyDetails[selectedHistoryId.value] : undefined)
+let selectionSeq = 0
 
 const skillNameOf = (slug: string) => bySlug.get(slug)?.name ?? (slug === GENERAL_SKILL_ID ? GENERAL_SKILL_NAME : slug)
 
@@ -501,21 +498,6 @@ function fmtTime(ts: number | string): string {
   return d.toDateString() === new Date().toDateString()
     ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     : `${d.getMonth() + 1}/${d.getDate()}`
-}
-function fmtHistoryTime(ts: string): string {
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return ts
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${hm}`
-}
-function fmtHistoryDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '时长未知'
-  if (ms < 1000) return `${ms}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = Math.round(seconds % 60)
-  return `${minutes}分${String(rest).padStart(2, '0')}秒`
 }
 
 /* 运行记录 → 对话分组（旧记录无 clientSessionId 时退化为单运行一组） */
@@ -560,45 +542,61 @@ const groupedHistory = computed(() => {
 })
 
 function clearHistorySelection() {
-  selectedHistoryId.value = null
+  selectedSessionKey.value = null
 }
 
+/* 点开历史 = 把对话载入正常消息流（与 ChatGPT 一致）：无专门结果卡，
+   报告链接内联在最后一条 AI 消息；同时恢复服务端会话，可直接继续对话。 */
 async function selectHistory(group: HistoryGroup) {
   if (sending.value) {
     toast('当前运行进行中，完成后才能查看历史对话')
     return
   }
+  if (selectedSessionKey.value === group.key) return
+  selectedSessionKey.value = group.key
   const run = group.latest
-  if (selectedHistoryId.value === run.runId) return
-  selectedHistoryId.value = run.runId
-  scrollTop()
+
+  const restore = (detail: HistoryDetail) => {
+    const skill = bySlug.get(group.skill)
+    stopTyping()
+    currentConvId.value = Date.now()
+    convSlugs.set(currentConvId.value, group.skill)
+    /* 服务端会话仍在内存时续聊带完整上下文；被回收则透明重开（旧上下文丢失） */
+    if (run.clientSessionId) convSessions.set(`pi:${currentConvId.value}`, run.clientSessionId)
+    activeSkill.value = skill
+    let lastAi = -1
+    detail.conversation.forEach((turn, i) => { if (turn.role === 'assistant') lastAi = i })
+    messages.value = detail.conversation.map((turn, i) => turn.role === 'user'
+      ? { role: 'user', text: turn.text, done: true }
+      : { role: 'ai', text: turn.text, skill, done: true, real: true, reportUrl: i === lastAi ? detail.reportUrl : undefined })
+    progressOwner.value = null
+    progressEvents.value = []
+    scrollTop()
+  }
 
   const cached = historyDetails[run.runId]
-  /* 成功或真实数据不可用的降级结果都缓存，重复点击不再次读取。错误允许离开后重试。 */
-  if (cached && cached.status !== 'error') return
+  if (cached) { restore(cached); return }
 
-  const token = ++historyRequestSeq
-  historyRequestTokens[run.runId] = token
-  historyDetails[run.runId] = { status: 'loading', conversation: [] }
+  const seq = ++selectionSeq
+  loadingConversation.value = true
   try {
     const result = await fetchRunDetail(run.runId)
-    if (historyRequestTokens[run.runId] !== token) return
+    if (seq !== selectionSeq) return
     /* live=false 是 mock 兜底数据，不能冒充真实历史 */
-    if (!result.live) {
-      historyDetails[run.runId] = { status: 'fallback', conversation: [] }
-      return
-    }
-    const conversation = result.conversation ?? []
-    historyDetails[run.runId] = {
-      status: conversation.length ? 'ok' : 'fallback',
-      conversation,
+    if (!result.live || !(result.conversation ?? []).length) throw new Error('empty')
+    const detail: HistoryDetail = {
+      conversation: result.conversation ?? [],
       reportUrl: result.item?.files?.html ? runReportUrl(run.runId) : undefined,
-      hasReportJson: Boolean(result.item?.files?.report),
     }
+    historyDetails[run.runId] = detail
+    restore(detail)
   } catch {
-    if (historyRequestTokens[run.runId] === token) {
-      historyDetails[run.runId] = { status: 'error', conversation: [] }
+    if (seq === selectionSeq) {
+      selectedSessionKey.value = null
+      toast('历史对话加载失败，请稍候重试')
     }
+  } finally {
+    if (seq === selectionSeq) loadingConversation.value = false
   }
 }
 
@@ -613,8 +611,16 @@ async function loadHistory() {
     /* live=false 是 mock 兜底数据，不冒充真实历史 */
     historyRuns.value = result.live ? result.runs : []
     historyLive.value = result.live
-    if (!result.live || !historyRuns.value.some(run => run.runId === selectedHistoryId.value)) {
+    if (!result.live) {
       clearHistorySelection()
+      return
+    }
+    /* 当前对话（新建/表单交接/历史恢复）在列表刷新后保持或获得高亮 */
+    const activeSession = currentConvId.value !== null ? convSessions.get(`pi:${currentConvId.value}`) : undefined
+    if (selectedSessionKey.value && !historyGroups.value.some(g => g.key === selectedSessionKey.value)) {
+      clearHistorySelection()
+    } else if (!selectedSessionKey.value && activeSession && historyGroups.value.some(g => g.key === activeSession)) {
+      selectedSessionKey.value = activeSession
     }
   } finally {
     historyReqInFlight = false
@@ -652,7 +658,7 @@ onBeforeUnmount(() => {
             v-for="group in bucket.items"
             :key="group.key"
             class="exp-hist-item is-run"
-            :class="{ 'is-active': group.latest.runId === selectedHistoryId }"
+            :class="{ 'is-active': group.key === selectedSessionKey }"
             role="button"
             tabindex="0"
             :title="group.title"
@@ -676,70 +682,14 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
-    <div class="wrap-exp" :class="{ 'is-empty': messages.length === 0 && !selectedHistory }">
+    <div class="wrap-exp" :class="{ 'is-empty': messages.length === 0 && !loadingConversation }">
       <div class="exp-shell">
-        <div class="exp-top" :class="{ 'is-compact': messages.length > 0 || selectedHistory }">
+        <div class="exp-top" :class="{ 'is-compact': messages.length > 0 || loadingConversation }">
           <h1 class="exp-title">智能体搭子，把产教领域的方法装进你的 AI</h1>
           <p class="exp-sub">默认由通用智能体直接回答，输入 $ 可挂载专业技能</p>
         </div>
 
-        <section v-if="selectedHistory" class="exp-history-view" aria-live="polite">
-          <header class="exp-history-head">
-            <div>
-              <span class="exp-history-kicker">历史对话</span>
-              <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史对话' : selectedHistory.title }}</h2>
-              <small class="exp-history-meta">
-                {{ skillNameOf(selectedHistory.skill) }} · {{ fmtHistoryTime(selectedHistory.latest.ts) }} ·
-                {{ fmtHistoryDuration(selectedHistory.latest.durationMs) }} ·
-                {{ OUTCOME_LABEL[selectedHistory.latest.outcome] ?? selectedHistory.latest.outcome }}
-              </small>
-            </div>
-            <button type="button" class="text-btn" @click="clearHistorySelection">返回对话</button>
-          </header>
-          <p v-if="selectedHistoryDetail?.status === 'loading'" class="exp-history-state">正在读取历史对话…</p>
-          <p v-else-if="selectedHistoryDetail?.status === 'error'" class="exp-history-state is-error">历史对话加载失败，请稍后重试。</p>
-          <template v-else-if="selectedHistoryDetail">
-            <div v-if="selectedHistoryDetail.conversation.length" class="exp-history-talk">
-              <template v-for="(turn, ti) in selectedHistoryDetail.conversation" :key="ti">
-                <div v-if="turn.role === 'user'" class="exp-msg-user">{{ turn.text }}</div>
-                <div v-else class="exp-msg-ai">
-                  <span class="exp-ai-avatar"><Icon :name="bySlug.get(selectedHistory.skill)?.categoryId ?? 'brand'" :size="16" /></span>
-                  <div class="exp-ai-main">
-                    <div class="exp-ai-head"><span class="exp-ai-name">{{ skillNameOf(selectedHistory.skill) }}</span></div>
-                    <ReportOutput :text="turn.text" />
-                  </div>
-                </div>
-              </template>
-            </div>
-            <p v-else class="exp-history-state">
-              {{ selectedHistoryDetail.status === 'fallback' ? '历史对话不可用，仅保留任务摘要。' : '本次运行没有对话内容。' }}
-            </p>
-            <div
-              v-if="selectedHistoryDetail.status === 'ok' && (selectedHistoryDetail.reportUrl || selectedHistoryDetail.hasReportJson)"
-              class="exp-history-files"
-            >
-              <span class="exp-history-files-label">智能体产物</span>
-              <a
-                v-if="selectedHistoryDetail.reportUrl"
-                class="exp-act exp-act-primary"
-                :href="selectedHistoryDetail.reportUrl"
-                target="_blank"
-                rel="noopener"
-              ><Icon name="file-text" :size="14" />打开 HTML 报告</a>
-              <a
-                v-if="selectedHistoryDetail.reportUrl"
-                class="exp-act"
-                :href="`${selectedHistoryDetail.reportUrl}?download=1`"
-              ><Icon name="download" :size="14" />下载报告 HTML</a>
-              <a
-                v-if="selectedHistoryDetail.hasReportJson"
-                class="exp-act"
-                :href="runFileUrl(selectedHistory.latest.runId, 'report')"
-              ><Icon name="download" :size="14" />下载 report.json</a>
-            </div>
-          </template>
-        </section>
-
+        <div v-if="loadingConversation" class="exp-history-loading">正在读取对话…</div>
         <div v-else-if="messages.length === 0" class="exp-examples">
           <span class="exp-examples-label">试试这些：</span>
           <button v-for="ex in EXAMPLES" :key="ex.slug" type="button" class="exp-example" @click="fill(ex.slug)">
@@ -747,7 +697,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="!selectedHistory && messages.length > 0" class="exp-stream">
+        <div v-if="!loadingConversation && messages.length > 0" class="exp-stream">
           <template v-for="(msg, mi) in messages" :key="mi">
             <div v-if="msg.role === 'user'" class="exp-msg-user">{{ msg.text }}</div>
             <div v-else class="exp-msg-ai">
