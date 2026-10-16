@@ -95,4 +95,4 @@
   3. plaza `/api/chat` 回归（ai-interview）：帧序 started→status→session→…→text×69→usage→done，done 载荷键形不变，text 仍逐字直播（缓冲只作用于 openai 分支），13/13 工具终态帧带 tool/id（piRunner 字段修复的 plaza 侧增量收益）。
   4. 假 skill 400：OpenAI 错误体 + 可用技能列表。
   线上部署后真实抓包回归（§五）待跑。
-- 验证（2026-10-15 晚，消息级定性 + 侧车扣留按 SIDECAR_SKILLS 门控落地后）：typecheck 0 错误（含修复既有 2 处 TS2322）、单测 12/12；无工具完整运行最终答复**单帧完整**（对照扣留层行为答案尾 18 字符会被拆进 done 兜底第二帧，单帧完整即门控生效）；plaza 回归帧型齐全、`phase:'message'` 零外泄；重型技能三次运行（career-guidance/ai-interview/tech-forecast）均被环境中断（内网 MySQL 断连黑洞、DeepSeek flash 晚间挂起），但到中断点全部帧零泄漏——content 通道全程为空、叙述 100% 进 reasoning、status 0 匿名。career-guidance 完整成功路径待环境恢复复跑回填（详见手记 036 验证口径）。
+- 验证（2026-10-15 晚，消息级定性 + 侧车扣留按 SIDECAR_SKILLS 门控落地后）：typecheck 0 错误（含修复既有 2 处 TS2322）、单测 12/12；无工具完整运行最终答复**单帧完整**（对照扣留层行为答案尾 18 字符会被拆进 done 兜底第二帧，单帧完整即门控生效）；plaza 回归帧型齐全、`phase:'message'` 零外泄；重型技能三次运行（career-guidance/ai-interview/tech-forecast）均被环境中断（内网 MySQL 断连黑洞、DeepSeek flash 晚间挂起），但到中断点全部帧零泄漏——content 通道全程为空、叙述 100% 进 reasoning、status 0 匿名。career-guidance 完整成功路径已于当晚 20:43 复跑通过（run rjfq）：content 单帧纯净、终态 reportUrl/usage/[DONE] 齐全，对照数据详见手记 036 验证口径。

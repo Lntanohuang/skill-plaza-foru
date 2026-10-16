@@ -49,7 +49,7 @@
 - 无工具完整运行（classroom-assistant）：role 首帧 → thinking 实时进 reasoning_content → **最终答复单帧完整发出** → stop → usage($0.0047) → [DONE]。对照扣留层行为（答案尾 18 字符会被拆进 done 兜底第二帧），单帧完整即门控生效的直接证据。
 - plaza /api/chat 回归：帧型齐全（started/initializing/session/status/text×N/usage/done），`phase:'message'` 内部定性事件零外泄；text 增量因透传变为词级多帧（原扣留层合并转发），UsePage 按 delta 追加展示不受影响。
 - 重型技能三次运行（career-guidance 18.7min / ai-interview 10min / tech-forecast 14.7min，trace xrvi/8j9s/z2sy）均被环境因素中断——内网 MySQL 断连致 bash 查询黑洞挂死 18min（nc 验证 192.168.8.1:3908 不可达）、DeepSeek flash 晚间响应极慢/首条消息挂起至服务端超时——但**到中断点为止全部帧零泄漏**：content 通道全程为空，叙述 100% 进 reasoning_content（1813/390/1068 字），status 帧 22/3/14 且 0 匿名。
-- 待补：内网与 API 恢复后复跑 career-guidance 完整成功路径（reportUrl 帧 + [DONE]）回填。
+- career-guidance 完整成功路径复跑通过（2026-10-15 20:43，run `20261015-204342-rjfq`，flash，约 18 分钟 / $0.062）：content **单帧 88 字纯最终答复**（零英文叙述，唯一英文词为题目自带的 Java），reasoning 10942 帧 33594 字承载全部过程叙述与思考，status 67 帧 0 匿名，终态 content×1 → stop → reportUrl → usage → [DONE]，报告链接 200 / 132KB。对照泄漏版本（同 prompt run wfgq）：content 混入 "inline SVG charts." 碎片且答案被拆两帧——本次单帧完整纯净，消息级定性 + 扣留门控修复闭环。
 
 ## 验证口径（2026-10-15 流式升级后本地实测，PI_MODEL=deepseek-flash）
 
