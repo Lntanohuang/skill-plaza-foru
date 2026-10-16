@@ -60,10 +60,14 @@ test('allows an unassessed heatmap status block without SVG geometry', () => {
   assert.match(result.heatmap.failureReason ?? '', /city-distribution 查询超时/)
 })
 
-test('flags a failed city-distribution query when the report silently omits the status', () => {
+test('no longer infers a failed query from report wording (failureHint removed 2026-10-16)', () => {
+  /* Removal regression: wording like “city-distribution 查询失败” without an
+     unassessed marker used to reject the report. Text sniffing proved too fragile
+     (j8z9/uaw0/58na false positives on legitimate data notes); the authoritative
+     query-outcome-file replacement route is recorded in plaza-dev-notes 023. */
   const result = validateHtmlReport('<p>city-distribution 查询失败：数据库超时。</p>')
-  assert.equal(result.pass, false)
-  assert.match(result.errors.join('\n'), /热点图未评估/)
+  assert.equal(result.pass, true)
+  assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/)
 })
 
 test('does not flag neutral-fill data notes as a failed cross-city query', () => {
@@ -84,7 +88,7 @@ test('does not flag neutral-fill data notes as a failed cross-city query', () =>
   assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/)
 })
 
-test('flags real cross-city query failure phrasings without an unassessed status', () => {
+test('explicit failure phrasings alone no longer reject the report (failureHint removed)', () => {
   const failures = [
     '跨城市查询失败，请稍后重试。',
     '城市分布数据获取超时。',
@@ -99,8 +103,8 @@ test('flags real cross-city query failure phrasings without an unassessed status
       '<figcaption>来源：岗位库。</figcaption></figure>' +
       `<p>${sentence}</p>`
     const result = validateHtmlReport(html)
-    assert.equal(result.pass, false, sentence)
-    assert.match(result.errors.join('\n'), /跨城市查询失败时必须显示/, sentence)
+    assert.equal(result.pass, true, sentence)
+    assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/, sentence)
   }
 })
 
