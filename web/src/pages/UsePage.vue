@@ -1,24 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
-import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage } from '../composables/useChatApi'
-import ReportOutput from '../components/ReportOutput.vue'
-import type { ReportChart as ReportChartData } from '../data/runsMock'
+import { checkHealth, type ApiState } from '../composables/useChatApi'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
+import { stashPendingFormTask } from '../composables/pendingTask'
 import { CAREER_TEST_TEMPLATES } from '../data/careerTestTemplates'
 import { DEMO_FILES } from '../data/demoFiles'
 import { isTestEnv } from '../plazaEnv'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
-import UseHistoryList from '../components/UseHistoryList.vue'
-import ToolCallGroup from '../components/ToolCallGroup.vue'
-import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
-import { OUTCOME_LABEL, type RunDetail, type RunListItem } from '../data/runsMock'
 
-/* 「在线运行」工作台：结构化任务表单 + Mock 知识库选择 + 通过本地代理调用模型。
-   页面只负责把任务边界写清楚；事实、推断与缺口由模型按 SKILL 规则处理。 */
+/* 「任务配置」表单页（智能体广场二级页）：结构化任务表单 + Mock 知识库选择。
+   页面只负责把任务边界写清楚；提交后把提示词、标题、附件与上传沙箱会话
+   交给在线对话页（/experience）挂载技能并运行。 */
 const route = useRoute()
 const router = useRouter()
 
@@ -33,15 +29,6 @@ const knowledge = ref<string[]>([])
 const keyword = ref('')
 const apiState = ref<ApiState>('checking')
 const modelName = ref('')
-const busy = ref(false)
-
-/* ---------- 交互模式：表单 / 对话（URL query 持久化，两模式共用同一会话） ---------- */
-type UseMode = 'form' | 'chat'
-const mode = computed<UseMode>(() => (route.query.mode === 'chat' ? 'chat' : 'form'))
-function switchMode(next: UseMode) {
-  if (mode.value === next) return
-  void router.replace({ query: { ...route.query, mode: next } })
-}
 
 /* ---------- 附件上传状态（声明需早于首次 resetForm 的 immediate watch） ---------- */
 interface UploadItem { name: string; path: string; size: number }
@@ -53,23 +40,6 @@ const demoTried = ref(false)
 const testTemplateId = ref('java')
 const showTestTemplates = computed(() => isTestEnv() && skill.value.slug === 'career-guidance')
 let uploadRevision = 0
-
-interface RunMessage {
-  role: 'user' | 'assistant' | 'error'
-  content: string
-  /** done 事件带回的最终一段文本（最后一条 assistant 消息）。 */
-  final?: string
-  charts?: ReportChartData[]
-  runId?: string
-  reportUrl?: string
-}
-
-/* 主结果 = 最终段；异常/中断（无 final）时退回整段 */
-function mainTextOf(msg: RunMessage): string {
-  return msg.final || msg.content
-}
-const sessions = reactive<Record<string, RunMessage[]>>({})
-const session = computed<RunMessage[]>(() => sessions[skill.value.slug] ?? [])
 
 /* ---------- 表单初始化 ---------- */
 function resetForm() {
@@ -117,7 +87,7 @@ function valueLabel(field: TaskField) {
   return Array.isArray(form[field.id]) ? multi(field.id).join('、') : String(form[field.id] ?? '').trim()
 }
 
-const canRun = computed(() => apiState.value === 'ready' && !busy.value && !uploading.value)
+const canRun = computed(() => apiState.value === 'ready' && !uploading.value)
 const filteredKnowledge = computed(() => {
   const needle = keyword.value.trim().toLowerCase()
   if (!needle) return config.value.knowledge
@@ -189,116 +159,9 @@ function buildPrompt(): string {
 
 const missingField = computed(() => requiredFields.value.find(field => !filled(field)))
 
-/* 注意：不能写 `sessions[slug] ?? (sessions[slug] = [])`——赋值表达式返回的是原始数组，
-   往原始数组 push 不会触发响应式更新。必须先赋值，再通过代理读取。 */
-function sessionOf(target: string): RunMessage[] {
-  if (!sessions[target]) sessions[target] = []
-  return sessions[target]
-}
-
-/* 后端按浏览器会话复用 Pi 会话；保留 pi: 前缀兼容测试模板的会话清理。 */
-const sessionIds: Record<string, string> = {}
-const sessionKey = (slug: string) => `pi:${slug}`
-const lastUsage = ref('')
-/* 运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文，正文 delta 前也有推进体感 */
-const streamStatus = ref('')
-interface ProgressItem {
-  id: string
-  phase: 'thinking' | 'tool' | 'writing' | 'system'
-  state: 'active' | 'completed' | 'failed'
-  title: string
-  detail: string
-  tool?: string
-  startedAt: number
-  finishedAt?: number
-}
-const progressEvents = ref<ProgressItem[]>([])
-/* 正文首字到达后，工具调用组自动折叠为摘要行（ToolCallGroup 内部管理展开态） */
-const proseStarted = ref(false)
-let progressSeq = 0
-const elapsedMs = ref(0)
-let elapsedTimer: ReturnType<typeof setInterval> | null = null
-function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000))
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
-}
-function beginRun() {
-  if (elapsedTimer) clearInterval(elapsedTimer)
-  progressEvents.value = []
-  proseStarted.value = false
-  progressSeq = 0
-  const started = Date.now()
-  elapsedMs.value = 0
-  elapsedTimer = setInterval(() => { elapsedMs.value = Date.now() - started }, 250)
-}
-function endRun() {
-  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
-}
-
-function toolProgress(tool?: string): { title: string; detail: string } {
-  const name = (tool ?? '').toLowerCase()
-  if (name.includes('career-market') || name.includes('mysql') || name.includes('query')) {
-    return { title: '正在查询岗位库', detail: '分析岗位要求、经验和薪资结构' }
-  }
-  if (name === 'read' || name.includes('read')) {
-    return { title: '正在读取参考资料', detail: '整理当前任务所需的技能规则和资料' }
-  }
-  if (name === 'write' || name.includes('write')) {
-    return { title: '正在生成报告文件', detail: '写入并校验用户可查看的报告' }
-  }
-  if (name.includes('chart') || name.includes('visual')) {
-    return { title: '正在生成数据图表', detail: '把已验证的数据整理为可读图表' }
-  }
-  if (name === 'bash' || name.includes('shell')) {
-    return { title: '正在执行数据处理', detail: '运行受控的数据处理任务' }
-  }
-  return { title: '正在调用工具', detail: tool || '执行受控任务' }
-}
-
-function activeProgress(phase?: ProgressItem['phase'], id?: string): ProgressItem | undefined {
-  return progressEvents.value.find(item => item.state === 'active' && ((!id || item.id === id) && (!phase || item.phase === phase)))
-}
-
-function handleProgressStatus(event: Extract<ChatEvent, { type: 'status' }>) {
-  const now = Date.now()
-  if (event.phase === 'initializing') {
-    progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'system', state: 'active', title: '正在启动运行环境', detail: event.message ?? '准备执行任务', startedAt: now })
-    return
-  }
-  if (event.phase === 'thinking') {
-    const item = activeProgress('thinking')
-    if (item) item.detail = `正在分析任务（已处理约 ${event.chars ?? 0} 字思考内容）`
-    else progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'thinking', state: 'active', title: '正在分析任务', detail: '提取目标、限制条件和可用证据', startedAt: now })
-    return
-  }
-  if (event.phase === 'tool') {
-    if (event.state === 'active') {
-      const copy = toolProgress(event.tool)
-      progressEvents.value.push({ id: event.id ?? `p-${++progressSeq}`, phase: 'tool', state: 'active', title: copy.title, detail: copy.detail, tool: event.tool, startedAt: now })
-    } else {
-      const item = activeProgress('tool', event.id) ?? [...progressEvents.value].reverse().find(x => x.phase === 'tool' && x.state === 'active')
-      if (item) {
-        item.state = event.state === 'failed' ? 'failed' : 'completed'
-        item.finishedAt = now
-        const seconds = ((now - item.startedAt) / 1000).toFixed(1)
-        item.detail = event.state === 'failed' ? `工具执行失败（${seconds}s）` : `工具执行完成（${seconds}s）`
-      }
-    }
-    return
-  }
-  if (event.phase === 'text') {
-    for (const item of progressEvents.value) if (item.state === 'active' && (item.phase === 'thinking' || item.phase === 'tool' || item.phase === 'system')) {
-      item.state = 'completed'
-      item.finishedAt = now
-    }
-    if (!activeProgress('writing')) progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'writing', state: 'active', title: '正在生成结果', detail: '整理结论、依据和下一步行动', startedAt: now })
-  }
-}
-
-/* ---------- 附件上传：文件落会话沙箱 uploads/，随下一次运行/发送生效 ---------- */
-/* 首次上传发生在 /api/chat 之前：后端为上传生成沙箱目录并返回 sessionId，
-   之后 chat 必须带上它（同一目录），引擎才能读到文件 */
+/* ---------- 附件上传：文件落会话沙箱 uploads/，提交任务时随沙箱一起交接 ---------- */
 const uploadSessionIds: Record<string, string> = {}
+const sessionKey = (slug: string) => `pi:${slug}`
 
 async function onPickFile(event: Event) {
   const input = event.target as HTMLInputElement
@@ -312,7 +175,7 @@ async function onPickFile(event: Event) {
   const key = sessionKey(skill.value.slug)
   uploading.value = true
   try {
-    const uploaded = await uploadFile(file, sessionIds[key] ?? uploadSessionIds[key])
+    const uploaded = await uploadFile(file, uploadSessionIds[key])
     uploadSessionIds[key] = uploaded.sessionId
     uploads.value.push({ name: uploaded.name, path: uploaded.path, size: uploaded.size })
   } catch (exc) {
@@ -326,12 +189,6 @@ function removeUpload(path: string) {
   uploads.value = uploads.value.filter(item => item.path !== path)
 }
 
-function attachmentsPayload(): ChatAttachment[] | undefined {
-  return uploads.value.length
-    ? uploads.value.map(item => ({ name: item.name, path: item.path }))
-    : undefined
-}
-
 /* 内置演示附件（一键测试）：仅测试环境（PLAZA_ENV=test），后端就绪且附件区为空时自动上传一次 */
 watch([apiState, () => skill.value.slug], () => {
   if (!isTestEnv() || apiState.value !== 'ready' || demoTried.value) return
@@ -342,7 +199,7 @@ watch([apiState, () => skill.value.slug], () => {
   const key = sessionKey(skill.value.slug)
   const revision = uploadRevision
   uploading.value = true
-  void uploadDemoFile(demo.filename, demo.content, sessionIds[key] ?? uploadSessionIds[key])
+  void uploadDemoFile(demo.filename, demo.content, uploadSessionIds[key])
     .then(uploaded => {
       if (revision !== uploadRevision) return
       uploadSessionIds[key] = uploaded.sessionId
@@ -353,7 +210,7 @@ watch([apiState, () => skill.value.slug], () => {
     .finally(() => { uploading.value = false })
 })
 
-/** 先上传到新沙箱，成功后一起替换表单、附件、上下文；失败保留当前输入。 */
+/** 先上传到新沙箱，成功后一起替换表单与附件；失败保留当前输入。 */
 async function applyTestTemplate() {
   if (!showTestTemplates.value || !canRun.value) return
   const template = CAREER_TEST_TEMPLATES.find(item => item.id === testTemplateId.value)!
@@ -365,21 +222,14 @@ async function applyTestTemplate() {
   try {
     const uploaded = await uploadDemoFile(demo.filename, demo.content)
     if (revision !== uploadRevision || target !== skill.value.slug) return
-    for (const oldKey of Object.keys(sessionIds)) {
-      if (oldKey.endsWith(`:${target}`)) delete sessionIds[oldKey]
-    }
     for (const oldKey of Object.keys(uploadSessionIds)) {
       if (oldKey.endsWith(`:${target}`)) delete uploadSessionIds[oldKey]
     }
     uploadSessionIds[key] = uploaded.sessionId
-    sessions[target] = []
-    clearHistorySelection()
-    chatInput.value = ''
-    lastUsage.value = ''
     applyExample()
     uploads.value = [{ name: uploaded.name, path: uploaded.path, size: uploaded.size }]
     demoTried.value = true
-    toast(`已应用「${template.label}」，新测试会话已就绪`)
+    toast(`已应用「${template.label}」，表单与附件已替换`)
   } catch (error) {
     toast(error instanceof Error ? error.message : '模板简历上传失败，请重试')
   } finally {
@@ -387,266 +237,26 @@ async function applyTestTemplate() {
   }
 }
 
-/* SSE 事件处理（表单运行与对话发送共用）：写入占位的 assistant 消息 */
-function makeStreamHandler(answer: RunMessage) {
-  return (event: ChatEvent) => {
-    if (event.type === 'started') {
-      answer.runId = event.runId
-      elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
-    } else if (event.type === 'session') {
-      sessionIds[sessionKey(skill.value.slug)] = event.sessionId
-    } else if (event.type === 'status') {
-      handleProgressStatus(event)
-      if (event.phase === 'initializing') streamStatus.value = event.message ?? '正在启动运行环境…'
-      else if (event.phase === 'thinking') streamStatus.value = '正在分析任务…'
-      else if (event.phase === 'tool') streamStatus.value = toolProgress(event.tool).title
-      else streamStatus.value = '正在生成结果…'
-    } else if (event.type === 'text') {
-      proseStarted.value = true
-      answer.content += event.delta
-    } else if (event.type === 'usage') {
-      const u = event.usage as Record<string, number>
-      const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
-      lastUsage.value =
-        `输入 ${k(u.inputTokens ?? 0)} · 输出 ${k(u.outputTokens ?? 0)} · 缓存命中 ${k(u.cacheReadTokens ?? 0)}`
-    } else if (event.type === 'done') {
-      for (const item of progressEvents.value) if (item.state === 'active') item.state = 'completed'
-      if (event.content) answer.final = event.content
-      answer.charts = event.charts ?? []
-      answer.reportUrl = event.reportUrl
-    } else if (event.type === 'error') {
-      for (const item of progressEvents.value) if (item.state === 'active') item.state = 'failed'
-      throw new Error(event.message)
-    }
-  }
-}
-
-async function run() {
-  if (busy.value) return
-  if (!canRun.value) { toast('需要先启动本地服务'); return }
+/* ---------- 提交：任务交接给在线对话页运行 ---------- */
+function run() {
+  if (apiState.value !== 'ready') { toast('需要先启动本地服务'); return }
+  if (uploading.value) return
   if (missingField.value) {
     toast(`请先填写「${missingField.value.label}」`)
     return
   }
-  const target = skill.value.slug
-  clearHistorySelection()
-  const key = sessionKey(target)
-  const list = sessionOf(target)
-  list.push({ role: 'user', content: buildPrompt() })
-  /* 先构造发往后端的消息（最后一条必须是刚加入的用户消息），再放流式占位 */
-  const outgoing = list
-    .filter(item => item.role === 'user' || item.role === 'assistant')
-    .map(item => ({ role: item.role, content: item.content }))
-  list.push({ role: 'assistant', content: '' })
-  /* 必须通过响应式代理更新（push 后取回最后一个），直接改原始对象不会触发渲染 */
-  const answer = list[list.length - 1]
-  busy.value = true
-  lastUsage.value = ''
-  streamStatus.value = ''
-  beginRun()
-  try {
-    await streamChat({
-      skill: target,
-      taskTitle: buildTaskTitle(),
-      messages: outgoing as ChatMessage[],
-      sessionId: sessionIds[key] ?? uploadSessionIds[key],
-      attachments: attachmentsPayload(),
-      onEvent: makeStreamHandler(answer),
-    })
-  } catch (error) {
-    if (!answer.content) {
-      list.splice(list.indexOf(answer), 1)
-      list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
-    }
-  } finally {
-    endRun()
-    busy.value = false
-  }
-}
-
-/* ---------- 对话模式：与表单共用 sessions / sessionIds，只发新增一条 ---------- */
-const chatInput = ref('')
-const chatStreamEl = ref<HTMLElement | null>(null)
-const chatFileEl = ref<HTMLInputElement | null>(null)
-const canSend = computed(() =>
-  apiState.value === 'ready' && !busy.value && !uploading.value && Boolean(chatInput.value.trim()))
-
-async function sendChat() {
-  const text = chatInput.value.trim()
-  if (!text || busy.value || uploading.value) return
-  if (apiState.value !== 'ready') { toast('需要先启动本地服务'); return }
-  const target = skill.value.slug
-  clearHistorySelection()
-  const key = sessionKey(target)
-  const list = sessionOf(target)
-  const files = uploads.value.slice()
-  list.push({
-    role: 'user',
-    content: files.length ? `${text}\n[附件] ${files.map(f => f.name).join('、')}` : text,
+  stashPendingFormTask({
+    slug: skill.value.slug,
+    prompt: buildPrompt(),
+    taskTitle: buildTaskTitle(),
+    attachments: uploads.value.length
+      ? uploads.value.map(item => ({ name: item.name, path: item.path }))
+      : undefined,
+    /* 沿用上传沙箱：在线对话页以同一会话续跑，引擎才能读到附件 */
+    sessionId: uploadSessionIds[sessionKey(skill.value.slug)],
   })
-  list.push({ role: 'assistant', content: '' })
-  const answer = list[list.length - 1]
-  chatInput.value = ''
-  uploads.value = [] /* 附件随本条消息一次性消费 */
-  busy.value = true
-  lastUsage.value = ''
-  streamStatus.value = ''
-  beginRun()
-  try {
-    await streamChat({
-      skill: target,
-      messages: [{ role: 'user', content: text }],
-      sessionId: sessionIds[key] ?? uploadSessionIds[key],
-      attachments: files.length
-        ? files.map(f => ({ name: f.name, path: f.path }))
-        : undefined,
-      onEvent: makeStreamHandler(answer),
-    })
-  } catch (error) {
-    if (!answer.content) {
-      list.splice(list.indexOf(answer), 1)
-      list.push({ role: 'error', content: error instanceof Error ? error.message : '请求失败，请稍后重试。' })
-    }
-  } finally {
-    endRun()
-    busy.value = false
-  }
+  void router.push({ name: 'experience' })
 }
-
-function onChatKeydown(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
-    void sendChat()
-  }
-}
-
-function scrollChatToBottom() {
-  void nextTick(() => {
-    const el = chatStreamEl.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
-}
-/* 追踪最后一条消息的内容增长（流式增量），并在切入对话模式时贴底 */
-watch(() => session.value[session.value.length - 1]?.content, () => {
-  if (mode.value === 'chat') scrollChatToBottom()
-})
-watch(mode, () => { if (mode.value === 'chat') scrollChatToBottom() })
-
-function clearResult() {
-  selectedHistoryId.value = null
-  sessions[skill.value.slug] = []
-}
-
-/* ---------- 历史会话：列表只选任务，详情在主结果区展示 ---------- */
-const historyRuns = ref<RunListItem[]>([])
-const historyLive = ref(false)
-const historyLoading = ref(false)
-const selectedHistoryId = ref<string | null>(null)
-
-type HistoryDetailStatus = 'loading' | 'ok' | 'fallback' | 'error'
-interface HistoryDetail {
-  status: HistoryDetailStatus
-  output: string
-  charts: ReportChartData[]
-  reportUrl?: string
-}
-
-const historyDetails = reactive<Record<string, HistoryDetail>>({})
-const historyRequestSeq = ref(0)
-const historyRequestTokens: Record<string, number> = {}
-const selectedHistory = computed(() =>
-  historyRuns.value.find(run => run.runId === selectedHistoryId.value))
-const selectedHistoryDetail = computed(() =>
-  selectedHistoryId.value ? historyDetails[selectedHistoryId.value] : undefined)
-const selectedHistorySkill = computed(() => {
-  const historySkill = selectedHistory.value?.skill
-  return historySkill ? (bySlug.get(historySkill)?.name ?? historySkill) : ''
-})
-
-function fmtHistoryTime(ts: string): string {
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return ts
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${hm}`
-}
-
-function fmtHistoryDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '时长未知'
-  if (ms < 1000) return `${ms}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = Math.round(seconds % 60)
-  return `${minutes}分${String(rest).padStart(2, '0')}秒`
-}
-
-/* 反向取最后一条 assistant 消息的文本，历史用户页不读取或展示原始 prompt。 */
-function historyTextOf(message?: RunDetail['messages'][number]): string {
-  return message
-    ? (message.parts ?? []).filter(part => part.type === 'text').map(part => part.text ?? '').join('')
-    : ''
-}
-
-function clearHistorySelection() {
-  selectedHistoryId.value = null
-}
-
-async function selectHistory(run: RunListItem) {
-  if (busy.value) {
-    toast('当前运行进行中，完成后才能查看历史结果')
-    return
-  }
-  if (selectedHistoryId.value === run.runId) return
-  selectedHistoryId.value = run.runId
-
-  const cached = historyDetails[run.runId]
-  /* 成功或真实数据不可用的降级结果都缓存，重复点击不再次读取 trace。错误允许离开后重试。 */
-  if (cached && cached.status !== 'error') return
-
-  const token = ++historyRequestSeq.value
-  historyRequestTokens[run.runId] = token
-  historyDetails[run.runId] = { status: 'loading', output: '', charts: [] }
-  try {
-    const result = await fetchRunDetail(run.runId)
-    if (historyRequestTokens[run.runId] !== token) return
-    /* live=false 是 mock 兜底数据，不能冒充真实历史；trace 缺失也只能展示摘要。 */
-    if (!result.live || !result.trace) {
-      historyDetails[run.runId] = { status: 'fallback', output: '', charts: [] }
-      return
-    }
-    const messages = [...(result.trace.messages ?? [])].reverse()
-    historyDetails[run.runId] = {
-      status: 'ok',
-      output: historyTextOf(messages.find(message => message.role === 'assistant')),
-      charts: result.item?.report?.meta?.charts ?? [],
-      reportUrl: result.item?.files?.html ? runReportUrl(run.runId) : undefined,
-    }
-  } catch {
-    if (historyRequestTokens[run.runId] === token) {
-      historyDetails[run.runId] = { status: 'error', output: '', charts: [] }
-    }
-  }
-}
-
-async function loadHistory() {
-  if (historyLoading.value) return
-  historyLoading.value = true
-  try {
-    const result = await fetchRuns()
-    /* live=false 是 mock 兜底数据，不冒充真实历史 */
-    historyRuns.value = result.live ? result.runs : []
-    historyLive.value = result.live
-    if (!result.live || !historyRuns.value.some(run => run.runId === selectedHistoryId.value)) {
-      clearHistorySelection()
-    }
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-onMounted(loadHistory)
-watch(apiState, state => { if (state === 'ready') void loadHistory() })
-watch(busy, (now, was) => { if (was && !now) void loadHistory() })
 
 async function probe() {
   apiState.value = 'checking'
@@ -671,14 +281,11 @@ const statusText = computed(() => {
 
 const engineHint = '确认 Pi 所选模型的凭据已配置（如 DEEPSEEK_API_KEY），或将其写入 web/.env 后重启服务。'
 
-const visibleMessages = computed(() => session.value.slice(-2))
-
 onMounted(() => {
   if (!slug.value || !configOf(slug.value)) {
     void router.replace({ name: 'use', params: { slug: SKILLS[0].slug }, query: route.query })
   }
 })
-onBeforeUnmount(endRun)
 </script>
 
 <template>
@@ -703,29 +310,13 @@ onBeforeUnmount(endRun)
         </div>
       </header>
 
-      <div class="use-mode-row">
-        <div class="use-mode" role="group" aria-label="选择交互模式">
-          <button type="button" class="use-mode-btn" :class="{ 'is-on': mode === 'form' }"
-            :aria-pressed="mode === 'form'" @click="switchMode('form')">
-            <Icon name="form" :size="14" /><span>表单模式</span>
-          </button>
-          <button type="button" class="use-mode-btn" :class="{ 'is-on': mode === 'chat' }"
-            :aria-pressed="mode === 'chat'" @click="switchMode('chat')">
-            <Icon name="chat" :size="14" /><span>对话模式</span>
-          </button>
-        </div>
-        <p class="use-mode-hint">{{ mode === 'form'
-          ? '用结构化表单描述任务边界，一次运行交付完整结果'
-          : '直接对话推进任务，与表单模式共用同一会话、附件与运行记录' }}</p>
-      </div>
-
       <aside v-if="showTestTemplates" class="use-test-templates" aria-label="开发侧测试模板">
         <div>
           <strong>开发侧 · 测试模板</strong>
-          <p>合成示例。应用后替换表单和全部附件，并开启新会话；已有运行记录保留。</p>
+          <p>合成示例。应用后替换表单和全部附件；已有运行记录保留。</p>
         </div>
         <label class="use-select">
-          <select v-model="testTemplateId" aria-label="选择测试模板" :disabled="busy || uploading">
+          <select v-model="testTemplateId" aria-label="选择测试模板" :disabled="uploading">
             <option v-for="item in CAREER_TEST_TEMPLATES" :key="item.id" :value="item.id">{{ item.label }}</option>
           </select>
           <Icon name="chev-down" :size="14" />
@@ -735,10 +326,10 @@ onBeforeUnmount(endRun)
         </button>
       </aside>
 
-      <ol v-if="mode === 'form'" class="use-steps">
+      <ol class="use-steps">
         <li :class="{ 'is-on': completed > 0 }"><b>1</b>配置任务</li>
         <li :class="{ 'is-on': knowledge.length > 0 }"><b>2</b>选择知识库</li>
-        <li :class="{ 'is-on': session.length > 0 }"><b>3</b>确认并运行</li>
+        <li :class="{ 'is-on': !missingField }"><b>3</b>提交任务</li>
       </ol>
 
       <p v-if="apiState === 'offline'" class="use-setup">
@@ -752,7 +343,7 @@ onBeforeUnmount(endRun)
         <button type="button" class="text-btn" @click="probe">重新检查</button>
       </p>
 
-      <div v-if="mode === 'form'" class="use-layout">
+      <div class="use-layout">
         <main class="use-builder">
           <form id="skill-task-form" class="use-form" @submit.prevent="run">
             <section v-for="section in config.sections" :key="section.number" class="use-section">
@@ -821,7 +412,7 @@ onBeforeUnmount(endRun)
                 <span class="use-section-no">附</span>
                 <div>
                   <h2>上传材料</h2>
-                  <p>文件进入本次运行的沙箱目录，随任务一起提交给 SKILL。</p>
+                  <p>文件进入本次运行的沙箱目录，提交任务时随沙箱一起交给在线对话。</p>
                 </div>
               </header>
               <div class="use-fields">
@@ -847,59 +438,6 @@ onBeforeUnmount(endRun)
                   </div>
                 </div>
               </div>
-            </section>
-
-            <section class="use-result" :class="{ 'is-history': selectedHistory }" aria-live="polite">
-              <header class="use-result-head">
-                <div>
-                  <span>{{ selectedHistory ? '历史运行结果' : '运行结果' }}</span>
-                  <h2>{{ selectedHistory
-                    ? (selectedHistoryDetail?.status === 'loading' ? '正在加载历史详情' : (selectedHistory.promptDigest || '历史任务'))
-                    : (busy ? '正在调用 SKILL' : (session.length ? '本次运行已返回' : '尚未运行')) }}</h2>
-                  <small v-if="selectedHistory" class="use-history-meta">
-                    {{ selectedHistorySkill }} · {{ fmtHistoryTime(selectedHistory.ts) }} ·
-                    {{ fmtHistoryDuration(selectedHistory.durationMs) }} ·
-                    {{ OUTCOME_LABEL[selectedHistory.outcome] ?? selectedHistory.outcome }}
-                  </small>
-                </div>
-                <div class="use-result-actions">
-                  <button v-if="selectedHistory" type="button" class="text-btn" @click="clearHistorySelection">返回本次运行</button>
-                  <button v-else-if="session.length && !busy" type="button" class="text-btn" @click="clearResult">清除结果</button>
-                </div>
-              </header>
-
-              <div v-if="selectedHistory" class="use-history-view">
-                <p v-if="selectedHistoryDetail?.status === 'loading'" class="use-history-state">正在读取历史运行记录…</p>
-                <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
-                <template v-else-if="selectedHistoryDetail">
-                  <div class="use-history-block">
-                    <span class="use-history-block-label">结果</span>
-                    <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" :html-mode="selectedHistory?.skill === 'career-guidance'" />
-                    <p v-else class="use-history-state">
-                      {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
-                    </p>
-                  </div>
-                </template>
-              </div>
-              <div v-else-if="visibleMessages.length || busy" class="use-result-body">
-                <div v-if="busy" class="use-live-status" aria-live="polite">
-                  <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
-                  <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
-                </div>
-                <ToolCallGroup v-if="progressEvents.length" :items="progressEvents" :prose-started="proseStarted" />
-                <template v-for="(msg, i) in visibleMessages" :key="i">
-                  <article v-if="msg.role !== 'user'" class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
-                    <span class="use-answer-avatar">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
-                    <div>
-                      <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                      <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :html-mode="skill.slug === 'career-guidance'" :streaming="busy && !msg.final && i === visibleMessages.length - 1" />
-                      <p v-else-if="msg.role === 'error'" class="use-answer-text">{{ mainTextOf(msg) }}</p>
-                      <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
-                    </div>
-                  </article>
-                </template>
-              </div>
-              <p v-else class="use-result-empty">填写左侧任务信息后，运行结果会显示在这里。</p>
             </section>
           </form>
         </main>
@@ -949,129 +487,15 @@ onBeforeUnmount(endRun)
             <p class="use-output"><span>预计产出</span><strong>{{ config.output }}</strong></p>
             <!-- 按钮在表单外的侧栏中，靠 form 属性关联提交 -->
             <button type="submit" form="skill-task-form" class="use-run-btn" :disabled="!canRun">
-              开始运行 SKILL<Icon name="arrow" :size="15" />
+              提交任务，转在线对话<Icon name="arrow" :size="15" />
             </button>
             <div class="use-run-sub">
-              <button type="button" class="use-run-quiet" :disabled="busy || uploading" @click="fillExample">填入示例</button>
-              <button type="button" class="use-run-quiet" :disabled="busy || uploading" @click="clearForm">重置表单</button>
+              <button type="button" class="use-run-quiet" :disabled="uploading" @click="fillExample">填入示例</button>
+              <button type="button" class="use-run-quiet" :disabled="uploading" @click="clearForm">重置表单</button>
             </div>
-            <small class="use-run-note">提交前请确认资料授权范围，不要填写敏感个人信息。</small>
-          </section>
-
-          <section class="use-side-card use-hist">
-            <header class="use-side-head">
-              <div>
-                <span>历史会话</span>
-                <h2>运行过的任务</h2>
-              </div>
-            </header>
-            <p v-if="!historyLive" class="use-side-note">启动本地服务后，这里会展示历史运行记录。</p>
-            <p v-else-if="!historyRuns.length" class="use-side-note">还没有运行记录，跑一次任务后就会出现在这里。</p>
-            <UseHistoryList v-else :runs="historyRuns" :selected-id="selectedHistoryId" :disabled="busy"
-              @select="selectHistory" />
+            <small class="use-run-note">提交前请确认资料授权范围，不要填写敏感个人信息。提交后进入在线对话运行，并可在那里继续追问。</small>
           </section>
         </aside>
-      </div>
-
-      <div v-else class="use-chat">
-        <aside class="use-chat-side" aria-labelledby="use-chat-history-title">
-          <div class="use-chat-side-head">
-            <span id="use-chat-history-title">历史会话<em v-if="historyLive">（{{ historyRuns.length }}）</em></span>
-            <span v-if="busy" class="use-hist-busy">运行中</span>
-          </div>
-          <small>选择后在右侧结果区查看，不会写入当前对话</small>
-          <p v-if="!historyLive" class="use-hist-note">启动本地服务后可查看历史运行记录。</p>
-          <p v-else-if="!historyRuns.length" class="use-hist-note">还没有运行记录。</p>
-          <UseHistoryList v-else :runs="historyRuns" :selected-id="selectedHistoryId" :disabled="busy"
-            @select="selectHistory" />
-        </aside>
-
-        <div class="use-chat-main">
-          <section v-if="selectedHistory" class="use-result use-result-history is-history" aria-live="polite">
-            <header class="use-result-head">
-              <div>
-                <span>历史运行结果</span>
-                <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史详情' : (selectedHistory.promptDigest || '历史任务') }}</h2>
-                <small class="use-history-meta">
-                  {{ selectedHistorySkill }} · {{ fmtHistoryTime(selectedHistory.ts) }} ·
-                  {{ fmtHistoryDuration(selectedHistory.durationMs) }} ·
-                  {{ OUTCOME_LABEL[selectedHistory.outcome] ?? selectedHistory.outcome }}
-                </small>
-              </div>
-              <button type="button" class="text-btn" @click="clearHistorySelection">返回本次运行</button>
-            </header>
-            <div class="use-history-view">
-              <p v-if="selectedHistoryDetail?.status === 'loading'" class="use-history-state">正在读取历史运行记录…</p>
-              <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
-              <template v-else-if="selectedHistoryDetail">
-                <div class="use-history-block">
-                  <span class="use-history-block-label">结果</span>
-                  <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" :html-mode="selectedHistory?.skill === 'career-guidance'" />
-                  <p v-else class="use-history-state">
-                    {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
-                  </p>
-                </div>
-              </template>
-            </div>
-          </section>
-          <div ref="chatStreamEl" class="use-chat-stream">
-            <div v-if="busy" class="use-live-status" aria-live="polite">
-              <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
-              <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
-            </div>
-            <ToolCallGroup v-if="progressEvents.length" :items="progressEvents" :prose-started="proseStarted" />
-            <div v-if="!session.length && !busy" class="use-chat-empty">
-              <span class="use-chat-empty-mark">{{ skill.name }}</span>
-              <p>直接描述任务即可开始，例如：</p>
-              <pre>{{ skill.minimalInput }}</pre>
-              <p class="use-chat-empty-note">
-                与表单模式共用同一会话——表单运行过的话，这里可以直接接着追问。
-              </p>
-            </div>
-            <template v-for="(msg, i) in session" :key="i">
-              <div v-if="msg.role === 'user'" class="use-chat-user">
-                <pre>{{ msg.content }}</pre>
-              </div>
-              <article v-else class="use-chat-ai" :class="{ 'is-error': msg.role === 'error' }">
-                <span class="use-chat-avatar">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
-                <div class="use-chat-ai-body">
-                  <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                  <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :html-mode="skill.slug === 'career-guidance'" :streaming="busy && !msg.final && i === session.length - 1" />
-                  <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
-                  <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
-                </div>
-              </article>
-            </template>
-          </div>
-
-          <div class="use-chat-input">
-            <div v-if="uploads.length" class="use-chat-files">
-              <span v-for="f in uploads" :key="f.path" class="use-file-chip">
-                <Icon name="file" :size="12" />{{ f.name }} · {{ formatSize(f.size) }}
-                <button type="button" class="use-file-del" :aria-label="`移除 ${f.name}`"
-                  @click="removeUpload(f.path)"><Icon name="x" :size="11" /></button>
-              </span>
-            </div>
-            <div class="use-chat-box">
-              <textarea v-model="chatInput" class="use-chat-textarea" rows="2" maxlength="4000"
-                :disabled="apiState !== 'ready'"
-                placeholder="描述任务或继续追问…（Ctrl / ⌘ + Enter 发送）"
-                @keydown="onChatKeydown"></textarea>
-              <div class="use-chat-bar">
-                <button v-if="config.uploads?.length" type="button" class="use-chat-attach"
-                  :disabled="apiState !== 'ready' || uploading"
-                  :title="uploading ? '上传中…' : '上传附件（随下一条消息发送）'"
-                  @click="chatFileEl?.click()">
-                  <Icon name="paperclip" :size="16" />
-                </button>
-                <input ref="chatFileEl" type="file" hidden :accept="config.uploads?.[0]?.accept" @change="onPickFile" />
-                <button type="button" class="use-chat-send" :disabled="!canSend" aria-label="发送" @click="sendChat">
-                  <Icon name="arrow-up" :size="15" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </section>

@@ -17,7 +17,7 @@ const routes = [
   { path: '/catalog', redirect: '/skills' },
   { path: '/skill/:slug', name: 'detail', component: DetailPage, meta: { nav: 'skills' } },
   { path: '/experience', name: 'experience', component: ExperiencePage, meta: { title: '在线对话 · 智能体搭子', nav: 'experience' } },
-  { path: '/use/:slug?', name: 'use', component: UsePage, meta: { nav: 'use' } },
+  { path: '/use/:slug?', name: 'use', component: UsePage, meta: { nav: 'skills' } },
   { path: '/runs', name: 'runs', component: RunListPage, meta: { title: '运行记录 · 智能体搭子', nav: 'runs' } },
   { path: '/runs/:runId', name: 'runDetail', component: RunDetailPage, meta: { title: '运行详情 · 智能体搭子', nav: 'runs' } },
   { path: '/guide', name: 'guide', component: GuidePage, meta: { title: '使用指南 · 智能体搭子', nav: 'guide' } },
@@ -38,7 +38,7 @@ router.afterEach(to => {
   } else if (to.name === 'use') {
     const slug = typeof to.params.slug === 'string' ? to.params.slug : ''
     const skill = bySlug.get(slug)
-    document.title = (skill ? '在线运行 · ' + skill.name : '在线运行') + ' · 智能体搭子'
+    document.title = (skill ? '任务配置 · ' + skill.name : '任务配置') + ' · 智能体搭子'
   } else if (to.meta.title) {
     document.title = to.meta.title as string
   }
