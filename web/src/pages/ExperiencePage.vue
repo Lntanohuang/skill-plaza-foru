@@ -330,9 +330,12 @@ function typeInto(msg: Msg, reply: string) {
 /* ---------- 真实运行：走本地 Node 后端 → Pi，SSE 流式回填 ---------- */
 interface RunOptions { taskTitle?: string; attachments?: ChatAttachment[] }
 
-function makeStreamHandler(msg: Msg) {
+function makeStreamHandler(msg: Msg, sessionKey: string) {
   return (event: ChatEvent) => {
-    if (event.type === 'started') {
+    if (event.type === 'session') {
+      /* 服务端发回本轮会话 id（首轮新建、被回收后重建都会发）：记住它，后续轮次带上下文多轮 */
+      convSessions.set(sessionKey, event.sessionId)
+    } else if (event.type === 'started') {
       elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
       runStatus.value = '正在启动运行环境…'
     } else if (event.type === 'status') {
@@ -371,7 +374,7 @@ async function runReal(text: string, slug: string, skill: Skill | undefined, opt
       messages: [{ role: 'user', content: text }],
       sessionId: convSessions.get(sessionKey),
       attachments: opts.attachments,
-      onEvent: makeStreamHandler(msg),
+      onEvent: makeStreamHandler(msg, sessionKey),
     })
     msg.done = true
   } catch (error) {
