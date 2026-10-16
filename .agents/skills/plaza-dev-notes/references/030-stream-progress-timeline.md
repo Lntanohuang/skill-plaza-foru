@@ -2,6 +2,7 @@
 
 - 状态：已实现（2026-09-29；真实 Pi 工具事件与浏览器视觉回归待验证）。
 - 补注（2026-10-16）：展示层交互约定由 066 承接——固定 92px/280px 高度切换改为 ToolCallGroup 工具调用组（正文首字自动折叠、点组头重展开）；`ProgressItem` 状态、`handleProgressStatus` 映射与"不展示工具参数/SQL/路径"的安全边界不变。见 [066-skillhub-ui-redesign.md](066-skillhub-ui-redesign.md)。
+- 补注（2026-10-16 二次）：时间线只登记真实工具调用——initializing/thinking/writing 占位行删除（「正在分析任务」「正在生成结果」等措辞退出展示层），等待期由消息头一行「正在思考…」承担；是否调工具由智能体按意图决定。工具生命周期事件、安全映射与本记录其余约定不变。见 [069-conversation-history-and-toolsonly-progress.md](069-conversation-history-and-toolsonly-progress.md)。
 - 动机：既有 SSE 只显示一条 status，思考阶段只有累计字数，工具阶段只有工具名；用户无法知道正在读取资料、查询岗位库、生成图表还是写报告。
 - 约定细节：
   - `RunnerEvent.status` 增加 `state`（active/completed/failed）和 `id`；Pi 的 `toolcall_start/toolcall_end` 映射为工具生命周期，服务端经 SSE 传递 `type=status`。接入点：`web/server/lib/runner.ts:25-34`、`web/server/lib/piRunner.ts:307-324`、`web/server/index.ts:818-820`、`web/src/composables/useChatApi.ts:31-43`。

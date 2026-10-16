@@ -28,6 +28,8 @@ export async function fetchRuns(): Promise<RunsResult> {
 export interface RunDetailResult {
   item?: RunListItem
   trace?: RunDetail
+  /** 服务端从 trace 剥离技能提示词包装后的用户可读对话（user/assistant 文本） */
+  conversation?: Array<{ role: 'user' | 'assistant'; text: string }>
   live: boolean
 }
 
@@ -35,9 +37,9 @@ export async function fetchRunDetail(runId: string): Promise<RunDetailResult> {
   try {
     const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' })
     if (!res.ok) throw new Error(String(res.status))
-    const data = (await res.json()) as { item: RunListItem; trace?: RunDetail }
+    const data = (await res.json()) as { item: RunListItem; trace?: RunDetail; conversation?: RunDetailResult['conversation'] }
     if (!data.item) throw new Error('no item')
-    return { item: data.item, trace: data.trace ?? undefined, live: true }
+    return { item: data.item, trace: data.trace ?? undefined, conversation: data.conversation, live: true }
   } catch {
     return {
       item: RUNS_MOCK.find(r => r.runId === runId),

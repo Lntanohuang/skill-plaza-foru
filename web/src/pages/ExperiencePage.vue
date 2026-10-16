@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { bySlug, catOf, SKILLS, GENERAL_SKILL_ID, GENERAL_SKILL_NAME, type Skill } from '../data/skills'
 import { checkHealth, streamChat, type ChatAttachment, type ChatEvent } from '../composables/useChatApi'
 import { takePendingFormTask } from '../composables/pendingTask'
-import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
-import { OUTCOME_LABEL, type RunDetail, type RunListItem } from '../data/runsMock'
+import { fetchRunDetail, fetchRuns, runFileUrl, runReportUrl } from '../api/runsApi'
+import { OUTCOME_LABEL, type RunListItem } from '../data/runsMock'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import Icon from '../components/Icon.vue'
 import ReportOutput from '../components/ReportOutput.vue'
@@ -73,10 +73,10 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 const convSessions = new Map<string, string>()
 const convSlugs = new Map<number, string>()
 
-/* ---------- 运行进度（status 事件 → ToolCallGroup；安全边界见手记 030） ---------- */
+/* ---------- 运行进度（status 事件 → ToolCallGroup，只登记真实工具调用；安全边界见手记 030） ---------- */
 interface ProgressItem {
   id: string
-  phase: 'thinking' | 'tool' | 'writing' | 'system'
+  phase: 'tool'
   state: 'active' | 'completed' | 'failed'
   title: string
   detail: string
@@ -137,38 +137,29 @@ function activeProgress(phase?: ProgressItem['phase'], id?: string): ProgressIte
 }
 
 function handleProgressStatus(event: Extract<ChatEvent, { type: 'status' }>) {
+  /* 面板只展示真实发生的工具调用（030 边界不变）：思考、写正文是每次运行的
+     常态而非阶段，不再渲染占位行——是否调用工具由智能体按意图自行决定。 */
   const now = Date.now()
-  if (event.phase === 'initializing') {
-    progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'system', state: 'active', title: '正在启动运行环境', detail: event.message ?? '准备执行任务', startedAt: now })
-    return
-  }
-  if (event.phase === 'thinking') {
-    const item = activeProgress('thinking')
-    if (item) item.detail = `正在分析任务（已处理约 ${event.chars ?? 0} 字思考内容）`
-    else progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'thinking', state: 'active', title: '正在分析任务', detail: '提取目标、限制条件和可用证据', startedAt: now })
-    return
-  }
-  if (event.phase === 'tool') {
-    if (event.state === 'active') {
-      const copy = toolProgress(event.tool)
-      progressEvents.value.push({ id: event.id ?? `p-${++progressSeq}`, phase: 'tool', state: 'active', title: copy.title, detail: copy.detail, tool: event.tool, startedAt: now })
-    } else {
-      const item = activeProgress('tool', event.id) ?? [...progressEvents.value].reverse().find(x => x.phase === 'tool' && x.state === 'active')
-      if (item) {
-        item.state = event.state === 'failed' ? 'failed' : 'completed'
-        item.finishedAt = now
-        const seconds = ((now - item.startedAt) / 1000).toFixed(1)
-        item.detail = event.state === 'failed' ? `工具执行失败（${seconds}s）` : `工具执行完成（${seconds}s）`
-      }
-    }
-    return
-  }
   if (event.phase === 'text') {
-    for (const item of progressEvents.value) if (item.state === 'active' && (item.phase === 'thinking' || item.phase === 'tool' || item.phase === 'system')) {
+    /* 正文开始：兜底关闭未收到完成事件的工具行 */
+    for (const item of progressEvents.value) if (item.state === 'active') {
       item.state = 'completed'
       item.finishedAt = now
     }
-    if (!activeProgress('writing')) progressEvents.value.push({ id: `p-${++progressSeq}`, phase: 'writing', state: 'active', title: '正在生成结果', detail: '整理结论、依据和下一步行动', startedAt: now })
+    return
+  }
+  if (event.phase !== 'tool') return
+  if (event.state === 'active') {
+    const copy = toolProgress(event.tool)
+    progressEvents.value.push({ id: event.id ?? `p-${++progressSeq}`, phase: 'tool', state: 'active', title: copy.title, detail: copy.detail, tool: event.tool, startedAt: now })
+  } else {
+    const item = activeProgress('tool', event.id) ?? [...progressEvents.value].reverse().find(x => x.phase === 'tool' && x.state === 'active')
+    if (item) {
+      item.state = event.state === 'failed' ? 'failed' : 'completed'
+      item.finishedAt = now
+      const seconds = ((now - item.startedAt) / 1000).toFixed(1)
+      item.detail = event.state === 'failed' ? `工具执行失败（${seconds}s）` : `工具执行完成（${seconds}s）`
+    }
   }
 }
 
@@ -337,13 +328,12 @@ function makeStreamHandler(msg: Msg, sessionKey: string) {
       convSessions.set(sessionKey, event.sessionId)
     } else if (event.type === 'started') {
       elapsedMs.value = Math.max(0, Date.now() - event.startedAt)
-      runStatus.value = '正在启动运行环境…'
+      runStatus.value = '正在思考…'
     } else if (event.type === 'status') {
       handleProgressStatus(event)
-      if (event.phase === 'initializing') runStatus.value = event.message ?? '正在启动运行环境…'
-      else if (event.phase === 'thinking') runStatus.value = '正在分析任务…'
-      else if (event.phase === 'tool') runStatus.value = toolProgress(event.tool).title
-      else runStatus.value = '正在生成结果…'
+      if (event.phase === 'tool') runStatus.value = toolProgress(event.tool).title
+      else if (event.phase === 'text') runStatus.value = ''
+      else runStatus.value = '正在思考…'
     } else if (event.type === 'text') {
       proseStarted.value = true
       msg.text += event.delta
@@ -474,30 +464,38 @@ function copyInstall(slug: string) {
 const skillTitle = (slug: string) => bySlug.get(slug)?.name ?? ''
 const skillCat = (slug: string) => { const s = bySlug.get(slug); return s ? catOf(s.categoryId).name : '' }
 
-/* ---------- 历史运行记录：列表在侧栏（时间分组），详情在主区卡片 ---------- */
+/* ---------- 历史运行记录：侧栏按对话（clientSessionId）分组，详情为整段对话 ---------- */
 const historyRuns = ref<RunListItem[]>([])
 const historyLive = ref(false)
 const historyLoading = ref(true)
 const selectedHistoryId = ref<string | null>(null)
 
+/** 一个对话 = 同一 clientSessionId 的全部运行；换技能/新建对话会开新会话，天然分组边界 */
+interface HistoryGroup {
+  key: string
+  title: string
+  skill: string
+  /** 最新一次运行（trace 是会话累计快照，最新记录包含完整对话） */
+  latest: RunListItem
+  count: number
+}
+
 type HistoryDetailStatus = 'loading' | 'ok' | 'fallback' | 'error'
 interface HistoryDetail {
   status: HistoryDetailStatus
-  output: string
-  charts: ReportChartData[]
+  conversation: Array<{ role: 'user' | 'assistant'; text: string }>
+  /** Agent 产物（有则展示打开/下载）：HTML 报告与结构化 report.json */
   reportUrl?: string
+  hasReportJson?: boolean
 }
 const historyDetails = reactive<Record<string, HistoryDetail>>({})
 let historyRequestSeq = 0
 const historyRequestTokens: Record<string, number> = {}
-const selectedHistory = computed(() => historyRuns.value.find(run => run.runId === selectedHistoryId.value))
+const selectedHistory = computed(() => historyGroups.value.find(g => g.latest.runId === selectedHistoryId.value))
 const selectedHistoryDetail = computed(() => selectedHistoryId.value ? historyDetails[selectedHistoryId.value] : undefined)
 
 const skillNameOf = (slug: string) => bySlug.get(slug)?.name ?? (slug === GENERAL_SKILL_ID ? GENERAL_SKILL_NAME : slug)
 
-function historyTitle(run: RunListItem): string {
-  return run.taskTitle || run.promptDigest || '历史任务'
-}
 function fmtTime(ts: number | string): string {
   const d = new Date(ts)
   return d.toDateString() === new Date().toDateString()
@@ -520,69 +518,86 @@ function fmtHistoryDuration(ms: number): string {
   return `${minutes}分${String(rest).padStart(2, '0')}秒`
 }
 
-/* 侧栏按时间桶分组（今天 / 昨天 / 更早） */
+/* 运行记录 → 对话分组（旧记录无 clientSessionId 时退化为单运行一组） */
+const historyGroups = computed<HistoryGroup[]>(() => {
+  const bySession = new Map<string, RunListItem[]>()
+  for (const run of historyRuns.value) {
+    const key = run.clientSessionId || run.runId
+    const bucket = bySession.get(key)
+    if (bucket) bucket.push(run)
+    else bySession.set(key, [run])
+  }
+  const groups = [...bySession.values()].map(runs => {
+    const sorted = [...runs].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
+    const oldest = sorted[sorted.length - 1]
+    return {
+      key: oldest.clientSessionId || oldest.runId,
+      title: oldest.taskTitle || oldest.promptDigest || '历史对话',
+      skill: oldest.skill,
+      latest: sorted[0],
+      count: sorted.length,
+    }
+  })
+  return groups.sort((a, b) => Date.parse(b.latest.ts) - Date.parse(a.latest.ts))
+})
+
+/* 侧栏按时间桶分组（今天 / 昨天 / 更早），桶内按对话最新活动排序 */
 const groupedHistory = computed(() => {
   const now = new Date()
   const yest = new Date(now); yest.setDate(now.getDate() - 1)
-  const groups: { label: string; items: RunListItem[] }[] = [
+  const groups: { label: string; items: HistoryGroup[] }[] = [
     { label: '今天', items: [] },
     { label: '昨天', items: [] },
     { label: '更早', items: [] },
   ]
-  for (const run of historyRuns.value) {
-    const d = new Date(run.ts)
-    if (d.toDateString() === now.toDateString()) groups[0].items.push(run)
-    else if (d.toDateString() === yest.toDateString()) groups[1].items.push(run)
-    else groups[2].items.push(run)
+  for (const group of historyGroups.value) {
+    const d = new Date(group.latest.ts)
+    if (d.toDateString() === now.toDateString()) groups[0].items.push(group)
+    else if (d.toDateString() === yest.toDateString()) groups[1].items.push(group)
+    else groups[2].items.push(group)
   }
   return groups.filter(g => g.items.length > 0)
 })
-
-/* 反向取最后一条 assistant 消息的文本，历史用户页不读取或展示原始 prompt。 */
-function historyTextOf(message?: RunDetail['messages'][number]): string {
-  return message
-    ? (message.parts ?? []).filter(part => part.type === 'text').map(part => part.text ?? '').join('')
-    : ''
-}
 
 function clearHistorySelection() {
   selectedHistoryId.value = null
 }
 
-async function selectHistory(run: RunListItem) {
+async function selectHistory(group: HistoryGroup) {
   if (sending.value) {
-    toast('当前运行进行中，完成后才能查看历史结果')
+    toast('当前运行进行中，完成后才能查看历史对话')
     return
   }
+  const run = group.latest
   if (selectedHistoryId.value === run.runId) return
   selectedHistoryId.value = run.runId
   scrollTop()
 
   const cached = historyDetails[run.runId]
-  /* 成功或真实数据不可用的降级结果都缓存，重复点击不再次读取 trace。错误允许离开后重试。 */
+  /* 成功或真实数据不可用的降级结果都缓存，重复点击不再次读取。错误允许离开后重试。 */
   if (cached && cached.status !== 'error') return
 
   const token = ++historyRequestSeq
   historyRequestTokens[run.runId] = token
-  historyDetails[run.runId] = { status: 'loading', output: '', charts: [] }
+  historyDetails[run.runId] = { status: 'loading', conversation: [] }
   try {
     const result = await fetchRunDetail(run.runId)
     if (historyRequestTokens[run.runId] !== token) return
-    /* live=false 是 mock 兜底数据，不能冒充真实历史；trace 缺失也只能展示摘要。 */
-    if (!result.live || !result.trace) {
-      historyDetails[run.runId] = { status: 'fallback', output: '', charts: [] }
+    /* live=false 是 mock 兜底数据，不能冒充真实历史 */
+    if (!result.live) {
+      historyDetails[run.runId] = { status: 'fallback', conversation: [] }
       return
     }
-    const messages = [...(result.trace.messages ?? [])].reverse()
+    const conversation = result.conversation ?? []
     historyDetails[run.runId] = {
-      status: 'ok',
-      output: historyTextOf(messages.find(message => message.role === 'assistant')),
-      charts: result.item?.report?.meta?.charts ?? [],
+      status: conversation.length ? 'ok' : 'fallback',
+      conversation,
       reportUrl: result.item?.files?.html ? runReportUrl(run.runId) : undefined,
+      hasReportJson: Boolean(result.item?.files?.report),
     }
   } catch {
     if (historyRequestTokens[run.runId] === token) {
-      historyDetails[run.runId] = { status: 'error', output: '', charts: [] }
+      historyDetails[run.runId] = { status: 'error', conversation: [] }
     }
   }
 }
@@ -631,25 +646,28 @@ onBeforeUnmount(() => {
         新建对话
       </button>
       <div class="exp-history">
-        <template v-for="group in groupedHistory" :key="group.label">
-          <p class="exp-hist-group">{{ group.label }}</p>
+        <template v-for="bucket in groupedHistory" :key="bucket.label">
+          <p class="exp-hist-group">{{ bucket.label }}</p>
           <div
-            v-for="run in group.items"
-            :key="run.runId"
+            v-for="group in bucket.items"
+            :key="group.key"
             class="exp-hist-item is-run"
-            :class="{ 'is-active': run.runId === selectedHistoryId }"
+            :class="{ 'is-active': group.latest.runId === selectedHistoryId }"
             role="button"
             tabindex="0"
-            :title="historyTitle(run)"
-            @click="selectHistory(run)"
-            @keydown.enter="selectHistory(run)"
+            :title="group.title"
+            @click="selectHistory(group)"
+            @keydown.enter="selectHistory(group)"
           >
-            <span class="exp-hist-ico"><Icon :name="bySlug.get(run.skill)?.categoryId ?? 'brand'" :size="14" /></span>
+            <span class="exp-hist-ico"><Icon :name="bySlug.get(group.skill)?.categoryId ?? 'brand'" :size="14" /></span>
             <span class="exp-hist-copy">
-              <span class="exp-hist-title">{{ historyTitle(run) }}</span>
-              <small>{{ skillNameOf(run.skill) }} · {{ fmtTime(run.ts) }}</small>
+              <span class="exp-hist-title">{{ group.title }}</span>
+              <small>
+                {{ skillNameOf(group.skill) }} ·
+                {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
+              </small>
             </span>
-            <span class="use-hist-outcome" :class="`is-${run.outcome}`">{{ OUTCOME_LABEL[run.outcome] ?? run.outcome }}</span>
+            <span class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
           </div>
         </template>
         <p v-if="historyLoading" class="exp-side-empty">正在加载运行记录…</p>
@@ -668,25 +686,57 @@ onBeforeUnmount(() => {
         <section v-if="selectedHistory" class="exp-history-view" aria-live="polite">
           <header class="exp-history-head">
             <div>
-              <span class="exp-history-kicker">历史运行结果</span>
-              <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史详情' : historyTitle(selectedHistory) }}</h2>
+              <span class="exp-history-kicker">历史对话</span>
+              <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史对话' : selectedHistory.title }}</h2>
               <small class="exp-history-meta">
-                {{ skillNameOf(selectedHistory.skill) }} · {{ fmtHistoryTime(selectedHistory.ts) }} ·
-                {{ fmtHistoryDuration(selectedHistory.durationMs) }} ·
-                {{ OUTCOME_LABEL[selectedHistory.outcome] ?? selectedHistory.outcome }}
+                {{ skillNameOf(selectedHistory.skill) }} · {{ fmtHistoryTime(selectedHistory.latest.ts) }} ·
+                {{ fmtHistoryDuration(selectedHistory.latest.durationMs) }} ·
+                {{ OUTCOME_LABEL[selectedHistory.latest.outcome] ?? selectedHistory.latest.outcome }}
               </small>
             </div>
             <button type="button" class="text-btn" @click="clearHistorySelection">返回对话</button>
           </header>
-          <p v-if="selectedHistoryDetail?.status === 'loading'" class="exp-history-state">正在读取历史运行记录…</p>
-          <p v-else-if="selectedHistoryDetail?.status === 'error'" class="exp-history-state is-error">历史详情加载失败，请稍后重试。</p>
+          <p v-if="selectedHistoryDetail?.status === 'loading'" class="exp-history-state">正在读取历史对话…</p>
+          <p v-else-if="selectedHistoryDetail?.status === 'error'" class="exp-history-state is-error">历史对话加载失败，请稍后重试。</p>
           <template v-else-if="selectedHistoryDetail">
-            <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output"
-              :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl"
-              :html-mode="selectedHistory.skill === 'career-guidance'" />
+            <div v-if="selectedHistoryDetail.conversation.length" class="exp-history-talk">
+              <template v-for="(turn, ti) in selectedHistoryDetail.conversation" :key="ti">
+                <div v-if="turn.role === 'user'" class="exp-msg-user">{{ turn.text }}</div>
+                <div v-else class="exp-msg-ai">
+                  <span class="exp-ai-avatar"><Icon :name="bySlug.get(selectedHistory.skill)?.categoryId ?? 'brand'" :size="16" /></span>
+                  <div class="exp-ai-main">
+                    <div class="exp-ai-head"><span class="exp-ai-name">{{ skillNameOf(selectedHistory.skill) }}</span></div>
+                    <ReportOutput :text="turn.text" />
+                  </div>
+                </div>
+              </template>
+            </div>
             <p v-else class="exp-history-state">
-              {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
+              {{ selectedHistoryDetail.status === 'fallback' ? '历史对话不可用，仅保留任务摘要。' : '本次运行没有对话内容。' }}
             </p>
+            <div
+              v-if="selectedHistoryDetail.status === 'ok' && (selectedHistoryDetail.reportUrl || selectedHistoryDetail.hasReportJson)"
+              class="exp-history-files"
+            >
+              <span class="exp-history-files-label">智能体产物</span>
+              <a
+                v-if="selectedHistoryDetail.reportUrl"
+                class="exp-act exp-act-primary"
+                :href="selectedHistoryDetail.reportUrl"
+                target="_blank"
+                rel="noopener"
+              ><Icon name="file-text" :size="14" />打开 HTML 报告</a>
+              <a
+                v-if="selectedHistoryDetail.reportUrl"
+                class="exp-act"
+                :href="`${selectedHistoryDetail.reportUrl}?download=1`"
+              ><Icon name="download" :size="14" />下载报告 HTML</a>
+              <a
+                v-if="selectedHistoryDetail.hasReportJson"
+                class="exp-act"
+                :href="runFileUrl(selectedHistory.latest.runId, 'report')"
+              ><Icon name="download" :size="14" />下载 report.json</a>
+            </div>
           </template>
         </section>
 

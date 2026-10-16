@@ -244,7 +244,71 @@ const server = createServer((req, res) => {
   sendJson(res, 404, { error: '接口不存在。' })
 })
 
-/** GET /api/runs（列表）· /api/runs/:runId（详情）· /api/runs/:runId/file/:kind（下载，md 按需生成） */
+/** GET /api/runs（列表）· /api/runs/:runId（详情，含 conversation 对话视图）· /api/runs/:runId/file/:kind（下载，md 按需生成） */
+
+/* ---------- 详情的对话视图：剥离技能提示词包装，只留用户可读的你问我答 ---------- */
+
+const USER_TEXT_SENTINEL = '\u0000PLAZA_USER_TEXT\u0000'
+
+/** buildPrompt 的包装形状（前缀/后缀）：用哨兵内容跑一遍 buildPrompt 反推得到，
+    与拼装逻辑天然同步，避免手工维护第二份提示词副本。 */
+function promptWrappers(skill: string): Array<{ prefix: string; suffix: string }> {
+  if (!(skill in SKILL_PROMPTS) && !INSTALLED_SKILLS.has(skill)) return []
+  const wrappers: Array<{ prefix: string; suffix: string }> = []
+  for (const first of [true, false]) {
+    const composed = runner.buildPrompt(skill, [{ role: 'user', content: USER_TEXT_SENTINEL }], first)
+    const at = composed.indexOf(USER_TEXT_SENTINEL)
+    if (at >= 0) wrappers.push({ prefix: composed.slice(0, at), suffix: composed.slice(at + USER_TEXT_SENTINEL.length) })
+  }
+  /* 长前缀优先：首轮 `/skill:x ` 包装先于续轮空前缀命中 */
+  return wrappers.sort((a, b) => b.prefix.length - a.prefix.length)
+}
+
+/** 权威 trace → 用户可读对话：剥离技能系统提示/逐轮契约重申（首轮注入与会话
+    重建都会出现），reasoning 与工具过程不进对话视图。 */
+function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user' | 'assistant'; text: string }> {
+  const messages = (trace as any)?.messages
+  if (!Array.isArray(messages)) return []
+  const wrappers = promptWrappers(skill)
+  const strip = (text: string): string => {
+    for (const w of wrappers) {
+      if (text.startsWith(w.prefix) && text.endsWith(w.suffix)) {
+        return text.slice(w.prefix.length, text.length - w.suffix.length).trim()
+      }
+    }
+    /* pi 把 /skill:x 展开为完整技能文档后写入 trace（sentinel 前缀对不上）：
+       按 </skill> 边界剥离展开文档，再剥 buildPrompt 追加的契约/侧车后缀。 */
+    let body = text
+    if (body.startsWith('<skill ')) {
+      const close = body.indexOf('</skill>')
+      if (close >= 0) body = body.slice(close + '</skill>'.length).replace(/^\s+/, '')
+    }
+    for (const w of wrappers) {
+      if (w.suffix && body.endsWith(w.suffix)) {
+        body = body.slice(0, body.length - w.suffix.length)
+        break
+      }
+    }
+    return body.trim()
+  }
+  const turns: Array<{ role: 'user' | 'assistant'; text: string }> = []
+  for (const m of messages) {
+    const text = (Array.isArray(m?.parts) ? m.parts : [])
+      .filter((p: any) => p?.type === 'text')
+      .map((p: any) => String(p.text ?? ''))
+      .join('')
+      .trim()
+    if (!text) continue
+    if (m.role === 'user') {
+      const stripped = strip(text)
+      if (stripped) turns.push({ role: 'user', text: stripped })
+    } else if (m.role === 'assistant') {
+      turns.push({ role: 'assistant', text })
+    }
+  }
+  return turns
+}
+
 function handleRunsApi(req: any, res: any, seg: string[]) {
   if (seg.length === 2) {
     const query = new URL(req.url, 'http://localhost').searchParams
@@ -274,7 +338,7 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
     } catch {
       /* 文件损坏按无详情处理 */
     }
-    sendJson(res, 200, { item: record, trace })
+    sendJson(res, 200, { item: record, trace, conversation: deriveConversation(record.skill, trace) })
     return
   }
 

@@ -47,3 +47,7 @@
 - 从运行记录恢复会话：以 clientSessionId + convSlugs 重建对话上下文（需后端提供按会话取消息或前端持久化 sessionId）。
 - 体验页结果卡的操作（打开 /runs 详情、导出 trace）按需补。
 - UsePage 附件区在无后端时的引导文案与上传按钮状态可再收敛。
+
+## 补注（2026-10-16 晚：历史形态被 069 修订）
+
+本记录「历史记录」段描述的侧栏逐运行条目与「主区只读详情卡（最后一条 assistant 文本 + charts）」已被 [069-conversation-history-and-toolsonly-progress.md](069-conversation-history-and-toolsonly-progress.md) 取代：侧栏按 clientSessionId 分组为对话（「N 条消息」），详情卡改为整段对话转录 + 产物动作（打开/下载 HTML 报告、下载 report.json），结果展示与 charts 从历史功能删除。其余约定（表单交接、附件沙箱、发送后刷新）不变。

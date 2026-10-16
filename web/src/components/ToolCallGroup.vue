@@ -2,8 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 
-/* 与 UsePage 的 ProgressItem 结构一致：只携带安全文案，
-   工具参数、SQL、路径等敏感细节不进入前端 DOM（手记 030 约定）。 */
+/* 消费方（ExperiencePage）的 ProgressItem 结构一致：只携带安全文案，
+   工具参数、SQL、路径等敏感细节不进入前端 DOM（手记 030 约定）。
+   面板只登记真实发生的工具调用；思考/写正文不占行。 */
 export interface ToolProgressItem {
   id: string
   phase: 'thinking' | 'tool' | 'writing' | 'system'
@@ -58,7 +59,7 @@ function fmt(ms: number): string {
   <div class="tool-group" :class="{ 'is-open': open }">
     <button type="button" class="tool-group-head" :aria-expanded="open" @click="open = !open">
       <Icon name="wrench" :size="14" class="tool-group-wrench" />
-      <span class="tool-group-title">运行进度</span>
+      <span class="tool-group-title">工具调用</span>
       <span class="tool-group-status" :class="{ 'is-running': !allDone }">
         <template v-if="allDone">
           <Icon name="check" :size="11" class="tool-status-ok" />
