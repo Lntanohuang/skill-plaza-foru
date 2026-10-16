@@ -22,7 +22,8 @@ const props = withDefaults(defineProps<{
   proseStarted?: boolean
 }>(), { proseStarted: false })
 
-const open = ref(true)
+/* 历史恢复时以折叠态进场（proseStarted 初始即 true），实时对话则首字到达再折叠 */
+const open = ref(!props.proseStarted)
 const bodyEl = ref<HTMLElement | null>(null)
 
 watch(() => props.proseStarted, v => { if (v) open.value = false })
@@ -36,6 +37,8 @@ watch(() => props.items.length, async () => {
 
 const doneCount = computed(() => props.items.filter(i => i.state !== 'active').length)
 const allDone = computed(() => props.items.length > 0 && doneCount.value === props.items.length)
+/* trace 导出不带工具耗时：没有计时数据的组不显示「共 Xs」，不伪造 */
+const hasTiming = computed(() => props.items.some(i => i.finishedAt != null))
 const totalMs = computed(() => {
   if (!props.items.length) return 0
   const first = props.items[0].startedAt
@@ -63,7 +66,7 @@ function fmt(ms: number): string {
       <span class="tool-group-status" :class="{ 'is-running': !allDone }">
         <template v-if="allDone">
           <Icon name="check" :size="11" class="tool-status-ok" />
-          已完成 {{ items.length }} 步 · 共 {{ fmt(totalMs) }}，点击查看
+          已完成 {{ items.length }} 步<template v-if="hasTiming"> · 共 {{ fmt(totalMs) }}</template>，点击查看
         </template>
         <template v-else>
           <Icon name="loader" :size="11" class="tool-status-spin" />

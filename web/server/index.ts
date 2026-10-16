@@ -265,8 +265,9 @@ function promptWrappers(skill: string): Array<{ prefix: string; suffix: string }
 }
 
 /** 权威 trace → 用户可读对话：剥离技能系统提示/逐轮契约重申（首轮注入与会话
-    重建都会出现），reasoning 与工具过程不进对话视图。 */
-function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user' | 'assistant'; text: string }> {
+    重建都会出现），reasoning 不进对话视图；工具调用降级为「名称+成败」摘要
+    （030 边界：参数/命令/路径不出服务端），聚合到所在轮次的首条 AI 消息上。 */
+function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user' | 'assistant'; text: string; tools?: Array<{ tool: string; failed: boolean }> }> {
   const messages = (trace as any)?.messages
   if (!Array.isArray(messages)) return []
   const wrappers = promptWrappers(skill)
@@ -291,19 +292,47 @@ function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user'
     }
     return body.trim()
   }
-  const turns: Array<{ role: 'user' | 'assistant'; text: string }> = []
+  type Turn = { role: 'user' | 'assistant'; text: string; tools?: Array<{ tool: string; failed: boolean }> }
+  const turns: Turn[] = []
+  /* 一个用户轮次内的工具调用聚合为该轮首条 AI 消息的 tools（对齐实时对话的单组形态） */
+  let pendingTools: Array<{ tool: string; failed: boolean }> = []
+  let placed = true
   for (const m of messages) {
-    const text = (Array.isArray(m?.parts) ? m.parts : [])
+    const parts = Array.isArray(m?.parts) ? m.parts : []
+    const text = parts
       .filter((p: any) => p?.type === 'text')
       .map((p: any) => String(p.text ?? ''))
       .join('')
       .trim()
-    if (!text) continue
     if (m.role === 'user') {
       const stripped = strip(text)
-      if (stripped) turns.push({ role: 'user', text: stripped })
-    } else if (m.role === 'assistant') {
-      turns.push({ role: 'assistant', text })
+      if (stripped) {
+        turns.push({ role: 'user', text: stripped })
+        pendingTools = []
+        placed = false
+      }
+      continue
+    }
+    if (m.role !== 'assistant') continue
+    for (const p of parts) {
+      if (p?.type === 'tool') pendingTools.push({ tool: String(p.tool ?? ''), failed: p?.state?.status === 'error' })
+    }
+    if (!text) continue
+    const turn: Turn = { role: 'assistant', text }
+    if (!placed && pendingTools.length) {
+      turn.tools = pendingTools
+      pendingTools = []
+      placed = true
+    }
+    turns.push(turn)
+  }
+  /* 末轮只有工具没有正文（如中途失败）：并入该轮最后一条 AI 消息 */
+  if (pendingTools.length) {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === 'assistant') {
+        turns[i].tools = [...(turns[i].tools ?? []), ...pendingTools]
+        break
+      }
     }
   }
   return turns

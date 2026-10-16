@@ -27,6 +27,8 @@ interface Msg {
   /** done 事件带回的图表与报告链接（表单任务/报告技能） */
   charts?: ReportChartData[]
   reportUrl?: string
+  /** 历史恢复的 AI 消息携带的工具调用摘要（名称+成败，030 边界内） */
+  tools?: Array<{ tool: string; failed: boolean }>
 }
 
 interface Demo { slug: string; question: string; reply: string }
@@ -112,24 +114,25 @@ function endRun() {
   if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
 }
 
+/* 中性动词短语：实时状态行加「正在…」，历史工具行直接用（不再对已完成行显示"正在"） */
 function toolProgress(tool?: string): { title: string; detail: string } {
   const name = (tool ?? '').toLowerCase()
   if (name.includes('career-market') || name.includes('mysql') || name.includes('query')) {
-    return { title: '正在查询岗位库', detail: '分析岗位要求、经验和薪资结构' }
+    return { title: '查询岗位库', detail: '分析岗位要求、经验和薪资结构' }
   }
   if (name === 'read' || name.includes('read')) {
-    return { title: '正在读取参考资料', detail: '整理当前任务所需的技能规则和资料' }
+    return { title: '读取参考资料', detail: '整理当前任务所需的技能规则和资料' }
   }
   if (name === 'write' || name.includes('write')) {
-    return { title: '正在生成报告文件', detail: '写入并校验用户可查看的报告' }
+    return { title: '生成报告文件', detail: '写入并校验用户可查看的报告' }
   }
   if (name.includes('chart') || name.includes('visual')) {
-    return { title: '正在生成数据图表', detail: '把已验证的数据整理为可读图表' }
+    return { title: '生成数据图表', detail: '把已验证的数据整理为可读图表' }
   }
   if (name === 'bash' || name.includes('shell')) {
-    return { title: '正在执行数据处理', detail: '运行受控的数据处理任务' }
+    return { title: '执行数据处理', detail: '运行受控的数据处理任务' }
   }
-  return { title: '正在调用工具', detail: tool || '执行受控任务' }
+  return { title: '调用工具', detail: tool || '执行受控任务' }
 }
 
 function activeProgress(phase?: ProgressItem['phase'], id?: string): ProgressItem | undefined {
@@ -331,7 +334,7 @@ function makeStreamHandler(msg: Msg, sessionKey: string) {
       runStatus.value = '正在思考…'
     } else if (event.type === 'status') {
       handleProgressStatus(event)
-      if (event.phase === 'tool') runStatus.value = toolProgress(event.tool).title
+      if (event.phase === 'tool') runStatus.value = `正在${toolProgress(event.tool).title}…`
       else if (event.phase === 'text') runStatus.value = ''
       else runStatus.value = '正在思考…'
     } else if (event.type === 'text') {
@@ -484,7 +487,7 @@ interface HistoryGroup {
 }
 
 interface HistoryDetail {
-  conversation: Array<{ role: 'user' | 'assistant'; text: string }>
+  conversation: Array<{ role: 'user' | 'assistant'; text: string; tools?: Array<{ tool: string; failed: boolean }> }>
   /** 该对话生成的 HTML 报告（内联在最后一条 AI 消息上，与实时对话一致） */
   reportUrl?: string
 }
@@ -545,6 +548,18 @@ function clearHistorySelection() {
   selectedSessionKey.value = null
 }
 
+/* 历史恢复的工具行 → ProgressItem（trace 不带耗时：无时长、不伪造） */
+function historyToolItems(msg: Msg): ProgressItem[] {
+  return (msg.tools ?? []).map((tool, i) => ({
+    id: `ht-${i}`,
+    phase: 'tool',
+    state: tool.failed ? 'failed' : 'completed',
+    title: toolProgress(tool.tool).title,
+    detail: tool.failed ? '工具执行失败' : '',
+    startedAt: 0,
+  }))
+}
+
 /* 点开历史 = 把对话载入正常消息流（与 ChatGPT 一致）：无专门结果卡，
    报告链接内联在最后一条 AI 消息；同时恢复服务端会话，可直接继续对话。 */
 async function selectHistory(group: HistoryGroup) {
@@ -568,7 +583,7 @@ async function selectHistory(group: HistoryGroup) {
     detail.conversation.forEach((turn, i) => { if (turn.role === 'assistant') lastAi = i })
     messages.value = detail.conversation.map((turn, i) => turn.role === 'user'
       ? { role: 'user', text: turn.text, done: true }
-      : { role: 'ai', text: turn.text, skill, done: true, real: true, reportUrl: i === lastAi ? detail.reportUrl : undefined })
+      : { role: 'ai', text: turn.text, skill, done: true, real: true, reportUrl: i === lastAi ? detail.reportUrl : undefined, tools: turn.tools })
     progressOwner.value = null
     progressEvents.value = []
     scrollTop()
@@ -714,6 +729,7 @@ onBeforeUnmount(() => {
                   <span v-else-if="msg.done" class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
                 </div>
                 <ToolCallGroup v-if="msg === progressOwner && progressEvents.length" :items="progressEvents" :prose-started="proseStarted" />
+                <ToolCallGroup v-else-if="msg.tools?.length" :items="historyToolItems(msg)" :prose-started="true" />
                 <ReportOutput :text="msg.text" :charts="msg.charts" :report-url="msg.reportUrl"
                   :html-mode="msg.skill?.slug === 'career-guidance'" :streaming="!msg.done" />
                 <div v-if="msg.done && msg.skill" class="exp-ai-actions">
