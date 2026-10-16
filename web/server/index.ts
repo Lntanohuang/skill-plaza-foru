@@ -315,7 +315,12 @@ function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user'
     }
     if (m.role !== 'assistant') continue
     for (const p of parts) {
-      if (p?.type === 'tool') pendingTools.push({ tool: String(p.tool ?? ''), failed: p?.state?.status === 'error' })
+      if (p?.type === 'tool') pendingTools.push({
+        tool: String(p.tool ?? ''),
+        failed: p?.state?.status === 'error',
+        startedAt: typeof p?.startedAt === 'number' ? p.startedAt : undefined,
+        endedAt: typeof p?.endedAt === 'number' ? p.endedAt : undefined,
+      })
     }
     if (!text) continue
     const turn: Turn = { role: 'assistant', text }

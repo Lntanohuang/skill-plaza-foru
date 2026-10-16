@@ -27,8 +27,8 @@ interface Msg {
   /** done 事件带回的图表与报告链接（表单任务/报告技能） */
   charts?: ReportChartData[]
   reportUrl?: string
-  /** 历史恢复的 AI 消息携带的工具调用摘要（名称+成败，030 边界内） */
-  tools?: Array<{ tool: string; failed: boolean }>
+  /** 历史恢复的 AI 消息携带的工具调用摘要（名称+成败+起止耗时，030 边界内） */
+  tools?: Array<{ tool: string; failed: boolean; startedAt?: number; endedAt?: number }>
 }
 
 interface Demo { slug: string; question: string; reply: string }
@@ -487,7 +487,7 @@ interface HistoryGroup {
 }
 
 interface HistoryDetail {
-  conversation: Array<{ role: 'user' | 'assistant'; text: string; tools?: Array<{ tool: string; failed: boolean }> }>
+  conversation: Array<{ role: 'user' | 'assistant'; text: string; tools?: Array<{ tool: string; failed: boolean; startedAt?: number; endedAt?: number }> }>
   /** 该对话生成的 HTML 报告（内联在最后一条 AI 消息上，与实时对话一致） */
   reportUrl?: string
 }
@@ -548,7 +548,7 @@ function clearHistorySelection() {
   selectedSessionKey.value = null
 }
 
-/* 历史恢复的工具行 → ProgressItem（trace 不带耗时：无时长、不伪造） */
+/* 历史恢复的工具行 → ProgressItem；trace 带起止时间（新运行）时还原每行耗时与组总时长，旧 trace 无计时则不显示 */
 function historyToolItems(msg: Msg): ProgressItem[] {
   return (msg.tools ?? []).map((tool, i) => ({
     id: `ht-${i}`,
@@ -556,7 +556,8 @@ function historyToolItems(msg: Msg): ProgressItem[] {
     state: tool.failed ? 'failed' : 'completed',
     title: toolProgress(tool.tool).title,
     detail: tool.failed ? '工具执行失败' : '',
-    startedAt: 0,
+    startedAt: tool.startedAt ?? 0,
+    finishedAt: tool.endedAt,
   }))
 }
 
