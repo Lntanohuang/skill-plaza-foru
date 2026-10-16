@@ -13,15 +13,48 @@ export interface RunsResult {
   live: boolean
 }
 
-export async function fetchRuns(): Promise<RunsResult> {
+export async function fetchRuns(opts: { archived?: boolean } = {}): Promise<RunsResult> {
   try {
-    const res = await fetch('/api/runs?limit=200', { cache: 'no-store' })
+    const url = opts.archived ? '/api/runs?limit=200&archived=1' : '/api/runs?limit=200'
+    const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) throw new Error(String(res.status))
     const data = (await res.json()) as { runs: RunListItem[] }
-    if (!Array.isArray(data.runs) || data.runs.length === 0) throw new Error('empty')
+    /* 归档列表为空是正常态，不回落演示数据 */
+    if (!Array.isArray(data.runs) || (data.runs.length === 0 && !opts.archived)) throw new Error('empty')
     return { runs: data.runs, live: true }
   } catch {
+    if (opts.archived) return { runs: [], live: false }
     return { runs: RUNS_MOCK, live: false }
+  }
+}
+
+/* ---------- 会话归档/删除（key = clientSessionId，旧记录退化为其 runId） ---------- */
+
+export async function setConversationArchived(key: string, archived: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/runs/session/${encodeURIComponent(key)}/${archived ? 'archive' : 'unarchive'}`, { method: 'POST' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function deleteConversation(key: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/runs/session/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** 删除单条运行记录（运行记录页归档视图） */
+export async function deleteRun(runId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
+    return res.ok
+  } catch {
+    return false
   }
 }
 

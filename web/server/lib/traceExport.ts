@@ -147,6 +147,8 @@ export interface RunRecord {
   promptDigest: string
   outcome: RunOutcome
   durationMs: number
+  /** 会话归档标记（前端侧栏隐藏，?archived=1 可查）；由 /api/runs/session/:id 写入 */
+  archived?: boolean
   usage?: UsageSummary
   /** 完整累计 token 与上下文窗口快照；usage 保留旧字段形状。 */
   tokenUsage?: TokenUsageSnapshot
@@ -219,6 +221,13 @@ export function readIndex(): RunRecord[] {
   } catch {
     return []
   }
+}
+
+/** 整体重写运行索引（归档标记/删除会话用）。同步写与同步 append 单线程内不交错；
+    trace 文件保留在磁盘（删除是索引层面的，不做不可逆清理）。 */
+export function rewriteIndex(records: RunRecord[]): void {
+  mkdirSync(TRACES_DIR, { recursive: true })
+  writeFileSync(join(TRACES_DIR, 'index.jsonl'), records.map(r => JSON.stringify(r) + '\n').join(''))
 }
 
 export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report' | 'html'): string {

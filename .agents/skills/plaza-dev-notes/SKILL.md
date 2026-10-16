@@ -117,3 +117,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 069 | 历史按对话展示整段记录（conversation 剥离提示词包装、clientSessionId 分组、产物只留报告链接/下载）+ 运行进度只显示真实工具调用 | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过；详情卡形态当日被 070 取代，其余约定生效） | [069-conversation-history-and-toolsonly-progress.md](references/069-conversation-history-and-toolsonly-progress.md) |
 | 070 | 点开历史即正常对话流：删专门详情卡/产物区，报告链接内联，恢复服务端会话可直接续聊 | 已实现（2026-10-16 构建/浏览器断言含真实续聊与下载路由 200/截图通过） | [070-history-as-normal-chat.md](references/070-history-as-normal-chat.md) |
 | 071 | 历史对话补回工具调用摘要（conversation.tools 名称+成败+起止耗时、聚合到轮次首条 AI 消息、折叠组还原每行耗时与总时长） | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过，无命令泄露；耗时同日落地：piRunner 计时写入 trace） | [071-history-tool-summary.md](references/071-history-tool-summary.md) |
+| 072 | 会话归档与删除（RunRecord.archived + rewriteIndex、session 路由、侧栏 hover 操作与两步删除、已归档分区） | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过；删除保留 trace 文件为索引层删除） | [072-conversation-archive-delete.md](references/072-conversation-archive-delete.md) |

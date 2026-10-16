@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { bySlug, catOf, SKILLS, GENERAL_SKILL_ID, GENERAL_SKILL_NAME, type Skill } from '../data/skills'
 import { checkHealth, streamChat, type ChatAttachment, type ChatEvent } from '../composables/useChatApi'
 import { takePendingFormTask } from '../composables/pendingTask'
-import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
+import { fetchRunDetail, fetchRuns, runReportUrl, setConversationArchived, deleteConversation } from '../api/runsApi'
 import { OUTCOME_LABEL, type RunListItem } from '../data/runsMock'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import Icon from '../components/Icon.vue'
@@ -469,6 +469,7 @@ const skillCat = (slug: string) => { const s = bySlug.get(slug); return s ? catO
 
 /* ---------- 历史运行记录：侧栏按对话（clientSessionId）分组，点开直接载入对话流 ---------- */
 const historyRuns = ref<RunListItem[]>([])
+const archivedRuns = ref<RunListItem[]>([])
 const historyLive = ref(false)
 const historyLoading = ref(true)
 /** 当前选中的对话（key = clientSessionId，旧记录退化为其 runId） */
@@ -484,6 +485,7 @@ interface HistoryGroup {
   /** 最新一次运行（trace 是会话累计快照，最新记录包含完整对话） */
   latest: RunListItem
   count: number
+  archived: boolean
 }
 
 interface HistoryDetail {
@@ -503,17 +505,17 @@ function fmtTime(ts: number | string): string {
     : `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-/* 运行记录 → 对话分组（旧记录无 clientSessionId 时退化为单运行一组） */
-const historyGroups = computed<HistoryGroup[]>(() => {
+/* 运行记录 → 对话分组（旧记录无 clientSessionId 时退化为单运行一组）；常规与归档列表共用 */
+function groupRuns(runs: RunListItem[], archived: boolean): HistoryGroup[] {
   const bySession = new Map<string, RunListItem[]>()
-  for (const run of historyRuns.value) {
+  for (const run of runs) {
     const key = run.clientSessionId || run.runId
     const bucket = bySession.get(key)
     if (bucket) bucket.push(run)
     else bySession.set(key, [run])
   }
-  const groups = [...bySession.values()].map(runs => {
-    const sorted = [...runs].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
+  const groups = [...bySession.values()].map(items => {
+    const sorted = [...items].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
     const oldest = sorted[sorted.length - 1]
     return {
       key: oldest.clientSessionId || oldest.runId,
@@ -521,9 +523,19 @@ const historyGroups = computed<HistoryGroup[]>(() => {
       skill: oldest.skill,
       latest: sorted[0],
       count: sorted.length,
+      archived,
     }
   })
   return groups.sort((a, b) => Date.parse(b.latest.ts) - Date.parse(a.latest.ts))
+}
+const historyGroups = computed(() => groupRuns(historyRuns.value, false))
+const archivedGroups = computed(() => groupRuns(archivedRuns.value, true))
+/** 展开归档区时附加在常规分组之后 */
+const showArchived = ref(false)
+const sidebarSections = computed(() => {
+  const sections: { label: string; items: HistoryGroup[] }[] = groupedHistory.value.map(b => ({ label: b.label, items: b.items }))
+  if (showArchived.value && archivedGroups.value.length) sections.push({ label: '已归档', items: archivedGroups.value })
+  return sections
 })
 
 /* 侧栏按时间桶分组（今天 / 昨天 / 更早），桶内按对话最新活动排序 */
@@ -623,14 +635,16 @@ async function loadHistory() {
   historyReqInFlight = true
   historyLoading.value = true
   try {
-    const result = await fetchRuns()
+    const [result, archived] = await Promise.all([fetchRuns(), fetchRuns({ archived: true })])
     /* live=false 是 mock 兜底数据，不冒充真实历史 */
     historyRuns.value = result.live ? result.runs : []
+    archivedRuns.value = archived.runs
     historyLive.value = result.live
     if (!result.live) {
       clearHistorySelection()
       return
     }
+    if (showArchived.value && archivedGroups.value.length === 0) showArchived.value = false
     /* 当前对话（新建/表单交接/历史恢复）在列表刷新后保持或获得高亮 */
     const activeSession = currentConvId.value !== null ? convSessions.get(`pi:${currentConvId.value}`) : undefined
     if (selectedSessionKey.value && !historyGroups.value.some(g => g.key === selectedSessionKey.value)) {
@@ -642,6 +656,52 @@ async function loadHistory() {
     historyReqInFlight = false
     historyLoading.value = false
   }
+}
+
+/* ---------- 会话归档/删除（操作成功后刷新两个列表） ---------- */
+const confirmDeleteKey = ref<string | null>(null)
+let confirmDeleteTimer: ReturnType<typeof setTimeout> | null = null
+
+async function archiveConversation(group: HistoryGroup, archived: boolean) {
+  if (sending.value) {
+    toast('当前运行进行中，完成后才能操作')
+    return
+  }
+  const ok = await setConversationArchived(group.key, archived)
+  if (!ok) {
+    toast('操作失败，请稍候重试')
+    return
+  }
+  toast(archived ? '已归档，可在侧栏底部「已归档对话」查看' : '已恢复到对话列表')
+  void loadHistory()
+}
+
+function onDeleteClick(group: HistoryGroup) {
+  if (sending.value) {
+    toast('当前运行进行中，完成后才能操作')
+    return
+  }
+  /* 两步确认：第一次点红显确认态，2.5 秒内再点才执行 */
+  if (confirmDeleteKey.value !== group.key) {
+    confirmDeleteKey.value = group.key
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer)
+    confirmDeleteTimer = setTimeout(() => { confirmDeleteKey.value = null }, 2500)
+    return
+  }
+  if (confirmDeleteTimer) { clearTimeout(confirmDeleteTimer); confirmDeleteTimer = null }
+  confirmDeleteKey.value = null
+  void runDelete(group)
+}
+async function runDelete(group: HistoryGroup) {
+  const ok = await deleteConversation(group.key)
+  if (!ok) {
+    toast('删除失败，请稍候重试')
+    return
+  }
+  toast('对话已删除')
+  delete historyDetails[group.latest.runId]
+  if (selectedSessionKey.value === group.key) newChat()
+  void loadHistory()
 }
 
 /* 运行结束后刷新历史列表（新记录入列） */
@@ -668,10 +728,10 @@ onBeforeUnmount(() => {
         新建对话
       </button>
       <div class="exp-history">
-        <template v-for="bucket in groupedHistory" :key="bucket.label">
-          <p class="exp-hist-group">{{ bucket.label }}</p>
+        <template v-for="section in sidebarSections" :key="section.label">
+          <p class="exp-hist-group">{{ section.label }}</p>
           <div
-            v-for="group in bucket.items"
+            v-for="group in section.items"
             :key="group.key"
             class="exp-hist-item is-run"
             :class="{ 'is-active': group.key === selectedSessionKey }"
@@ -684,14 +744,53 @@ onBeforeUnmount(() => {
             <span class="exp-hist-ico"><Icon :name="bySlug.get(group.skill)?.categoryId ?? 'brand'" :size="14" /></span>
             <span class="exp-hist-copy">
               <span class="exp-hist-title">{{ group.title }}</span>
-              <small>
-                {{ skillNameOf(group.skill) }} ·
-                {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
+              <small class="exp-hist-meta">
+                <span class="exp-hist-meta-text">
+                  {{ skillNameOf(group.skill) }} ·
+                  {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
+                </span>
+                <!-- 常规列表只留归档；删除只在已归档视图提供 -->
+                <button
+                  v-if="!group.archived"
+                  type="button"
+                  class="exp-hist-inline"
+                  title="归档对话"
+                  aria-label="归档对话"
+                  @click.stop="archiveConversation(group, true)"
+                ><Icon name="archive" :size="12" /></button>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="exp-hist-inline"
+                    title="恢复到对话列表"
+                    aria-label="恢复到对话列表"
+                    @click.stop="archiveConversation(group, false)"
+                  ><Icon name="restore" :size="12" /></button>
+                  <button
+                    type="button"
+                    class="exp-hist-inline is-danger"
+                    :class="{ 'is-confirm': confirmDeleteKey === group.key }"
+                    :title="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
+                    :aria-label="confirmDeleteKey === group.key ? '再次点击确认删除' : '删除对话'"
+                    @click.stop="onDeleteClick(group)"
+                  >{{ confirmDeleteKey === group.key ? '确认' : '' }}<Icon name="trash" :size="12" /></button>
+                </template>
               </small>
             </span>
             <span class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
           </div>
         </template>
+        <button
+          v-if="!historyLoading && historyLive && (archivedGroups.length > 0 || showArchived)"
+          type="button"
+          class="exp-hist-archived"
+          :class="{ 'is-open': showArchived }"
+          @click="showArchived = !showArchived"
+        >
+          <Icon name="archive" :size="13" />
+          已归档对话 · {{ archivedGroups.length }}
+          <Icon name="chev-down" :size="12" />
+        </button>
         <p v-if="historyLoading" class="exp-side-empty">正在加载运行记录…</p>
         <p v-else-if="!historyLive" class="exp-side-empty">启动本地服务后可查看运行记录</p>
         <p v-else-if="historyRuns.length === 0" class="exp-side-empty">还没有运行记录，跑一次任务后就会出现在这里</p>

@@ -18,6 +18,7 @@ import {
   traceFilePath,
   TRACES_DIR,
   readIndex,
+  rewriteIndex,
   type RunOutcome,
   type ModelContextInfo,
   type RunRecord,
@@ -232,8 +233,12 @@ const server = createServer((req, res) => {
     handleHtmlReport(req, res, seg[2], seg.length === 4)
     return
   }
-  /* ---- 运行记录（只读，评测用）---- */
-  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'runs') {
+  /* ---- 运行记录（查询 + 会话归档/删除 + 单条运行删除）---- */
+  if (seg[0] === 'api' && seg[1] === 'runs' && (
+    req.method === 'GET'
+    || (seg[2] === 'session' && (req.method === 'POST' || req.method === 'DELETE'))
+    || (req.method === 'DELETE' && seg.length === 3)
+  )) {
     if (!originAllowed(req.headers.origin)) {
       sendJson(res, 403, { error: '不允许跨站调用本地 API。' })
       return
@@ -244,7 +249,9 @@ const server = createServer((req, res) => {
   sendJson(res, 404, { error: '接口不存在。' })
 })
 
-/** GET /api/runs（列表）· /api/runs/:runId（详情，含 conversation 对话视图）· /api/runs/:runId/file/:kind（下载，md 按需生成） */
+/** GET /api/runs（列表，?archived=1 只看归档）· /api/runs/:runId（详情，含 conversation 对话视图）
+    · /api/runs/:runId/file/:kind（下载，md 按需生成）
+    · POST /api/runs/session/:key/archive|unarchive（会话归档/恢复）· DELETE /api/runs/session/:key（删除会话） */
 
 /* ---------- 详情的对话视图：剥离技能提示词包装，只留用户可读的你问我答 ---------- */
 
@@ -344,14 +351,62 @@ function deriveConversation(skill: string, trace: unknown): Array<{ role: 'user'
 }
 
 function handleRunsApi(req: any, res: any, seg: string[]) {
+  /* 会话级操作：归档标记与删除按 clientSessionId 匹配整段对话
+     （旧记录无 clientSessionId 时退化为其 runId，与前端分组口径一致）。 */
+  if (seg[2] === 'session' && seg.length === 4 && req.method === 'DELETE') {
+    const key = seg[3]
+    const all = readIndex()
+    const kept = all.filter(r => (r.clientSessionId || r.runId) !== key)
+    if (kept.length === all.length) {
+      sendJson(res, 404, { error: '会话不存在。' })
+      return
+    }
+    rewriteIndex(kept)
+    sendJson(res, 200, { removed: all.length - kept.length })
+    return
+  }
+  if (seg[2] === 'session' && seg.length === 5 && req.method === 'POST' && (seg[4] === 'archive' || seg[4] === 'unarchive')) {
+    const key = seg[3]
+    const archived = seg[4] === 'archive'
+    const all = readIndex()
+    let changed = 0
+    const next = all.map(r => {
+      if ((r.clientSessionId || r.runId) !== key || Boolean(r.archived) === archived) return r
+      changed++
+      return { ...r, archived }
+    })
+    if (!changed) {
+      sendJson(res, 404, { error: '会话不存在。' })
+      return
+    }
+    rewriteIndex(next)
+    sendJson(res, 200, { archived, updated: changed })
+    return
+  }
+
+  /* 单条运行删除（运行记录页归档视图） */
+  if (seg.length === 3 && req.method === 'DELETE') {
+    const all = readIndex()
+    const kept = all.filter(r => r.runId !== seg[2])
+    if (kept.length === all.length) {
+      sendJson(res, 404, { error: '运行记录不存在。' })
+      return
+    }
+    rewriteIndex(kept)
+    sendJson(res, 200, { removed: 1 })
+    return
+  }
+
   if (seg.length === 2) {
     const query = new URL(req.url, 'http://localhost').searchParams
     const limit = Math.max(1, Math.min(500, Number(query.get('limit')) || 100))
     const skill = query.get('skill') || undefined
     const outcome = query.get('outcome') || undefined
+    const archivedOnly = query.get('archived') === '1'
     const runs = readIndex()
       .reverse()
       .filter(r => (!skill || r.skill === skill) && (!outcome || r.outcome === outcome))
+      .filter(r => archivedOnly ? Boolean(r.archived) : !r.archived)
       .slice(0, limit)
     sendJson(res, 200, { runs })
     return

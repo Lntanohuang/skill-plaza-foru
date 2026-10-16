@@ -3,21 +3,58 @@ import { computed, onMounted, ref } from 'vue'
 import Icon from '../components/Icon.vue'
 import { bySlug, GENERAL_SKILL_NAME } from '../data/skills'
 import { OUTCOME_LABEL, type RunListItem, type RunOutcome } from '../data/runsMock'
-import { fetchRuns } from '../api/runsApi'
+import { fetchRuns, deleteRun } from '../api/runsApi'
+import { toast } from '../composables/toast'
 
 /* 运行记录：每次在线运行的 outcome / 用量 / 工具调用一览。
-   数据来自后端 /api/runs（真实 trace）；后端未启动时回落演示数据。 */
+   数据来自后端 /api/runs（真实 trace）；后端未启动时回落演示数据。
+   归档视图（?archived=1）可查看被侧栏归档的会话并删除单条记录。 */
 
 const runs = ref<import('../data/runsMock').RunListItem[]>([])
 const live = ref(false)
 const loading = ref(true)
+const viewMode = ref<'normal' | 'archived'>('normal')
 
-onMounted(async () => {
-  const result = await fetchRuns()
+async function load() {
+  loading.value = true
+  const result = await fetchRuns({ archived: viewMode.value === 'archived' })
   runs.value = result.runs
   live.value = result.live
   loading.value = false
-})
+}
+
+onMounted(() => { void load() })
+
+function toggleView() {
+  viewMode.value = viewMode.value === 'archived' ? 'normal' : 'archived'
+  skillFilter.value = 'all'
+  outcomeFilter.value = 'all'
+  confirmRunId.value = null
+  void load()
+}
+
+/* 删除两步确认（与在线对话侧栏同款）：首击显确认态，2.5 秒内再击才执行 */
+const confirmRunId = ref<string | null>(null)
+let confirmTimer: ReturnType<typeof setTimeout> | null = null
+function onDeleteRun(run: RunListItem) {
+  if (confirmRunId.value !== run.runId) {
+    confirmRunId.value = run.runId
+    if (confirmTimer) clearTimeout(confirmTimer)
+    confirmTimer = setTimeout(() => { confirmRunId.value = null }, 2500)
+    return
+  }
+  if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null }
+  confirmRunId.value = null
+  void runDelete(run)
+}
+async function runDelete(run: RunListItem) {
+  if (!(await deleteRun(run.runId))) {
+    toast('删除失败，请稍候重试')
+    return
+  }
+  toast('运行记录已删除')
+  void load()
+}
 
 const skillFilter = ref('all')
 const outcomeFilter = ref<'all' | RunOutcome>('all')
@@ -114,12 +151,21 @@ function engineTitle(run: RunListItem): string | undefined {
             {{ OUTCOME_LABEL[o] }} {{ outcomeRuns(o) }}
           </button>
         </div>
+        <button
+          type="button" class="runs-chip runs-arch-toggle"
+          :class="{ 'is-on': viewMode === 'archived' }"
+          @click="toggleView"
+        >
+          <Icon name="archive" :size="13" />
+          {{ viewMode === 'archived' ? '返回常规视图' : '归档视图' }}
+        </button>
       </div>
 
-      <div class="runs-table" role="table" aria-label="运行记录列表">
+      <div class="runs-table" :class="{ 'is-archived': viewMode === 'archived' }" role="table" aria-label="运行记录列表">
         <div class="runs-row runs-row-head" role="row">
           <span>时间</span><span>SKILL</span><span>任务</span><span>结果</span>
           <span>时长</span><span>输入 / 输出</span><span>缓存</span><span>工具</span>
+          <span v-if="viewMode === 'archived'">操作</span>
         </div>
         <RouterLink
           v-for="run in filtered" :key="run.runId" class="runs-row" role="row"
@@ -132,9 +178,19 @@ function engineTitle(run: RunListItem): string | undefined {
           <span class="runs-cell-tok">{{ fmtTokens(run.usage?.inputTokens) }} / {{ fmtTokens(run.usage?.outputTokens) }}</span>
           <span>{{ run.usage?.cacheReadTokens ? fmtTokens(run.usage.cacheReadTokens) : '-' }}</span>
           <span><b class="runs-tools">{{ run.toolCallCount ?? 0 }}</b></span>
+          <span v-if="viewMode === 'archived'" class="runs-cell-act" @click.prevent.stop>
+            <button
+              type="button" class="runs-del"
+              :class="{ 'is-confirm': confirmRunId === run.runId }"
+              :title="confirmRunId === run.runId ? '再次点击确认删除' : '删除这条运行记录'"
+              @click.prevent.stop="onDeleteRun(run)"
+            >{{ confirmRunId === run.runId ? '确认删除' : '删除' }}</button>
+          </span>
         </RouterLink>
         <p v-if="loading" class="runs-empty">正在读取运行记录…</p>
-        <p v-else-if="filtered.length === 0" class="runs-empty">没有符合筛选条件的运行。</p>
+        <p v-else-if="filtered.length === 0" class="runs-empty">
+          {{ viewMode === 'archived' ? '没有已归档的运行记录。' : '没有符合筛选条件的运行。' }}
+        </p>
       </div>
 
       <p class="runs-note">
