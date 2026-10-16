@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { bySlug, catOf, type Skill } from '../data/skills'
 import { checkHealth, streamChat } from '../composables/useChatApi'
 import Icon from '../components/Icon.vue'
+import MarkdownView from '../components/MarkdownView.vue'
 import { useSession } from '../composables/session'
 import { useCopy } from '../composables/useCopy'
 import { toast } from '../composables/toast'
@@ -206,6 +207,24 @@ function fmtTime(ts: number) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+/* 侧栏按时间桶分组（今天 / 昨天 / 更早） */
+const groupedConversations = computed(() => {
+  const now = new Date()
+  const yest = new Date(now); yest.setDate(now.getDate() - 1)
+  const groups: { label: string; items: Conv[] }[] = [
+    { label: '今天', items: [] },
+    { label: '昨天', items: [] },
+    { label: '更早', items: [] },
+  ]
+  for (const conv of conversations.value) {
+    const d = new Date(conv.updatedAt)
+    if (d.toDateString() === now.toDateString()) groups[0].items.push(conv)
+    else if (d.toDateString() === yest.toDateString()) groups[1].items.push(conv)
+    else groups[2].items.push(conv)
+  }
+  return groups.filter(g => g.items.length > 0)
+})
+
 /* ---- 发送 ---- */
 function startAiMsg(skill: Skill | undefined, real: boolean): Msg {
   messages.value.push({ role: 'ai', text: '', skill, done: false, real })
@@ -349,27 +368,30 @@ onBeforeUnmount(() => {
   <section class="page page-exp">
     <aside class="exp-side">
       <button type="button" class="exp-new" @click="newChat">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <Icon name="plus" :size="15" />
         新建对话
       </button>
-      <p class="exp-side-label">最近对话</p>
       <div class="exp-history">
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          class="exp-hist-item"
-          :class="{ 'is-active': conv.id === activeId }"
-          role="button"
-          tabindex="0"
-          @click="openConv(conv.id)"
-          @keydown.enter="openConv(conv.id)"
-        >
-          <span class="exp-hist-title">{{ conv.title }}</span>
-          <span class="exp-hist-meta">
-            <span class="exp-hist-time">{{ fmtTime(conv.updatedAt) }}</span>
-            <button type="button" class="exp-hist-del" aria-label="删除对话" @click.stop="delConv(conv.id)">×</button>
-          </span>
-        </div>
+        <template v-for="group in groupedConversations" :key="group.label">
+          <p class="exp-hist-group">{{ group.label }}</p>
+          <div
+            v-for="conv in group.items"
+            :key="conv.id"
+            class="exp-hist-item"
+            :class="{ 'is-active': conv.id === activeId }"
+            role="button"
+            tabindex="0"
+            :title="`${conv.title} · ${fmtTime(conv.updatedAt)}`"
+            @click="openConv(conv.id)"
+            @keydown.enter="openConv(conv.id)"
+          >
+            <Icon name="msg" :size="15" />
+            <span class="exp-hist-title">{{ conv.title }}</span>
+            <button type="button" class="exp-hist-del" aria-label="删除对话" @click.stop="delConv(conv.id)">
+              <Icon name="x" :size="12" />
+            </button>
+          </div>
+        </template>
         <p v-if="conversations.length === 0" class="exp-side-empty">{{ user ? '暂无历史对话' : '登录后可保存历史对话' }}</p>
       </div>
       <p v-if="!user" class="exp-side-login">
@@ -378,84 +400,89 @@ onBeforeUnmount(() => {
     </aside>
 
     <div class="wrap-exp" :class="{ 'is-empty': messages.length === 0 }">
-      <div class="exp-top" :class="{ 'is-compact': messages.length > 0 }">
-        <h1 class="exp-title">智能体搭子，把产教领域的方法装进你的 AI</h1>
-        <p class="exp-sub">输入你的问题，看看每个 SKILL 会产出什么样的结果</p>
-      </div>
+      <div class="exp-shell">
+        <div class="exp-top" :class="{ 'is-compact': messages.length > 0 }">
+          <h1 class="exp-title">智能体搭子，把产教领域的方法装进你的 AI</h1>
+          <p class="exp-sub">输入你的问题，看看每个 SKILL 会产出什么样的结果</p>
+        </div>
 
-      <div v-if="messages.length === 0" class="exp-examples">
-        <span class="exp-examples-label">试试这些：</span>
-        <button v-for="ex in EXAMPLES" :key="ex.slug" type="button" class="exp-example" @click="fill(ex.slug)">
-          {{ ex.question }}
-        </button>
-      </div>
+        <div v-if="messages.length === 0" class="exp-examples">
+          <span class="exp-examples-label">试试这些：</span>
+          <button v-for="ex in EXAMPLES" :key="ex.slug" type="button" class="exp-example" @click="fill(ex.slug)">
+            {{ ex.question }}
+          </button>
+        </div>
 
-      <div v-if="messages.length > 0" ref="streamEl" class="exp-stream">
-        <template v-for="(msg, mi) in messages" :key="mi">
-          <div v-if="msg.role === 'user'" class="exp-msg-user">{{ msg.text }}</div>
-          <div v-else class="exp-msg-ai">
-            <div class="exp-ai-head">
-              <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : '智能体搭子' }}</span>
-              <span class="exp-ai-badge" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
-                {{ msg.skill ? skillCat(msg.skill.slug) : (msg.real ? '在线' : '演示') }}
+        <div v-if="messages.length > 0" ref="streamEl" class="exp-stream">
+          <template v-for="(msg, mi) in messages" :key="mi">
+            <div v-if="msg.role === 'user'" class="exp-msg-user">{{ msg.text }}</div>
+            <div v-else class="exp-msg-ai">
+              <span class="exp-ai-avatar" :style="msg.skill ? { background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` } : {}">
+                <Icon :name="msg.skill ? msg.skill.categoryId : 'brand'" :size="16" />
               </span>
-              <template v-if="!msg.done">
-                <span class="exp-typing" aria-label="正在输出"><i></i><i></i><i></i></span>
-                <span v-if="runStatus" class="exp-run-status">{{ runStatus }} · {{ formatElapsed(elapsedMs) }}</span>
-              </template>
-              <span v-else class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
-            </div>
-            <pre class="exp-ai-text">{{ msg.text }}<span v-if="!msg.done" class="exp-caret">▌</span></pre>
-            <div v-if="msg.done && msg.skill" class="exp-ai-actions">
-              <button type="button" class="exp-act exp-act-primary" @click="copyInstall(msg.skill.slug)">
-                <Icon name="copy" :size="14" />复制安装提示词
-              </button>
-              <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
-            </div>
-            <p v-if="msg.done && !msg.real" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
-            <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（pi · {{ apiModel || '本地 Agent' }}）。</p>
-          </div>
-        </template>
-      </div>
-
-      <div class="exp-input" :class="{ 'is-raised': messages.length > 0 }">
-        <div class="exp-input-box">
-          <textarea
-            v-model="textarea"
-            class="exp-textarea"
-            rows="2"
-            placeholder="输入你想完成的事，例如：帮我做一份产业决策报告…"
-            @keydown.enter.exact.prevent="send()"
-          ></textarea>
-          <div class="exp-input-bar">
-            <span class="exp-attach" title="演示环境不支持附件">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            </span>
-            <span class="exp-agent">
-              <span class="exp-model">
-                <button type="button" class="exp-model-btn" :aria-expanded="modelOpen" aria-haspopup="menu" @click.stop="modelOpen = !modelOpen">
-                  {{ model.name }}
-                  <svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-chev-down" /></svg>
-                </button>
-                <div v-if="modelOpen" class="exp-model-menu" role="menu">
-                  <button
-                    v-for="m in MODELS"
-                    :key="m.id"
-                    type="button"
-                    class="exp-model-item"
-                    :class="{ 'is-on': m.id === model.id }"
-                    role="menuitem"
-                    @click.stop="pickModel(m.id)"
-                  >{{ m.name }}<span v-if="m.id !== 'skill-agent'" class="exp-model-tag">模拟</span></button>
+              <div class="exp-ai-main">
+                <div class="exp-ai-head">
+                  <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : '智能体搭子' }}</span>
+                  <span class="exp-ai-badge" v-if="msg.skill" :style="{ background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` }">
+                    {{ skillCat(msg.skill.slug) }}
+                  </span>
+                  <span v-if="!msg.done && runStatus" class="exp-run-status">{{ runStatus }} · {{ formatElapsed(elapsedMs) }}</span>
+                  <span v-else-if="msg.done" class="exp-demo-tag" :class="{ 'is-real': msg.real }">{{ msg.real ? '真实运行' : '演示输出' }}</span>
                 </div>
+                <MarkdownView :text="msg.text" :streaming="!msg.done" />
+                <div v-if="msg.done && msg.skill" class="exp-ai-actions">
+                  <button type="button" class="exp-act exp-act-primary" @click="copyInstall(msg.skill.slug)">
+                    <Icon name="copy" :size="14" />复制安装提示词
+                  </button>
+                  <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
+                </div>
+                <p v-if="msg.done && !msg.real" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
+                <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（pi · {{ apiModel || '本地 Agent' }}）。</p>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="exp-input">
+          <div class="exp-input-box">
+            <textarea
+              v-model="textarea"
+              class="exp-textarea"
+              rows="2"
+              placeholder="输入你想完成的事，例如：帮我做一份产业决策报告…"
+              @keydown.enter.exact.prevent="send()"
+            ></textarea>
+            <div class="exp-input-bar">
+              <span class="exp-attach" title="演示环境不支持附件">
+                <Icon name="paperclip" :size="16" />
               </span>
-              <span class="exp-agent-dot" aria-hidden="true">·</span>
-              <span class="exp-agent-label" :class="{ 'is-real': apiReady }">{{ apiReady ? (apiModel || '在线 Agent') : '演示' }}</span>
-            </span>
-            <button type="button" class="exp-send" :disabled="!textarea.trim() || sending" aria-label="发送" @click="send()">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
-            </button>
+              <span class="exp-agent">
+                <span class="exp-model">
+                  <button type="button" class="exp-model-btn" :aria-expanded="modelOpen" aria-haspopup="menu" @click.stop="modelOpen = !modelOpen">
+                    {{ model.name }}
+                    <Icon name="chev-down" :size="13" />
+                  </button>
+                  <div v-if="modelOpen" class="exp-model-menu" role="menu">
+                    <button
+                      v-for="m in MODELS"
+                      :key="m.id"
+                      type="button"
+                      class="exp-model-item"
+                      :class="{ 'is-on': m.id === model.id }"
+                      role="menuitem"
+                      @click.stop="pickModel(m.id)"
+                    >{{ m.name }}<span v-if="m.id !== 'skill-agent'" class="exp-model-tag">模拟</span></button>
+                  </div>
+                </span>
+                <span class="exp-agent-dot" aria-hidden="true">·</span>
+                <span class="exp-agent-label" :class="{ 'is-real': apiReady }">{{ apiReady ? (apiModel || '在线 Agent') : '演示' }}</span>
+              </span>
+              <button type="button" class="exp-send" :disabled="!textarea.trim() || sending" aria-label="发送" @click="send()">
+                <Icon name="arrow-up" :size="16" />
+              </button>
+            </div>
           </div>
+          <p class="exp-input-note">内容由 AI 生成，请仔细核对</p>
         </div>
       </div>
     </div>

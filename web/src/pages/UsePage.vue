@@ -13,6 +13,7 @@ import { isTestEnv } from '../plazaEnv'
 import { toast } from '../composables/toast'
 import Icon from '../components/Icon.vue'
 import UseHistoryList from '../components/UseHistoryList.vue'
+import ToolCallGroup from '../components/ToolCallGroup.vue'
 import { fetchRunDetail, fetchRuns, runReportUrl } from '../api/runsApi'
 import { OUTCOME_LABEL, type RunDetail, type RunListItem } from '../data/runsMock'
 
@@ -212,9 +213,8 @@ interface ProgressItem {
   finishedAt?: number
 }
 const progressEvents = ref<ProgressItem[]>([])
-const progressExpanded = ref(false)
-const progressScrollEl = ref<HTMLElement | null>(null)
-const progressDoneCount = computed(() => progressEvents.value.filter(item => item.state !== 'active').length)
+/* 正文首字到达后，工具调用组自动折叠为摘要行（ToolCallGroup 内部管理展开态） */
+const proseStarted = ref(false)
 let progressSeq = 0
 const elapsedMs = ref(0)
 let elapsedTimer: ReturnType<typeof setInterval> | null = null
@@ -225,7 +225,7 @@ function formatElapsed(ms: number): string {
 function beginRun() {
   if (elapsedTimer) clearInterval(elapsedTimer)
   progressEvents.value = []
-  progressExpanded.value = false
+  proseStarted.value = false
   progressSeq = 0
   const started = Date.now()
   elapsedMs.value = 0
@@ -234,12 +234,6 @@ function beginRun() {
 function endRun() {
   if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
 }
-
-watch(progressEvents, () => {
-  void nextTick(() => {
-    if (progressScrollEl.value) progressScrollEl.value.scrollTop = progressScrollEl.value.scrollHeight
-  })
-}, { deep: true })
 
 function toolProgress(tool?: string): { title: string; detail: string } {
   const name = (tool ?? '').toLowerCase()
@@ -408,6 +402,7 @@ function makeStreamHandler(answer: RunMessage) {
       else if (event.phase === 'tool') streamStatus.value = toolProgress(event.tool).title
       else streamStatus.value = '正在生成结果…'
     } else if (event.type === 'text') {
+      proseStarted.value = true
       answer.content += event.delta
     } else if (event.type === 'usage') {
       const u = event.usage as Record<string, number>
@@ -689,14 +684,14 @@ onBeforeUnmount(endRun)
 <template>
   <section class="page page-use">
     <div class="wrap">
-      <RouterLink class="crumb-back" :to="{ name: 'skills' }">
+      <RouterLink class="use-back" :to="{ name: 'skills' }">
         <Icon name="back" :size="14" /> 返回智能体广场
       </RouterLink>
 
       <header class="use-head">
         <span class="use-mark" :data-cat="skill.categoryId"><Icon :name="skill.categoryId" :size="22" /></span>
         <div class="use-head-copy">
-          <p class="use-eyebrow">{{ config.eyebrow }} · {{ catName }}</p>
+          <p class="use-kicker">{{ config.eyebrow }} · {{ catName }}</p>
           <h1 class="use-name">{{ skill.name }}</h1>
           <p class="use-lead">{{ config.lead }}</p>
         </div>
@@ -841,9 +836,9 @@ onBeforeUnmount(endRun)
                     </label>
                     <div v-if="uploads.length" class="use-upload-files">
                       <span v-for="f in uploads" :key="f.path" class="use-file-chip">
-                        {{ f.name }} · {{ formatSize(f.size) }}
+                        <Icon name="file" :size="12" />{{ f.name }} · {{ formatSize(f.size) }}
                         <button type="button" class="use-file-del" :aria-label="`移除 ${f.name}`"
-                          @click="removeUpload(f.path)">×</button>
+                          @click="removeUpload(f.path)"><Icon name="x" :size="11" /></button>
                       </span>
                     </div>
                     <small v-if="uf.help">{{ uf.help }}</small>
@@ -891,21 +886,10 @@ onBeforeUnmount(endRun)
                   <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
                   <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
                 </div>
-                <div v-if="progressEvents.length" class="use-progress-timeline" :class="{ 'is-expanded': progressExpanded }" aria-label="运行进度">
-                  <header class="use-progress-head">
-                    <strong>运行进度</strong><span>{{ progressDoneCount }} / {{ progressEvents.length }} 已完成</span>
-                    <button type="button" @click="progressExpanded = !progressExpanded">{{ progressExpanded ? '收起' : '展开' }}</button>
-                  </header>
-                  <div ref="progressScrollEl" class="use-progress-scroll">
-                    <div v-for="item in progressEvents" :key="item.id" class="use-progress-item" :class="`is-${item.state}`">
-                      <i>{{ item.state === 'completed' ? '✓' : item.state === 'failed' ? '!' : '·' }}</i>
-                      <div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
-                    </div>
-                  </div>
-                </div>
+                <ToolCallGroup v-if="progressEvents.length" :items="progressEvents" :prose-started="proseStarted" />
                 <template v-for="(msg, i) in visibleMessages" :key="i">
                   <article v-if="msg.role !== 'user'" class="use-answer" :class="{ 'is-error': msg.role === 'error' }">
-                    <span class="use-answer-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
+                    <span class="use-answer-avatar">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
                     <div>
                       <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
                       <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :html-mode="skill.slug === 'career-guidance'" :streaming="busy && !msg.final && i === visibleMessages.length - 1" />
@@ -921,7 +905,7 @@ onBeforeUnmount(endRun)
         </main>
 
         <aside class="use-side">
-          <section class="card use-knowledge">
+          <section class="use-side-card use-knowledge">
             <header class="use-side-head">
               <div>
                 <span>知识库</span>
@@ -950,7 +934,7 @@ onBeforeUnmount(endRun)
             <button type="button" class="use-kb-add" @click="toast('当前为前端 Mock，真实知识库接入将在下一阶段完成')">添加知识库</button>
           </section>
 
-          <section class="card use-run">
+          <section class="use-side-card use-run">
             <div class="use-run-progress">
               <span>已完成 {{ completed }} / {{ requiredFields.length }} 项必填信息</span>
               <b>已选 {{ knowledge.length }} 个知识库</b>
@@ -964,17 +948,17 @@ onBeforeUnmount(endRun)
             </ul>
             <p class="use-output"><span>预计产出</span><strong>{{ config.output }}</strong></p>
             <!-- 按钮在表单外的侧栏中，靠 form 属性关联提交 -->
-            <button type="submit" form="skill-task-form" class="btn btn-primary use-run-btn" :disabled="!canRun">
+            <button type="submit" form="skill-task-form" class="use-run-btn" :disabled="!canRun">
               开始运行 SKILL<Icon name="arrow" :size="15" />
             </button>
             <div class="use-run-sub">
-              <button type="button" class="btn btn-quiet use-run-quiet" :disabled="busy || uploading" @click="fillExample">填入示例</button>
-              <button type="button" class="btn btn-quiet use-run-quiet" :disabled="busy || uploading" @click="clearForm">重置表单</button>
+              <button type="button" class="use-run-quiet" :disabled="busy || uploading" @click="fillExample">填入示例</button>
+              <button type="button" class="use-run-quiet" :disabled="busy || uploading" @click="clearForm">重置表单</button>
             </div>
             <small class="use-run-note">提交前请确认资料授权范围，不要填写敏感个人信息。</small>
           </section>
 
-          <section class="card use-hist">
+          <section class="use-side-card use-hist">
             <header class="use-side-head">
               <div>
                 <span>历史会话</span>
@@ -990,110 +974,102 @@ onBeforeUnmount(endRun)
       </div>
 
       <div v-else class="use-chat">
-        <section class="use-hist-bar" aria-labelledby="use-chat-history-title">
-          <header class="use-hist-bar-head">
-            <div>
-              <span id="use-chat-history-title">历史会话<em v-if="historyLive">（{{ historyRuns.length }}）</em></span>
-              <small>选择后在下方结果区查看，不会写入当前对话</small>
-            </div>
+        <aside class="use-chat-side" aria-labelledby="use-chat-history-title">
+          <div class="use-chat-side-head">
+            <span id="use-chat-history-title">历史会话<em v-if="historyLive">（{{ historyRuns.length }}）</em></span>
             <span v-if="busy" class="use-hist-busy">运行中</span>
-          </header>
+          </div>
+          <small>选择后在右侧结果区查看，不会写入当前对话</small>
           <p v-if="!historyLive" class="use-hist-note">启动本地服务后可查看历史运行记录。</p>
           <p v-else-if="!historyRuns.length" class="use-hist-note">还没有运行记录。</p>
           <UseHistoryList v-else :runs="historyRuns" :selected-id="selectedHistoryId" :disabled="busy"
             @select="selectHistory" />
-        </section>
-        <section v-if="selectedHistory" class="use-result use-result-history is-history" aria-live="polite">
-          <header class="use-result-head">
-            <div>
-              <span>历史运行结果</span>
-              <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史详情' : (selectedHistory.promptDigest || '历史任务') }}</h2>
-              <small class="use-history-meta">
-                {{ selectedHistorySkill }} · {{ fmtHistoryTime(selectedHistory.ts) }} ·
-                {{ fmtHistoryDuration(selectedHistory.durationMs) }} ·
-                {{ OUTCOME_LABEL[selectedHistory.outcome] ?? selectedHistory.outcome }}
-              </small>
-            </div>
-            <button type="button" class="text-btn" @click="clearHistorySelection">返回本次运行</button>
-          </header>
-          <div class="use-history-view">
-            <p v-if="selectedHistoryDetail?.status === 'loading'" class="use-history-state">正在读取历史运行记录…</p>
-            <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
-            <template v-else-if="selectedHistoryDetail">
-              <div class="use-history-block">
-                <span class="use-history-block-label">结果</span>
-                <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" :html-mode="selectedHistory?.skill === 'career-guidance'" />
-                <p v-else class="use-history-state">
-                  {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
-                </p>
+        </aside>
+
+        <div class="use-chat-main">
+          <section v-if="selectedHistory" class="use-result use-result-history is-history" aria-live="polite">
+            <header class="use-result-head">
+              <div>
+                <span>历史运行结果</span>
+                <h2>{{ selectedHistoryDetail?.status === 'loading' ? '正在加载历史详情' : (selectedHistory.promptDigest || '历史任务') }}</h2>
+                <small class="use-history-meta">
+                  {{ selectedHistorySkill }} · {{ fmtHistoryTime(selectedHistory.ts) }} ·
+                  {{ fmtHistoryDuration(selectedHistory.durationMs) }} ·
+                  {{ OUTCOME_LABEL[selectedHistory.outcome] ?? selectedHistory.outcome }}
+                </small>
               </div>
+              <button type="button" class="text-btn" @click="clearHistorySelection">返回本次运行</button>
+            </header>
+            <div class="use-history-view">
+              <p v-if="selectedHistoryDetail?.status === 'loading'" class="use-history-state">正在读取历史运行记录…</p>
+              <p v-else-if="selectedHistoryDetail?.status === 'error'" class="use-history-state is-error">历史详情加载失败，请稍后重试。</p>
+              <template v-else-if="selectedHistoryDetail">
+                <div class="use-history-block">
+                  <span class="use-history-block-label">结果</span>
+                  <ReportOutput v-if="selectedHistoryDetail.output" :text="selectedHistoryDetail.output" :charts="selectedHistoryDetail.charts" :report-url="selectedHistoryDetail.reportUrl" :html-mode="selectedHistory?.skill === 'career-guidance'" />
+                  <p v-else class="use-history-state">
+                    {{ selectedHistoryDetail.status === 'fallback' ? '历史结果不可用，仅保留任务摘要。' : '本次运行没有文本输出。' }}
+                  </p>
+                </div>
+              </template>
+            </div>
+          </section>
+          <div ref="chatStreamEl" class="use-chat-stream">
+            <div v-if="busy" class="use-live-status" aria-live="polite">
+              <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
+              <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
+            </div>
+            <ToolCallGroup v-if="progressEvents.length" :items="progressEvents" :prose-started="proseStarted" />
+            <div v-if="!session.length && !busy" class="use-chat-empty">
+              <span class="use-chat-empty-mark">{{ skill.name }}</span>
+              <p>直接描述任务即可开始，例如：</p>
+              <pre>{{ skill.minimalInput }}</pre>
+              <p class="use-chat-empty-note">
+                与表单模式共用同一会话——表单运行过的话，这里可以直接接着追问。
+              </p>
+            </div>
+            <template v-for="(msg, i) in session" :key="i">
+              <div v-if="msg.role === 'user'" class="use-chat-user">
+                <pre>{{ msg.content }}</pre>
+              </div>
+              <article v-else class="use-chat-ai" :class="{ 'is-error': msg.role === 'error' }">
+                <span class="use-chat-avatar">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
+                <div class="use-chat-ai-body">
+                  <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
+                  <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :html-mode="skill.slug === 'career-guidance'" :streaming="busy && !msg.final && i === session.length - 1" />
+                  <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
+                  <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
+                </div>
+              </article>
             </template>
           </div>
-        </section>
-        <div ref="chatStreamEl" class="use-chat-stream">
-          <div v-if="busy" class="use-live-status" aria-live="polite">
-            <i></i><strong>{{ streamStatus || '正在准备运行…' }}</strong>
-            <span>已等待 {{ formatElapsed(elapsedMs) }}</span>
-          </div>
-          <div v-if="progressEvents.length" class="use-progress-timeline" :class="{ 'is-expanded': progressExpanded }" aria-label="运行进度">
-            <header class="use-progress-head">
-              <strong>运行进度</strong><span>{{ progressDoneCount }} / {{ progressEvents.length }} 已完成</span>
-              <button type="button" @click="progressExpanded = !progressExpanded">{{ progressExpanded ? '收起' : '展开' }}</button>
-            </header>
-            <div ref="progressScrollEl" class="use-progress-scroll">
-              <div v-for="item in progressEvents" :key="item.id" class="use-progress-item" :class="`is-${item.state}`">
-                <i>{{ item.state === 'completed' ? '✓' : item.state === 'failed' ? '!' : '·' }}</i>
-                <div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
-              </div>
-            </div>
-          </div>
-          <div v-if="!session.length && !busy" class="use-chat-empty">
-            <span class="use-chat-empty-mark">{{ skill.name }}</span>
-            <p>直接描述任务即可开始，例如：</p>
-            <pre>{{ skill.minimalInput }}</pre>
-            <p class="use-chat-empty-note">
-              与表单模式共用同一会话——表单运行过的话，这里可以直接接着追问。
-            </p>
-          </div>
-          <template v-for="(msg, i) in session" :key="i">
-            <div v-if="msg.role === 'user'" class="use-chat-user">
-              <pre>{{ msg.content }}</pre>
-            </div>
-            <article v-else class="use-chat-ai" :class="{ 'is-error': msg.role === 'error' }">
-              <span class="use-chat-mark">{{ msg.role === 'error' ? '!' : 'AI' }}</span>
-              <div class="use-chat-ai-body">
-                <strong>{{ msg.role === 'error' ? '请求未完成' : skill.name }}</strong>
-                <ReportOutput v-if="msg.role === 'assistant'" :text="mainTextOf(msg)" :charts="msg.charts" :report-url="msg.reportUrl" :html-mode="skill.slug === 'career-guidance'" :streaming="busy && !msg.final && i === session.length - 1" />
-                <pre v-if="msg.role === 'error'" class="use-chat-text">{{ mainTextOf(msg) }}</pre>
-                <small v-if="msg.role === 'assistant' && lastUsage && !busy" class="use-usage">{{ lastUsage }}</small>
-              </div>
-            </article>
-          </template>
-        </div>
 
-        <div class="use-chat-input">
-          <div v-if="uploads.length" class="use-chat-files">
-            <span v-for="f in uploads" :key="f.path" class="use-file-chip">
-              <Icon name="paperclip" :size="12" />{{ f.name }} · {{ formatSize(f.size) }}
-              <button type="button" class="use-file-del" :aria-label="`移除 ${f.name}`"
-                @click="removeUpload(f.path)">×</button>
-            </span>
-          </div>
-          <div class="use-chat-bar">
-            <button v-if="config.uploads?.length" type="button" class="use-chat-attach"
-              :disabled="apiState !== 'ready' || uploading"
-              :title="uploading ? '上传中…' : '上传附件（随下一条消息发送）'"
-              @click="chatFileEl?.click()">
-              <Icon name="paperclip" :size="16" />
-            </button>
-            <input ref="chatFileEl" type="file" hidden :accept="config.uploads?.[0]?.accept" @change="onPickFile" />
-            <textarea v-model="chatInput" class="use-chat-textarea" rows="2" maxlength="4000"
-              :disabled="apiState !== 'ready'"
-              placeholder="描述任务或继续追问…（Ctrl / ⌘ + Enter 发送）"
-              @keydown="onChatKeydown"></textarea>
-            <button type="button" class="btn btn-primary use-chat-send" :disabled="!canSend" @click="sendChat">
-              发送<Icon name="arrow" :size="14" />
-            </button>
+          <div class="use-chat-input">
+            <div v-if="uploads.length" class="use-chat-files">
+              <span v-for="f in uploads" :key="f.path" class="use-file-chip">
+                <Icon name="file" :size="12" />{{ f.name }} · {{ formatSize(f.size) }}
+                <button type="button" class="use-file-del" :aria-label="`移除 ${f.name}`"
+                  @click="removeUpload(f.path)"><Icon name="x" :size="11" /></button>
+              </span>
+            </div>
+            <div class="use-chat-box">
+              <textarea v-model="chatInput" class="use-chat-textarea" rows="2" maxlength="4000"
+                :disabled="apiState !== 'ready'"
+                placeholder="描述任务或继续追问…（Ctrl / ⌘ + Enter 发送）"
+                @keydown="onChatKeydown"></textarea>
+              <div class="use-chat-bar">
+                <button v-if="config.uploads?.length" type="button" class="use-chat-attach"
+                  :disabled="apiState !== 'ready' || uploading"
+                  :title="uploading ? '上传中…' : '上传附件（随下一条消息发送）'"
+                  @click="chatFileEl?.click()">
+                  <Icon name="paperclip" :size="16" />
+                </button>
+                <input ref="chatFileEl" type="file" hidden :accept="config.uploads?.[0]?.accept" @change="onPickFile" />
+                <button type="button" class="use-chat-send" :disabled="!canSend" aria-label="发送" @click="sendChat">
+                  <Icon name="arrow-up" :size="15" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

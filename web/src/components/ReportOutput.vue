@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import Icon from './Icon.vue'
 import MarkdownView from './MarkdownView.vue'
 import ReportChart from './ReportChart.vue'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
@@ -27,11 +28,13 @@ const htmlStatus = computed(() => {
   <p v-if="isHtml" class="report-ready">
     {{ htmlStatus }}
     <template v-if="reportUrl">
-      <a :href="reportUrl" target="_blank" rel="noopener">点击查看具体报告</a>
-      <a class="report-download" :href="`${reportUrl}/download`" download>下载报告</a>
+      <a class="report-open" :href="reportUrl" target="_blank" rel="noopener">点击查看具体报告</a>
+      <a class="report-download" :href="`${reportUrl}/download`" download>
+        <Icon name="download" :size="13" />下载报告
+      </a>
     </template>
   </p>
-  <MarkdownView v-else :class="{ 'is-streaming': streaming }" :text="text" />
+  <MarkdownView v-else :text="text" :streaming="streaming" />
   <div v-if="!isHtml && charts?.length" class="use-report-charts">
     <ReportChart v-for="chart in charts" :key="chart.id" :chart="chart" />
   </div>

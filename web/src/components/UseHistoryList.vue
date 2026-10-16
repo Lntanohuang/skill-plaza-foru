@@ -37,7 +37,7 @@ const rows = computed(() => props.runs)
         <small class="use-hist-meta">
           <b>{{ skillName(run.skill) }}</b>
           <span>{{ fmtTime(run.ts) }}</span>
-          <em class="runs-outcome" :class="`is-${run.outcome}`">{{ OUTCOME_LABEL[run.outcome] ?? run.outcome }}</em>
+          <em class="use-hist-outcome" :class="`is-${run.outcome}`">{{ OUTCOME_LABEL[run.outcome] ?? run.outcome }}</em>
           <i v-if="selectedId === run.runId" class="use-hist-selected">已选</i>
         </small>
       </button>

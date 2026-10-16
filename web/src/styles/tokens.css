@@ -85,6 +85,51 @@
   --wrap: 1280px;
   --wrap-read: var(--wrap); /* 全站版心统一 */
   --head-h: 68px;
+
+  /* ============================================================
+     SkillHub 设计语言扩展（在线对话 / 在线运行两页专用）
+     来源：skillhub-ui-design skill（提取自 skillhub.cn）
+     iOS 蓝只做点缀，主按钮用墨色胶囊，文本用黑透明度分级
+     ============================================================ */
+  --sk-blue: #007aff;              /* iOS 系统蓝：链接、进行中、焦点环 */
+  --sk-blue-hover: #0071e3;
+  --sk-blue-soft: rgba(0, 122, 255, 0.08);
+  --sk-blue-ring: rgba(0, 122, 255, 0.15);
+  --sk-green: #34c759;             /* iOS 系统绿：完成态 */
+  --sk-red: #ff3b30;               /* iOS 系统红：失败态 */
+  --sk-orange: #ff9500;
+  --sk-purple: #af52de;            /* 行内代码 */
+
+  --sk-ink-1: rgba(28, 28, 30, 0.9);   /* 强文字 / 导航激活 */
+  --sk-ink-2: rgba(28, 28, 30, 0.62);  /* 常规次级文字 */
+  --sk-ink-3: rgba(28, 28, 30, 0.45);  /* 辅助说明 */
+  --sk-ink-4: rgba(28, 28, 30, 0.35);  /* 占位符 / 分组标题 */
+
+  --sk-sidebar: #f2f2f7e6;         /* 历史侧栏底（iOS 浅灰 90%） */
+  --sk-fill: rgba(0, 0, 0, 0.06);      /* 选中底 */
+  --sk-fill-hover: rgba(0, 0, 0, 0.04);/* hover 底 */
+  --sk-seg-on: #ffffff;            /* iOS 分段控件选中块 */
+  --sk-bubble: #f2f2f7;            /* 用户消息气泡 */
+  --sk-toolgroup: #f9f9f9;         /* 工具调用组底 */
+  --sk-line: rgba(60, 60, 67, 0.1);    /* iOS 分隔线 */
+  --sk-input-border: rgba(0, 0, 0, 0.12);
+
+  --sk-glass: rgba(255, 255, 255, 0.72);
+  --sk-glass-border: rgba(255, 255, 255, 0.85);
+  --sk-glass-blur: blur(24px) saturate(180%);
+  --sk-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  --sk-btn: #202020;               /* 墨色胶囊主按钮 */
+  --sk-btn-hover: #383838;
+  --sk-btn-disabled: #b2b2b2;
+  --sk-btn-on: #ffffff;
+
+  --sk-ease: cubic-bezier(0.25, 1, 0.5, 1);      /* 标准曲线 */
+  --sk-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 弹簧曲线 */
+
+  --sk-track-lg: -0.03em;          /* 大标题负字距 */
+  --sk-track-md: -0.02em;
+  --sk-track-sm: -0.01em;
 }
 
 /* ============================================================
@@ -123,4 +168,37 @@ html[data-mode="dark"] {
   --shadow-overlay: 0 10px 32px -8px rgba(0, 0, 0, 0.62),
                     0 2px 8px -2px rgba(0, 0, 0, 0.5);
   --shadow-spot: 0 0 0 9999px rgba(0, 0, 0, 0.66);
+
+  /* SkillHub 扩展 · 暗色（Apple HIG 暗色变体） */
+  --sk-blue: #0a84ff;
+  --sk-blue-hover: #409cff;
+  --sk-blue-soft: rgba(10, 132, 255, 0.18);
+  --sk-blue-ring: rgba(10, 132, 255, 0.28);
+  --sk-green: #30d158;
+  --sk-red: #ff453a;
+  --sk-orange: #ff9f0a;
+  --sk-purple: #bf5af2;
+
+  --sk-ink-1: rgba(235, 235, 245, 0.92);
+  --sk-ink-2: rgba(235, 235, 245, 0.62);
+  --sk-ink-3: rgba(235, 235, 245, 0.42);
+  --sk-ink-4: rgba(235, 235, 245, 0.32);
+
+  --sk-sidebar: #1c1c1ee6;
+  --sk-fill: rgba(235, 235, 245, 0.1);
+  --sk-fill-hover: rgba(235, 235, 245, 0.06);
+  --sk-seg-on: #636366;
+  --sk-bubble: #2c2c2e;
+  --sk-toolgroup: #1c1c1e;
+  --sk-line: rgba(84, 84, 88, 0.5);
+  --sk-input-border: rgba(255, 255, 255, 0.16);
+
+  --sk-glass: rgba(28, 28, 30, 0.72);
+  --sk-glass-border: rgba(255, 255, 255, 0.12);
+  --sk-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  --sk-btn: #f5f5f7;               /* 暗色墨按钮黑白反转 */
+  --sk-btn-hover: #ffffff;
+  --sk-btn-disabled: #55555a;
+  --sk-btn-on: #101214;
 }

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { renderMd } from '../utils/markdown'
 
-const props = defineProps<{ text: string }>()
+const props = withDefaults(defineProps<{ text: string; streaming?: boolean }>(), { streaming: false })
 
 /* 流式输出按 token 更新；合并短时间窗口，避免每个 token 都重新解析整篇 Markdown。 */
 const renderedText = ref(props.text ?? '')
@@ -28,5 +28,5 @@ const html = computed(() => renderMd(renderedText.value))
 </script>
 
 <template>
-  <div class="md-body" v-html="html"></div>
+  <div class="md-body" :class="{ 'is-streaming': streaming }" v-html="html"></div>
 </template>
