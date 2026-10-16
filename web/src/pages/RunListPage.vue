@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import Icon from '../components/Icon.vue'
-import { bySlug } from '../data/skills'
+import { bySlug, GENERAL_SKILL_NAME } from '../data/skills'
 import { OUTCOME_LABEL, type RunListItem, type RunOutcome } from '../data/runsMock'
 import { fetchRuns } from '../api/runsApi'
 
@@ -22,7 +22,8 @@ onMounted(async () => {
 const skillFilter = ref('all')
 const outcomeFilter = ref<'all' | RunOutcome>('all')
 
-const skillName = (slug: string) => bySlug.get(slug)?.name ?? (slug === 'unknown' ? '历史会话' : slug)
+const skillName = (slug: string) =>
+  bySlug.get(slug)?.name ?? (slug === 'unknown' ? '历史会话' : slug === 'general' ? GENERAL_SKILL_NAME : slug)
 
 const filtered = computed(() =>
   runs.value.filter(

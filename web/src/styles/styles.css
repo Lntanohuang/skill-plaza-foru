@@ -1155,6 +1155,7 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
   background: linear-gradient(180deg, transparent 0%, var(--surface-canvas) 16px);
 }
 .exp-input-box {
+  position: relative;
   background: var(--surface-card); border: 1px solid var(--sk-input-border);
   border-radius: 20px; padding: 10px 10px 8px; background-clip: padding-box;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
@@ -1172,6 +1173,58 @@ html[data-mode="dark"] .diagram-preview { background: #1B2C50; }
 }
 .exp-textarea::placeholder { color: var(--sk-ink-4); }
 .exp-input-bar { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
+
+/* ---- $ 技能选择：玻璃菜单浮层 + 已挂载 chip ---- */
+.exp-skill-menu {
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 10px);
+  max-height: min(320px, 46vh); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--sk-glass); border: 1px solid var(--sk-glass-border);
+  backdrop-filter: var(--sk-glass-blur); -webkit-backdrop-filter: var(--sk-glass-blur);
+  border-radius: 16px; box-shadow: var(--sk-glass-shadow);
+  padding: 5px; z-index: 40; animation: sk-menu-in .18s var(--sk-ease);
+}
+.exp-skill-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: 12px; cursor: pointer; transition: background .12s ease;
+}
+.exp-skill-item:hover, .exp-skill-item.is-hot { background: var(--sk-fill-hover); }
+.exp-skill-ico {
+  flex: none; width: 28px; height: 28px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+}
+.exp-skill-meta { min-width: 0; flex: 1; }
+.exp-skill-meta b {
+  display: block; font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.35; color: var(--sk-ink-1);
+}
+.exp-skill-meta small {
+  display: block; font-size: 12px; line-height: 1.4; color: var(--sk-ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.exp-skill-slug { flex-shrink: 0; font-size: 11px; color: var(--sk-ink-4); font-family: var(--font-mono); }
+.exp-skill-empty { padding: 14px 10px; text-align: center; font-size: 12px; color: var(--sk-ink-4); }
+.exp-skill-trigger {
+  width: 28px; height: 28px; flex: none; border-radius: 9px;
+  border: 1px dashed var(--sk-input-border); background: none;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--sk-ink-3); cursor: pointer;
+  transition: color var(--dur-fast) var(--sk-ease), border-color var(--dur-fast) var(--sk-ease);
+}
+.exp-skill-trigger:hover, .exp-skill-trigger.is-on {
+  color: var(--sk-blue); border-color: color-mix(in srgb, var(--sk-blue) 45%, transparent); border-style: solid;
+}
+.exp-skill-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 28px; padding: 0 7px 0 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+}
+.exp-skill-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border: none; border-radius: 50%;
+  background: none; color: inherit; cursor: pointer; opacity: .6;
+  transition: opacity var(--dur-fast) var(--sk-ease), background var(--dur-fast) var(--sk-ease);
+}
+.exp-skill-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent); }
+
 .exp-attach {
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; border: none; border-radius: 50%;

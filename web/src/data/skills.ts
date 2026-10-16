@@ -320,6 +320,10 @@ export const FEATURES: Feature[] = [  {
 
 export const bySlug = new Map(SKILLS.map(s => [s.slug, s] as const))
 
+/** 在线对话默认通用智能体：后端 skill 字段值与运行记录显示名（不进 SKILLS 卡片清单） */
+export const GENERAL_SKILL_ID = 'general'
+export const GENERAL_SKILL_NAME = '通用智能体'
+
 export function catOf(id: string): Category {
   return CATEGORIES.find(c => c.id === id) ?? { id: 'industry', name: id }
 }

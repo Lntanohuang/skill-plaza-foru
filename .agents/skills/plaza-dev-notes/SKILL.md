@@ -112,3 +112,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 064 | 就业指导第四次广州 Java 后端实习沙箱运行（带简历附件 + 六图 + 服务端校验通过） | 已实现观察（2026-10-15 会话；服务端校验通过，浏览器回归待跑） | [064-career-guidance-guangzhou-java-intern-resume-run.md](references/064-career-guidance-guangzhou-java-intern-resume-run.md) |
 | 065 | tech-forecast 鞋类设计与工艺沙箱运行：专业型切词、入库日期筛选缺口与六图报告 | 已实现观察（2026-10-16 会话；服务端校验通过，parseReport/浏览器回归待跑） | [065-tech-forecast-footwear-run.md](references/065-tech-forecast-footwear-run.md) |
 | 066 | 在线对话/在线运行前端按 SkillHub 设计系统重构（--sk-* 令牌、文档流对话、ToolCallGroup 工具组自动折叠） | 已实现（构建通过；双页双主题截图与一次真实 SSE 会话核对，长报告回归待用户） | [066-skillhub-ui-redesign.md](references/066-skillhub-ui-redesign.md) |
+| 067 | 在线对话默认通用智能体与 $ 技能选择器（skill=general 注册、广场卡片过滤、换技能重开会话） | 已实现（2026-10-16 构建/后端 e2e/浏览器断言通过；真实多轮与换技能回归待用户） | [067-experience-general-agent-dollar-picker.md](references/067-experience-general-agent-dollar-picker.md) |

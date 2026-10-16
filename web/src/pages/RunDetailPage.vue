@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
-import { bySlug } from '../data/skills'
+import { bySlug, GENERAL_SKILL_NAME } from '../data/skills'
 import { OUTCOME_LABEL, type RunDetail, type RunListItem, type RunPart } from '../data/runsMock'
 import { fetchRunDetail, runFileUrl, runReportUrl } from '../api/runsApi'
 import ReportChart from '../components/ReportChart.vue'
@@ -40,6 +40,7 @@ const skillName = computed(() => {
   const slug = item.value?.skill ?? 'industry-education-report'
   const known = bySlug.get(slug)?.name
   if (known) return known
+  if (slug === 'general') return GENERAL_SKILL_NAME
   return slug === 'unknown' || slug === 'historical' ? '历史会话' : slug
 })
 

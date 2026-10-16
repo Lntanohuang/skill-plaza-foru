@@ -127,7 +127,17 @@ export const HTML_REPORT_CONTRACTS: Record<string, HtmlReportContract> = {
 /** 产出 workspace/report.html 的技能集合（终态捕获/校验/下载见 index.ts 与 htmlReport.ts） */
 export const HTML_REPORT_SKILLS = new Set(Object.keys(HTML_REPORT_CONTRACTS))
 
+/** 在线对话默认智能体：不挂载任何技能，直接回答通用问题。
+    以该 id 注册进 SKILL_PROMPTS（两套 chat 入口的校验随之放行），
+    但不属于广场技能卡（listPlazaSkills 过滤），也不在 INSTALLED_SKILLS。 */
+export const GENERAL_SKILL_ID = 'general'
+
 export const SKILL_PROMPTS: Record<string, string> = {
+  [GENERAL_SKILL_ID]:
+    '你是技能广场的通用智能体，用中文直接回答用户的通用问题：先给结论，再给依据，条理清晰。' +
+    '当前没有挂载任何专业技能；当任务明显属于产教决策报告、就业指导、新技术预判、模拟面试、' +
+    '课堂资料整理或训练数据构造等专业场景时，先按通用能力简要回答，并建议用户在输入框输入 $ 挂载对应 SKILL，' +
+    '以获得带证据与文件产物的专业结果。不确定的事实明确说明，不编造数据、来源或链接。',
   'industry-education-report':
     '你正在按 industry-education-report SKILL 工作。面向院校管理者、政府部门或产业园区，' +
     '围绕区域产业、岗位人才、重点企业、就业去向、专业课程与招商形成有证据的决策分析。' +
@@ -178,24 +188,27 @@ export interface PlazaSkillInfo {
 }
 
 /** 广场对外技能清单：SKILL_PROMPTS 键即可运行权威集合，广场页卡片数随它走。
-    名称/描述优先读已安装技能的 SKILL.md frontmatter；未安装的回落提示词首句。 */
+    名称/描述优先读已安装技能的 SKILL.md frontmatter；未安装的回落提示词首句。
+    通用智能体（GENERAL_SKILL_ID）只服务在线对话默认形态，不进广场卡片。 */
 export function listPlazaSkills(): PlazaSkillInfo[] {
-  return Object.entries(SKILL_PROMPTS).map(([id, prompt]) => {
-    let name = id
-    let description = prompt.split('SKILL 工作。')[1]?.split('。')[0] ?? ''
-    if (INSTALLED_SKILLS.has(id)) {
-      try {
-        const fm = readFileSync(join(skillDir(id), 'SKILL.md'), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)
-        if (fm) {
-          const nameM = fm[1].match(/^name:\s*(.+)$/m)
-          const descM = fm[1].match(/^description:\s*(.+)$/m)
-          if (nameM) name = nameM[1].trim()
-          if (descM) description = descM[1].trim()
-        }
-      } catch { /* SKILL.md 不可读时用回落值 */ }
-    }
-    return { id, name, description, installed: INSTALLED_SKILLS.has(id) }
-  })
+  return Object.entries(SKILL_PROMPTS)
+    .filter(([id]) => id !== GENERAL_SKILL_ID)
+    .map(([id, prompt]) => {
+      let name = id
+      let description = prompt.split('SKILL 工作。')[1]?.split('。')[0] ?? ''
+      if (INSTALLED_SKILLS.has(id)) {
+        try {
+          const fm = readFileSync(join(skillDir(id), 'SKILL.md'), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)
+          if (fm) {
+            const nameM = fm[1].match(/^name:\s*(.+)$/m)
+            const descM = fm[1].match(/^description:\s*(.+)$/m)
+            if (nameM) name = nameM[1].trim()
+            if (descM) description = descM[1].trim()
+          }
+        } catch { /* SKILL.md 不可读时用回落值 */ }
+      }
+      return { id, name, description, installed: INSTALLED_SKILLS.has(id) }
+    })
 }
 
 /** 启用 report-meta 侧车输出的技能（终态剥离/校验见 lib/reportMeta.ts；

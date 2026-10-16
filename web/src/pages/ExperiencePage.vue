@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { bySlug, catOf, type Skill } from '../data/skills'
+import { bySlug, catOf, SKILLS, GENERAL_SKILL_ID, type Skill } from '../data/skills'
 import { checkHealth, streamChat } from '../composables/useChatApi'
 import Icon from '../components/Icon.vue'
 import MarkdownView from '../components/MarkdownView.vue'
@@ -48,6 +48,7 @@ const DEMOS: Demo[] = [
 const FALLBACK = `这个问题需要在本地 AI 工具中调用对应的 SKILL 来完成。\n\n在线对话页展示的是各 SKILL 的结果形态（可点击上方示例问题查看）。要获得完整结果：\n\n1. 回到 智能体广场，找到匹配的 SKILL\n2. 复制安装提示词，发送给你的 AI 工具\n3. 用最小输入示例开始第一次运行`
 
 const textarea = ref('')
+const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const sending = ref(false)
 /* 真实运行阶段实时状态（status 事件驱动）：思考/调工具/生成正文 */
 const runStatus = ref('')
@@ -89,14 +90,90 @@ function pickModel(id: string) {
 }
 function onDocClick(event: MouseEvent) {
   if (modelOpen.value && !(event.target as HTMLElement | null)?.closest('.exp-model')) modelOpen.value = false
+  if (skillMenu.value && !(event.target as HTMLElement | null)?.closest('.exp-input-box')) skillMenu.value = false
 }
 
 const EXAMPLES = DEMOS.map(d => ({ slug: d.slug, question: d.question, skill: bySlug.get(d.slug) }))
 
+/* ---- $ 技能选择：默认通用智能体（不挂技能），输入 $ 或点 $ 钮呼出选择器 ---- */
+const activeSkill = ref<Skill | undefined>()
+const skillMenu = ref(false)
+const skillQuery = ref('')
+const skillHighlight = ref(0)
+const skillMatches = computed(() => {
+  const q = skillQuery.value.trim().toLowerCase()
+  const list = SKILLS.filter(s =>
+    !q || s.slug.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.tags.some(t => t.toLowerCase().includes(q)))
+  return list.slice(0, 8)
+})
+/* 光标前的未完成 $token（$ 起、空白止）命中时呼出选择器 */
+const MENTION_RE = /(?:^|\s)\$([^\s$]*)$/
+function syncSkillMenu() {
+  const el = textareaEl.value
+  if (!el) { skillMenu.value = false; return }
+  const m = el.value.slice(0, el.selectionStart ?? el.value.length).match(MENTION_RE)
+  if (m) {
+    if (!skillMenu.value) skillHighlight.value = 0
+    skillQuery.value = m[1]
+    skillMenu.value = true
+  } else {
+    skillMenu.value = false
+    skillQuery.value = ''
+  }
+}
+function toggleSkillMenu() {
+  if (skillMenu.value) { skillMenu.value = false; return }
+  skillQuery.value = ''
+  skillHighlight.value = 0
+  skillMenu.value = true
+  textareaEl.value?.focus()
+}
+function pickSkill(skill: Skill) {
+  activeSkill.value = skill
+  /* 移除触发选择的 $token（经 $ 钮呼出时没有 token，只挂载技能） */
+  const el = textareaEl.value
+  if (el) {
+    const caret = el.selectionStart ?? el.value.length
+    const m = el.value.slice(0, caret).match(MENTION_RE)
+    if (m && m.index !== undefined) {
+      const tokenStart = m.index + m[0].length - m[1].length - 1
+      textarea.value = el.value.slice(0, tokenStart) + el.value.slice(caret)
+      nextTick(() => { el.focus(); el.setSelectionRange(tokenStart, tokenStart) })
+    } else {
+      el.focus()
+    }
+  }
+  skillMenu.value = false
+  skillQuery.value = ''
+}
+function clearSkill() {
+  activeSkill.value = undefined
+  textareaEl.value?.focus()
+}
+function onTextareaKeydown(event: KeyboardEvent) {
+  if (skillMenu.value && skillMatches.value.length) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const n = skillMatches.value.length
+      skillHighlight.value = (skillHighlight.value + (event.key === 'ArrowDown' ? 1 : n - 1)) % n
+      return
+    }
+    if ((event.key === 'Enter' || event.key === 'Tab') && !event.isComposing) {
+      event.preventDefault()
+      pickSkill(skillMatches.value[Math.min(skillHighlight.value, skillMatches.value.length - 1)])
+      return
+    }
+  }
+  if (event.key === 'Escape' && skillMenu.value) { skillMenu.value = false; return }
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault()
+    send()
+  }
+}
+
 /* ---- 后端就绪探测：就绪则真实流式，否则演示输出 ---- */
 const apiReady = ref(false)
 const apiModel = ref('')
-const DEFAULT_SLUG = DEMOS[0].slug
 /** 每个对话对应一个 Pi 后端会话（多轮上下文保留）。 */
 const convSessions = new Map<string, string>()
 const convSlugs = new Map<number, string>()
@@ -108,24 +185,6 @@ async function probeApi() {
   if (result.ok) {
     MODELS[0].name = '智能体搭子 Agent（真实运行）'
   }
-}
-
-function matchDemo(text: string): Demo | null {
-  const t = text.trim().toLowerCase()
-  let best: { demo: Demo; score: number } | null = null
-  for (const demo of DEMOS) {
-    const skill = bySlug.get(demo.slug)
-    if (!skill) continue
-    let score = 0
-    for (const kw of [skill.name, ...skill.tags, ...skill.compatibility]) {
-      if (t.includes(kw.toLowerCase())) score += 2
-    }
-    for (const kw of demo.question.toLowerCase().split(/\s+/)) {
-      if (kw.length > 2 && t.includes(kw)) score += 1
-    }
-    if (score > 0 && (!best || score > best.score)) best = { demo, score }
-  }
-  return best?.demo ?? null
 }
 
 function scrollTop() {
@@ -321,6 +380,7 @@ function send(raw?: string) {
     conversations.value.unshift(conv)
     activeId.value = conv.id
   }
+  skillMenu.value = false
 
   messages.value.push({ role: 'user', text, done: true })
   textarea.value = ''
@@ -328,22 +388,35 @@ function send(raw?: string) {
   runStatus.value = ''
   elapsedMs.value = 0
 
-  const demo = matchDemo(text)
-  const skill = demo ? bySlug.get(demo.slug) : undefined
-  const convId = activeId.value
+  /* 默认通用智能体；$ 挂载的技能只作用于后续消息 */
+  const skill = activeSkill.value
+  const requested = skill?.slug ?? GENERAL_SKILL_ID
 
   if (apiReady.value) {
-    /* 首轮按内容匹配技能，后续轮沿用对话已固定的技能 */
-    const slug = (convId !== null && convSlugs.get(convId)) || demo?.slug || DEFAULT_SLUG
-    void runReal(text, slug, skill ?? bySlug.get(slug))
+    /* 会话与技能绑定：换技能即弃用旧后端会话（其上下文属于旧技能），下轮新建 */
+    const convId = activeId.value
+    if (convId !== null) {
+      const bound = convSlugs.get(convId)
+      if (bound !== requested) {
+        if (bound !== undefined) convSessions.delete(`pi:${convId}`)
+        convSlugs.set(convId, requested)
+      }
+    }
+    void runReal(text, requested, skill)
     return
   }
+  const demo = skill ? DEMOS.find(d => d.slug === skill.slug) : undefined
   typeInto(startAiMsg(skill, false), demo ? demo.reply : FALLBACK)
 }
 
 function fill(slug: string) {
   const demo = DEMOS.find(d => d.slug === slug)
-  if (demo) textarea.value = demo.question
+  if (demo) {
+    textarea.value = demo.question
+    /* 示例即技能问题：挂上对应技能，脱离 $ 的模糊匹配 */
+    activeSkill.value = bySlug.get(slug)
+    textareaEl.value?.focus()
+  }
 }
 function copyInstall(slug: string) {
   const skill = bySlug.get(slug)
@@ -403,7 +476,7 @@ onBeforeUnmount(() => {
       <div class="exp-shell">
         <div class="exp-top" :class="{ 'is-compact': messages.length > 0 }">
           <h1 class="exp-title">智能体搭子，把产教领域的方法装进你的 AI</h1>
-          <p class="exp-sub">输入你的问题，看看每个 SKILL 会产出什么样的结果</p>
+          <p class="exp-sub">默认由通用智能体直接回答，输入 $ 可挂载专业技能</p>
         </div>
 
         <div v-if="messages.length === 0" class="exp-examples">
@@ -422,7 +495,7 @@ onBeforeUnmount(() => {
               </span>
               <div class="exp-ai-main">
                 <div class="exp-ai-head">
-                  <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : '智能体搭子' }}</span>
+                  <span class="exp-ai-name">{{ msg.skill ? skillTitle(msg.skill.slug) : '通用智能体' }}</span>
                   <span class="exp-ai-badge" v-if="msg.skill" :style="{ background: `var(--cat-${msg.skill.categoryId}-soft)`, color: `var(--cat-${msg.skill.categoryId})` }">
                     {{ skillCat(msg.skill.slug) }}
                   </span>
@@ -437,7 +510,7 @@ onBeforeUnmount(() => {
                   <RouterLink class="exp-act" :to="`/skill/${msg.skill.slug}`">查看详情<Icon name="arrow" :size="14" /></RouterLink>
                 </div>
                 <p v-if="msg.done && !msg.real" class="exp-ai-note">演示输出仅展示结果形态，完整产物请在本地 AI 工具中运行获得。</p>
-                <p v-else-if="msg.done" class="exp-ai-note">以上为 SKILL 真实运行输出（pi · {{ apiModel || '本地 Agent' }}）。</p>
+                <p v-else-if="msg.done" class="exp-ai-note">{{ msg.skill ? '以上为 SKILL 真实运行输出' : '以上为通用智能体真实输出' }}（pi · {{ apiModel || '本地 Agent' }}）。</p>
               </div>
             </div>
           </template>
@@ -445,14 +518,52 @@ onBeforeUnmount(() => {
 
         <div class="exp-input">
           <div class="exp-input-box">
+            <div v-if="skillMenu" class="exp-skill-menu" role="listbox" aria-label="挂载 SKILL">
+              <div
+                v-for="(s, i) in skillMatches"
+                :key="s.slug"
+                class="exp-skill-item"
+                :class="{ 'is-hot': i === skillHighlight }"
+                role="option"
+                :aria-selected="i === skillHighlight"
+                @mousedown.prevent
+                @click="pickSkill(s)"
+              >
+                <span class="exp-skill-ico" :style="{ background: `var(--cat-${s.categoryId}-soft)`, color: `var(--cat-${s.categoryId})` }">
+                  <Icon :name="s.categoryId" :size="14" />
+                </span>
+                <span class="exp-skill-meta">
+                  <b>{{ s.name }}</b>
+                  <small>{{ s.summary }}</small>
+                </span>
+                <span class="exp-skill-slug">{{ s.slug }}</span>
+              </div>
+              <p v-if="skillMatches.length === 0" class="exp-skill-empty">没有匹配的 SKILL，试试其他关键词</p>
+            </div>
             <textarea
+              ref="textareaEl"
               v-model="textarea"
               class="exp-textarea"
               rows="2"
-              placeholder="输入你想完成的事，例如：帮我做一份产业决策报告…"
-              @keydown.enter.exact.prevent="send()"
+              placeholder="输入你的问题；输入 $ 挂载专业技能（如 $career-guidance）"
+              @input="syncSkillMenu"
+              @keydown="onTextareaKeydown"
             ></textarea>
             <div class="exp-input-bar">
+              <button
+                type="button"
+                class="exp-skill-trigger"
+                :class="{ 'is-on': skillMenu || activeSkill }"
+                :title="activeSkill ? `已挂载 ${activeSkill.name}，点击更换` : '挂载 SKILL'"
+                @click.stop="toggleSkillMenu"
+              >$</button>
+              <span v-if="activeSkill" class="exp-skill-chip" :style="{ background: `var(--cat-${activeSkill.categoryId}-soft)`, color: `var(--cat-${activeSkill.categoryId})` }">
+                <Icon :name="activeSkill.categoryId" :size="13" />
+                {{ activeSkill.name }}
+                <button type="button" class="exp-skill-x" aria-label="取消挂载，回到通用智能体" @click="clearSkill">
+                  <Icon name="x" :size="11" />
+                </button>
+              </span>
               <span class="exp-attach" title="演示环境不支持附件">
                 <Icon name="paperclip" :size="16" />
               </span>
