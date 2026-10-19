@@ -60,10 +60,52 @@ test('allows an unassessed heatmap status block without SVG geometry', () => {
   assert.match(result.heatmap.failureReason ?? '', /city-distribution 查询超时/)
 })
 
-test('flags a failed city-distribution query when the report silently omits the status', () => {
+test('no longer infers a failed query from report wording (failureHint removed 2026-10-16)', () => {
+  /* Removal regression: wording like “city-distribution 查询失败” without an
+     unassessed marker used to reject the report. Text sniffing proved too fragile
+     (j8z9/uaw0/58na false positives on legitimate data notes); the authoritative
+     query-outcome-file replacement route is recorded in plaza-dev-notes 023. */
   const result = validateHtmlReport('<p>city-distribution 查询失败：数据库超时。</p>')
-  assert.equal(result.pass, false)
-  assert.match(result.errors.join('\n'), /热点图未评估/)
+  assert.equal(result.pass, true)
+  assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/)
+})
+
+test('does not flag neutral-fill data notes as a failed cross-city query', () => {
+  /* Production false positive: the heatmap title mentions 热点图 and the SVG desc
+     explains that one city returned no records under the current filter, which the
+     old subject-anchored regex misread as a query failure. */
+  const html = `<!doctype html><html><body>
+    <figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">
+      <svg viewBox="0 0 10 10"><title>广东省内城市分布热点图</title><desc>云浮市未返回记录使用中性色</desc>
+        <path data-adcode="445300" fill="#94a3b8" d="M0 0h1v1H0z" />
+      </svg>
+      <figcaption>来源：岗位库；快照日期：2026-09-29；暂无结果的城市使用中性色。</figcaption>
+    </figure>
+  </body></html>`
+  const result = validateHtmlReport(html)
+  assert.equal(result.pass, true)
+  assert.equal(result.heatmap.status, 'present')
+  assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/)
+})
+
+test('explicit failure phrasings alone no longer reject the report (failureHint removed)', () => {
+  const failures = [
+    '跨城市查询失败，请稍后重试。',
+    '城市分布数据获取超时。',
+    '热点图查询调用不可用。',
+    '无法生成热点图。',
+    'city-distribution 请求超时。',
+  ]
+  for (const sentence of failures) {
+    const html =
+      '<figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">' +
+      '<svg viewBox="0 0 10 10"><title>广东省内城市分布</title><desc>岗位库记录分布</desc></svg>' +
+      '<figcaption>来源：岗位库。</figcaption></figure>' +
+      `<p>${sentence}</p>`
+    const result = validateHtmlReport(html)
+    assert.equal(result.pass, true, sentence)
+    assert.doesNotMatch(result.errors.join('\n'), /跨城市查询失败时必须显示/, sentence)
+  }
 })
 
 test('allows a report without a China heatmap when no failure is claimed', () => {

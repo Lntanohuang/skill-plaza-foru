@@ -7,5 +7,5 @@
 - 后续扩展路线：完成真实成功、短回复、空回复、旧 HTML fallback、超时恢复和浏览器回归；补充报告打印/导出与更细的图表语义校验。
 - 验证：`cd web && npm run build` 与 HTML 报告单元测试待本次运行完成后回填；已有会话 `sess-20260928-222556-pft1` 证明旧版完整 HTML 报告可落盘，真实新协议回归仍待验证。
 - 服务端补充校验：`web/server/lib/htmlReport.ts` 在保存 career-guidance HTML 时记录图表 marker；成功热点图须为 `CH_CITY` 并含 SVG `title`/`desc`/`figcaption`，失败状态可用 `data-chart-status="unassessed"` 但必须写可读原因。校验结果落在 `RunRecord.report.html` 和运行事件 note；报告已写入但任务超时时先返回可用链接，未写入则明确报告未生成。真实中国目标成功/失败分支仍待回归。
-- **failureHint 文案坑（2026-09-29 与 10-13 两次复现）**：热点图 figure 的图注若出现「未返回/无结果/失败」等字样且附近有「热点图/城市分布」，`htmlReport.ts` 的 failureHint 会把**成功**热点图误判为失败分支；图注必须用「没有匹配记录/缺失（非 0）」等中性表述。`figcaption` 必须在 `<figure>` 内，外部 `<p class="cap">` 不算。
+- **failureHint 措辞检查——历史坑与移除（2026-10-16 终结）**：曾用正则从图注措辞猜「查询失败」，把**成功**热点图误判（「未返回/无结果」+「热点图/城市分布」邻近即命中；2026-09-29 起两度踩坑后约定图注用中性表述）。2026-10-15 收紧为动作锚定仍三度误杀线上成功报告（j8z9/uaw0/58na），根因判定为**不该从文本猜状态**：failureHint 正则与「跨城市查询失败必须显示热点图未评估」检查已从 `htmlReport.ts` 删除（结构校验/未评估原因校验/矛盾校验保留）。替代防线改走权威信号——查询脚本落盘 `query-outcomes.jsonl`、校验器读文件判定（待实现，见 023）；落地前该契约仅靠技能提示词，无服务器强制。「中性表述」从此只是写作建议，不再是规避误杀的硬要求。
 - **终态收档时序**（原 025 诊断结论）：报告文件在终态、超时、断连三种收尾路径都会尝试复制；超时且已恢复报告时先返回带 `reportUrl` 的 done，避免 error 事件吞掉链接。trace 权威数据为 `traces/index.jsonl`、`<runId>.events.jsonl`、`<runId>.json` 三层；done 早于 appendIndex 落库的竞态已由 074 前端重拉承接。

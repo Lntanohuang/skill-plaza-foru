@@ -310,7 +310,7 @@ export class PiRunner extends AgentRunner {
       if (ev?.type === 'text_delta' && ev.delta)
         this.emit(sid, { kind: 'text_delta', delta: ev.delta })
       else if (ev?.type === 'thinking_delta' && ev.delta) {
-        /* 计数照发（plaza 前端进度条），原文同时外发（OpenAI 端点 reasonContent） */
+        /* 计数照发（plaza 前端进度条），原文同时外发（OpenAI 端点 reasoning_content） */
         this.emitThinking(sid, ev.delta.length)
         this.emit(sid, { kind: 'thinking_delta', delta: ev.delta })
       }
@@ -335,7 +335,9 @@ export class PiRunner extends AgentRunner {
           per.set(`id:${callId}`, rec ?? { startedAt: Date.now(), endedAt: Date.now() })
         this.emit(sid, {
           kind: 'status', phase: 'tool', state: ev.isError ? 'failed' : 'completed',
-          tool: ev.toolName ?? ev.name, id: ev.toolCallId ?? ev.id,
+          /* id/name 嵌在 ev.toolCall 下（真实载荷顶层无这两个字段），顶层保留为回落 */
+          tool: (ev.toolCall?.name ?? ev.toolName ?? ev.name) || undefined,
+          id: (ev.toolCall?.id ?? ev.toolCallId ?? ev.id) || undefined,
         })
       }
       else if (ev?.type === 'text_start') this.emit(sid, { kind: 'status', phase: 'text', state: 'active' })
@@ -349,7 +351,21 @@ export class PiRunner extends AgentRunner {
             usage: sumUsage(this.turnUsage.get(sid), this.callUsage.get(sid)),
           })
       }
+    } else if (type === 'message_start' && msg.message?.role === 'assistant') {
+      /* 新 assistant 消息开始：wire 以此兜底上一条消息 end 丢失时的残余文本缓冲 */
+      this.emit(sid, { kind: 'status', phase: 'message', state: 'start' })
     } else if (type === 'message_end') {
+      /* 消息级定性：assistant 消息含 toolCall 块则其全部 text 是过程叙述，否则是
+         最终答复。事件级定性四轮泄漏的教训：text 与工具事件的相对到达序不可靠，
+         只能在消息边界拿完整块列表一次定性（扣留层门控后增量先于 end 完整到达） */
+      if (msg.message?.role === 'assistant') {
+        const blocks = Array.isArray(msg.message.content) ? msg.message.content : []
+        const hasToolCall = blocks.some((b: any) => b?.type === 'toolCall')
+        this.emit(sid, {
+          kind: 'status', phase: 'message', state: 'end',
+          tool: hasToolCall ? 'toolcall' : 'final',
+        })
+      }
       /* 每条 assistant 消息对应一次 LLM 调用：终值入账，累计成本轮总量；
          部分供应商（DeepSeek）message_end 不带细分，回落流式最后上报值 */
       this.toolTimingRound.set(sid, (this.toolTimingRound.get(sid) ?? 0) + 1)

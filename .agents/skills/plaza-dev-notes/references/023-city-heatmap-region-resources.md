@@ -13,6 +13,7 @@
 - **热点图契约**：`chart-visualization/references/heatmap-chart.md` 固定 `rows[].code`、`coveredCodes`、`totalCount`、`otherCount`、中性色缺失值与 `CH_CITY`/失败状态块字段。
 - **执行链**：中国目标地区先调 `city-distribution(province, limit=20)`，成功输出 `<figure data-chart-skill="heatmap-chart" data-chart-id="CH_CITY">`；失败/超时/边界缺失输出「热点图未评估」及原因；没有同口径总量时不能凭空计算「其他」。
 - **服务端校验**：`web/server/lib/htmlReport.ts` 校验 figure 的 `data-chart-skill`、CH_CITY、成功 SVG 的 `title/desc/figcaption`，以及 `data-chart-status="unassessed"` 的可读失败原因；`web/server/index.ts` 在 HTML 落盘时记 `recorder.note({htmlReport})` 与 `RunRecord.report.html`，不改写、不阻塞用户报告。
+- **failureHint 措辞检查已移除（2026-10-16，并行会话落地）**：曾以正则从图注措辞猜「查询失败」（「未返回/无结果」等词邻近「热点图/城市分布」即命中），2026-10-15 收紧为动作锚定后仍三度误杀线上成功报告（公网 run j8z9/uaw0/58na，其中 uaw0 命中的恰是本记录约定的「中性色/未返回记录」文案本身）；根因**不该从文本猜状态**，已删除 failureHint 正则与「跨城市查询失败必须显示热点图未评估」检查（结构校验/未评估原因校验/矛盾校验保留，单测反转为移除回归 12/12）。**干净替代（待实现，用户暂缓）**：`career-market-query.mjs` 每次执行向会话沙箱写机器可读结果文件（`query-outcomes.jsonl`：queryId/ok/error/elapsedMs/行数），校验器读该文件权威判定 city-distribution 成败——失败要求 `data-chart-status="unassessed"` 或「热点图未评估」，成功要求 CH_CITY 图；无文件回落宽松行为并告警。落地前「查询失败必须标未评估」仅靠技能提示词，无服务器强制。
 
 ## 成本与取舍
 

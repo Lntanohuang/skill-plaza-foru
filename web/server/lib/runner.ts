@@ -27,12 +27,15 @@ export type TapFn = (dir: 'out' | 'in', msg: any) => void
 export type RunnerEvent =
   | { kind: 'text_delta'; delta: string }
   /* 思考原文增量（pi thinking_delta）：plaza 协议只消费节流计数（status），
-     OpenAI 兼容端点用它填 reasonContent；广场 /api/chat 忽略本事件 */
+     OpenAI 兼容端点用它填 reasoning_content；广场 /api/chat 忽略本事件 */
   | { kind: 'thinking_delta'; delta: string }
   | {
       kind: 'status'
-      phase: 'thinking' | 'tool' | 'text'
-      state?: 'active' | 'completed' | 'failed'
+      /* message 相位是 assistant 消息边界（piRunner 在 message_start/end 发出），
+         OpenAI wire 以消息级定性分流 text：tool 字段携带定性结果
+         （'toolcall'=过程叙述 | 'final'=最终答复） */
+      phase: 'thinking' | 'tool' | 'text' | 'message'
+      state?: 'active' | 'completed' | 'failed' | 'start' | 'end'
       chars?: number
       tool?: string
       id?: string
