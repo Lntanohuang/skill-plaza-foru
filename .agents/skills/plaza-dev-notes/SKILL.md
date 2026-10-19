@@ -92,3 +92,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 045 | tech-forecast 纺织服装第二次沙箱运行：快照+实时复核一致性、检索相关性放行与 GBK 取数踩坑 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [045-tech-forecast-textile-second-run.md](references/045-tech-forecast-textile-second-run.md) |
 | 046 | tech-forecast 纺织服装第三次沙箱运行：`--query` 整批失准与 Bing 站内 `--fetch` 兜底 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [046-tech-forecast-textile-third-run-search-fallback.md](references/046-tech-forecast-textile-third-run-search-fallback.md) |
 | 047 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [047-career-guidance-guangzhou-java-intern-20261015.md](references/047-career-guidance-guangzhou-java-intern-20261015.md) |
+| 048 | 就业指导广场沙箱第三次运行：广州 Java 后端实习（2026-10-16 快照，六图报告，服务端校验通过） | 已实现观察（2026-10-16 会话；浏览器/运行历史回归待跑） | [048-career-guidance-guangzhou-java-intern-20261016.md](references/048-career-guidance-guangzhou-java-intern-20261016.md) |
+| 049 | 精确岗位名候选查询与合并岗位统计工具 | 已实现（真实 market-summary 回归通过） | [049-exact-title-query-trial.md](references/049-exact-title-query-trial.md) |

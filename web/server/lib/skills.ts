@@ -146,6 +146,7 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '始终区分用户提供的事实、岗位原文、推断和待核实信息；不承诺录用概率，不给确定法律结论；' +
     CAREER_GUIDANCE_USER_REPORT_CONTRACT +
     '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具，不能用通用招聘常识替代；' +
+    '就业指导岗位需求分析默认优先调用 market-summary，一次取得样本量、学历、经验、薪资和主要来源结构；仅在信息不足、合并查询失败或需要岗位名排行/省内城市分布等独立维度时调用细分 query，不要重复查询已覆盖指标；' +
     '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
     CAREER_GUIDANCE_FILE_PROTOCOL +
     '量化数据和图表必须使用 HTML/CSS/内联 SVG 直接绘制，不能用 Markdown 表格冒充图表；' +

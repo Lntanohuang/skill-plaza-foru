@@ -11,7 +11,7 @@ import { isAuthPluginError, mysqlBinCandidates } from './mysql-client.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const QUERY_DIR = join(HERE, 'career-market-queries')
-const QUERY_IDS = new Set(['cohort-summary', 'education-distribution', 'experience-distribution', 'salary-distribution', 'title-top', 'source-distribution', 'city-distribution'])
+const QUERY_IDS = new Set(['market-summary', 'cohort-summary', 'education-distribution', 'experience-distribution', 'salary-distribution', 'title-top', 'source-distribution', 'city-distribution'])
 const CFG_KEYS = ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE']
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 180_000
@@ -19,7 +19,7 @@ const MAX_PARALLEL = 2
 const CLIENT_PROBE_TIMEOUT_MS = 5_000
 
 function usage() {
-  return `用法：\n  node scripts/career-market-query.mjs --query education-distribution --params '{"city":"广州市","keywords":["Java"]}'\n  node scripts/career-market-query.mjs --query city-distribution --params '{"province":"广东省","keywords":["Java"],"roleTerms":["后端","服务端","开发"],"internship":true,"limit":20,"timeoutMs":120000}'\n  node scripts/career-market-query.mjs --parallel '[{"query":"education-distribution","params":{}}]'\n\n允许 query：${[...QUERY_IDS].join(', ')}\n参数：普通查询使用 city；city-distribution 使用 province 且 limit 固定为 20；两者均支持 keywords、roleTerms、internship、timeoutMs`
+  return `用法：\n  node scripts/career-market-query.mjs --query market-summary --params '{"city":"广州市","keywords":["Java"]}'\n  node scripts/career-market-query.mjs --query city-distribution --params '{"province":"广东省","keywords":["Java"],"roleTerms":["后端","服务端","开发"],"internship":true,"limit":20,"timeoutMs":120000}'\n  node scripts/career-market-query.mjs --parallel '[{"query":"market-summary","params":{}}]'\n\n允许 query：${[...QUERY_IDS].join(', ')}\n参数：普通查询使用 city；city-distribution 使用 province 且 limit 固定为 20；两者均支持 keywords、roleTerms、internship、timeoutMs`
 }
 
 function config() {

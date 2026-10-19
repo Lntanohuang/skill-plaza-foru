@@ -124,8 +124,9 @@ function sandboxAgentsMd(): string {
       '',
       `用 bash 执行白名单工具：\`node "${CAREER_MARKET_QUERY_TOOL}" --query <queryId> --params '<JSON>'\`。`,
       'Agent 只能选择 queryId 并填写普通查询的 city，或 city-distribution 的 province，以及 keywords、roleTerms、internship、timeoutMs；普通查询可填写 limit，city-distribution 的 limit 固定为 20，不得传原始 SQL。',
-      '可用 queryId：cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution、city-distribution。',
-      '中国目标地区的城市热点图先读取工作区 .agents/skills/chart-visualization/resources/regions/registry.json 选择已注册省份，再调用 city-distribution；固定筛选条件必须与城市岗位统计一致，未注册省份标记未评估，当前优先使用省内范围。',
+      '可用 queryId：market-summary、cohort-summary、education-distribution、experience-distribution、salary-distribution、title-top、source-distribution、city-distribution。',
+      '就业指导默认先使用 market-summary：一次返回样本量、学历、经验、薪资和主要来源结构；只有合并结果缺少所需信息、需要独立岗位名排行/省内城市分布，或合并查询失败时，才调用对应细分 query。',
+      '中国目标地区的城市热点图先读取工作区 .agents/skills/chart-visualization/resources/regions/registry.json 选择已注册省份，再调用 city-distribution；固定筛选条件必须与城市岗位统计一致，未注册省份标记未评估，当前优先使用省内范围。'
       `多个独立查询使用 \`node "${CAREER_MARKET_QUERY_TOOL}" --parallel '<JSON数组>'\`，工具内部最多并发 2 个查询；单查询默认 120 秒、最长 180 秒。工具会在批次开始时选择兼容的 MySQL 客户端并复用。`,
       '涉及具体城市、岗位、实习/应届或学历门槛的问题，必须优先调用该工具；查询结果用于 report-meta 的 sources/metrics/charts，查询失败时把原因写入开发侧 gaps/risks。',
     )
