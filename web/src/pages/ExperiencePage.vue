@@ -71,9 +71,10 @@ const currentConvId = ref<number | null>(null)
 const streamTimer: { value: ReturnType<typeof setInterval> | null } = { value: null }
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
-/* 每个对话对应一个 Pi 后端会话（多轮上下文保留）；技能与会话绑定 */
-const convSessions = new Map<string, string>()
-const convSlugs = new Map<number, string>()
+/* 每个对话对应一个 Pi 后端会话（多轮上下文保留）；技能与会话绑定。
+   reactive Map：session 事件异步写入后，依赖它的 computed（侧栏实时条目/运行徽章）才会重算 */
+const convSessions = reactive(new Map<string, string>())
+const convSlugs = reactive(new Map<number, string>())
 
 /* ---------- 运行进度（status 事件 → ToolCallGroup，只登记真实工具调用；安全边界见手记 030） ---------- */
 interface ProgressItem {
@@ -486,6 +487,10 @@ interface HistoryGroup {
   latest: RunListItem
   count: number
   archived: boolean
+  /** 当前对话的实时占位条目（运行记录落库前显示；不可点开、不可归档） */
+  live?: boolean
+  /** 该对话正在运行：结局徽章换成「运行中」 */
+  running?: boolean
 }
 
 interface HistoryDetail {
@@ -530,10 +535,65 @@ function groupRuns(runs: RunListItem[], archived: boolean): HistoryGroup[] {
 }
 const historyGroups = computed(() => groupRuns(historyRuns.value, false))
 const archivedGroups = computed(() => groupRuns(archivedRuns.value, true))
+
+/** 当前对话绑定的服务端会话（sess-*；首轮 session 事件到达后可用） */
+const liveSessionKey = computed(() => {
+  const convId = currentConvId.value
+  return convId === null ? undefined : convSessions.get(`pi:${convId}`)
+})
+/** 落库重试用尽仍无记录时撤掉实时条目，避免幽灵对话常驻侧栏（下次运行自动复位） */
+const liveDismissed = ref(false)
+
+/* 当前对话的实时侧栏条目：运行记录要等运行结束才在服务端落库，落库前由它占位
+   （ChatGPT 式：发出第一条消息对话即入列）；真实分组出现后无缝接管。 */
+const liveConvGroup = computed<HistoryGroup | null>(() => {
+  if (!apiReady.value || liveDismissed.value) return null
+  const convId = currentConvId.value
+  if (convId === null) return null
+  const firstUser = messages.value.find(m => m.role === 'user')
+  if (!firstUser) return null
+  const sessionKey = convSessions.get(`pi:${convId}`)
+  if (sessionKey && historyGroups.value.some(g => g.key === sessionKey)) return null
+  /* session 事件未到且不在运行：请求没到服务端，不会有落库记录 */
+  if (!sessionKey && !sending.value) return null
+  const title = firstUser.text.replace(/\s+/g, ' ').slice(0, 80)
+  const slug = convSlugs.get(convId) ?? GENERAL_SKILL_ID
+  return {
+    key: `live:${convId}`,
+    live: true,
+    running: sending.value,
+    title: title || '新对话',
+    skill: slug,
+    latest: {
+      runId: `live:${convId}`,
+      ts: new Date(convId).toISOString(),
+      clientSessionId: '',
+      promptDigest: title,
+      outcome: 'success',
+      skill: slug,
+      durationMs: 0,
+    },
+    count: 1,
+    archived: false,
+  }
+})
+
 /** 展开归档区时附加在常规分组之后 */
 const showArchived = ref(false)
 const sidebarSections = computed(() => {
-  const sections: { label: string; items: HistoryGroup[] }[] = groupedHistory.value.map(b => ({ label: b.label, items: b.items }))
+  const sections: { label: string; items: HistoryGroup[] }[] =
+    groupedHistory.value.map(b => ({ label: b.label, items: [...b.items] }))
+  /* 实时条目置顶「今天」；已有分组中属于当前运行对话的换「运行中」徽章 */
+  const live = liveConvGroup.value
+  if (live) {
+    const today = sections.find(s => s.label === '今天')
+    if (today) today.items.unshift(live)
+    else sections.unshift({ label: '今天', items: [live] })
+  }
+  const runKey = liveSessionKey.value
+  if (runKey && sending.value) {
+    for (const section of sections) for (const g of section.items) if (g.key === runKey) g.running = true
+  }
   if (showArchived.value && archivedGroups.value.length) sections.push({ label: '已归档', items: archivedGroups.value })
   return sections
 })
@@ -576,6 +636,8 @@ function historyToolItems(msg: Msg): ProgressItem[] {
 /* 点开历史 = 把对话载入正常消息流（与 ChatGPT 一致）：无专门结果卡，
    报告链接内联在最后一条 AI 消息；同时恢复服务端会话，可直接继续对话。 */
 async function selectHistory(group: HistoryGroup) {
+  /* 实时占位条目就是当前对话，点击不重新载入 */
+  if (group.live) return
   if (sending.value) {
     toast('当前运行进行中，完成后才能查看历史对话')
     return
@@ -628,12 +690,13 @@ async function selectHistory(group: HistoryGroup) {
   }
 }
 
-/* 防重入与显示态分开：初始 loading=true 只为避免空态闪现，不代表有请求在途 */
+/* 防重入与显示态分开：初始 loading=true 只为避免空态闪现，不代表有请求在途；
+   silent 重拉不切 loading 态（侧栏列表保持可读，重试不打扰） */
 let historyReqInFlight = false
-async function loadHistory() {
+async function loadHistory(opts: { silent?: boolean } = {}) {
   if (historyReqInFlight) return
   historyReqInFlight = true
-  historyLoading.value = true
+  if (!opts.silent) historyLoading.value = true
   try {
     const [result, archived] = await Promise.all([fetchRuns(), fetchRuns({ archived: true })])
     /* live=false 是 mock 兜底数据，不冒充真实历史 */
@@ -654,7 +717,7 @@ async function loadHistory() {
     }
   } finally {
     historyReqInFlight = false
-    historyLoading.value = false
+    if (!opts.silent) historyLoading.value = false
   }
 }
 
@@ -704,8 +767,28 @@ async function runDelete(group: HistoryGroup) {
   void loadHistory()
 }
 
-/* 运行结束后刷新历史列表（新记录入列） */
-watch(sending, (now, was) => { if (was && !now) void loadHistory() })
+/* 运行结束后刷新历史列表（新记录入列）；新开运行时复位实时条目 */
+watch(sending, (now, was) => {
+  if (now) {
+    liveDismissed.value = false
+    return
+  }
+  if (was) void refreshHistoryAfterRun()
+})
+
+/* 服务端在 done SSE 之后才异步落库（exportTrace → appendIndex），运行一结束就刷新
+   经常扑空：首刷未命中当前会话时延迟重拉几次；始终未命中则撤掉实时条目。 */
+async function refreshHistoryAfterRun() {
+  const sessionKey = liveSessionKey.value
+  await loadHistory({ silent: true })
+  if (!sessionKey || historyGroups.value.some(g => g.key === sessionKey)) return
+  for (let i = 0; i < 3 && historyLive.value; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    await loadHistory({ silent: true })
+    if (historyGroups.value.some(g => g.key === sessionKey)) return
+  }
+  liveDismissed.value = true
+}
 
 onMounted(async () => {
   document.addEventListener('click', onDocClick)
@@ -734,7 +817,7 @@ onBeforeUnmount(() => {
             v-for="group in section.items"
             :key="group.key"
             class="exp-hist-item is-run"
-            :class="{ 'is-active': group.key === selectedSessionKey }"
+            :class="{ 'is-active': group.live || group.key === selectedSessionKey }"
             role="button"
             tabindex="0"
             :title="group.title"
@@ -749,18 +832,20 @@ onBeforeUnmount(() => {
                 {{ group.count > 1 ? `${group.count} 条消息` : fmtTime(group.latest.ts) }}
               </small>
             </span>
-            <!-- 右列：结局徽章在上，操作按钮在右下角（常规=归档；已归档=恢复+删除） -->
+            <!-- 右列：徽章在上，操作按钮在右下角（运行中=运行徽章；常规=归档；已归档=恢复+删除；
+                 实时占位条目无结局也无操作，落库后由真实分组接管） -->
             <span class="exp-hist-side">
-              <span class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
+              <span v-if="group.running" class="use-hist-outcome is-running">运行中</span>
+              <span v-else-if="!group.live" class="use-hist-outcome" :class="`is-${group.latest.outcome}`">{{ OUTCOME_LABEL[group.latest.outcome] ?? group.latest.outcome }}</span>
               <button
-                v-if="!group.archived"
+                v-if="!group.archived && !group.live"
                 type="button"
                 class="exp-hist-inline"
                 title="归档对话"
                 aria-label="归档对话"
                 @click.stop="archiveConversation(group, true)"
               ><Icon name="archive" :size="12" /></button>
-              <span v-else class="exp-hist-side-acts">
+              <span v-else-if="group.archived" class="exp-hist-side-acts">
                 <button
                   type="button"
                   class="exp-hist-inline"
@@ -793,7 +878,7 @@ onBeforeUnmount(() => {
         </button>
         <p v-if="historyLoading" class="exp-side-empty">正在加载运行记录…</p>
         <p v-else-if="!historyLive" class="exp-side-empty">启动本地服务后可查看运行记录</p>
-        <p v-else-if="historyRuns.length === 0" class="exp-side-empty">还没有运行记录，跑一次任务后就会出现在这里</p>
+        <p v-else-if="historyRuns.length === 0 && !liveConvGroup" class="exp-side-empty">还没有运行记录，跑一次任务后就会出现在这里</p>
       </div>
     </aside>
 

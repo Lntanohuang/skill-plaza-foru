@@ -118,3 +118,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 070 | 点开历史即正常对话流：删专门详情卡/产物区，报告链接内联，恢复服务端会话可直接续聊 | 已实现（2026-10-16 构建/浏览器断言含真实续聊与下载路由 200/截图通过） | [070-history-as-normal-chat.md](references/070-history-as-normal-chat.md) |
 | 071 | 历史对话补回工具调用摘要（conversation.tools 名称+成败+起止耗时、聚合到轮次首条 AI 消息、折叠组还原每行耗时与总时长） | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过，无命令泄露；耗时同日落地：piRunner 计时写入 trace） | [071-history-tool-summary.md](references/071-history-tool-summary.md) |
 | 072 | 会话归档与删除（RunRecord.archived + rewriteIndex、session 路由、侧栏 hover 操作与两步删除、已归档分区） | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过；删除保留 trace 文件为索引层删除） | [072-conversation-archive-delete.md](references/072-conversation-archive-delete.md) |
+| 073 | industry-education-report 沙箱运行：政府部门广东 AI 招商研判（05 全量引用、25 项缺口、语义审核降级） | 已实现观察（2026-10-19 会话；技能脚本校验/渲染/verify 通过，parseReport/浏览器回归待跑） | [073-industry-education-report-guangdong-ai-gov-run.md](references/073-industry-education-report-guangdong-ai-gov-run.md) |
+| 074 | 侧栏实时对话条目与落库竞态重拉（liveConvGroup 占位、运行中徽章、reactive 会话 Map） | 已实现（2026-10-19 构建/真实两轮 e2e 8 断言与截图通过） | [074-live-sidebar-entry.md](references/074-live-sidebar-entry.md) |
