@@ -678,12 +678,6 @@ const engineHint = '确认 Pi 所选模型的凭据已配置（如 DEEPSEEK_API_
 
 const visibleMessages = computed(() => session.value.slice(-2))
 
-function switchTo(target: string) {
-  /* 保留 query（含 mode），技能切换不打断当前交互模式 */
-  clearHistorySelection()
-  void router.push({ name: 'use', params: { slug: target }, query: route.query })
-}
-
 onMounted(() => {
   if (!slug.value || !configOf(slug.value)) {
     void router.replace({ name: 'use', params: { slug: SKILLS[0].slug }, query: route.query })
@@ -713,12 +707,6 @@ onBeforeUnmount(endRun)
           </RouterLink>
         </div>
       </header>
-
-      <div class="use-switch" role="group" aria-label="切换 SKILL">
-        <button v-for="item in SKILLS" :key="item.slug" type="button" class="use-switch-btn"
-          :class="{ 'is-on': item.slug === skill.slug }" :aria-pressed="item.slug === skill.slug"
-          @click="switchTo(item.slug)">{{ item.name }}</button>
-      </div>
 
       <div class="use-mode-row">
         <div class="use-mode" role="group" aria-label="选择交互模式">

@@ -7,7 +7,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 
 本技能是本仓库的**活记录本**，供开发会话（zcode / pi 在本仓库工作时）使用，记录"为什么这么设计、接在哪、后续怎么扩"。代码本身能说明的不重复记。
 
-**边界**：这是开发用内部技能——不进 `web/server/lib/skills.ts` 智能体列表、不进 `INSTALLED_SKILLS`、不在广场前端任何接入点出现。面向广场用户的技能接入走 skills.ts 等四个接入点，与本技能无关。
+**边界**：这是开发用内部技能——不进 `web/server/lib/skills.ts` 智能体列表、不进 `INSTALLED_SKILLS`、不在广场前端任何接入点出现。面向广场用户的技能接入走 skills.ts 等四个接入点，与本技能无关。运行日志、实验结果和临时回归数据也不属于本手记；只有会影响后续开发的设计、约束和接入信息才进入记录。
 
 ## 何时读
 
@@ -19,17 +19,18 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 
 ## 何时写
 
-相关任务结束前检查是否满足任一条件：形成新的设计决策、修改既有约定、实现记录中的后续路线，或发现会影响后续开发的重要事实。满足时必须在同一变更中更新对应记录，或新增下一编号的记录并更新本索引；只做与手记无关的局部修复且没有新的可复用约定时，可以不新增记录。
+只有当本次工作形成了**会影响后续开发的长期有效信息**时才写入：例如新的架构/Schema/API 约定、重要接入点、已确认的系统限制或安全边界、对既有设计的修改，或被否决方案及其原因。满足时更新对应主题记录；只有确实形成新主题时才新增编号。
 
-实现落地后回填实际 `file:line`、验证命令/结果和仍未完成的验收项。无法实测的内容标为“待验证”，不要把计划或静态检查写成已完成。
+普通运行、重复回归、查询耗时、样本量、成功/失败结果、并发对比、截图和常规构建检查不写入手记。运行过程和临时结果保留在运行目录、报告或提交信息中；同一主题的后续工作只补充会改变后续开发的设计或约束，不按运行次数追加。
 
 ## 记录规则（后续内容按此持续追加）
 
-- 一条记录一个主题：正文放 `references/<三位编号>-<slug>.md`，并在下方索引加一行。
+- 一条记录一个主题：正文放 `references/<三位编号>-<slug>.md`，并在下方索引加一行；重复运行或重复验证不得新增记录。
 - 记录必含五要素：**状态**（设计中 / 已实现 / 已废弃）、**动机**、**约定细节**（schema、字段、接入点 file:line）、**成本与取舍**（含被否决的备选方案及理由）、**后续扩展路线**。
-- 设计定稿但未实现时标"设计定稿，待实现"；实现落地后**回填**实际 file:line 与实测数据，状态改"已实现"。
+- 只记录会影响后续开发的事实、决策和约束；不记录运行结论、耗时、样本量、成功/失败结果或普通验证命令。
+- 设计定稿但未实现时标"设计定稿，待实现"；实现落地后只补充实际接入点和仍未完成的开发事项，不把运行结果写成记录内容。
 - 状态变化更新原记录，不删旧记录；被推翻的决策标"已废弃"并注明替代者。
-- 编号只增不改，新记录顺延取下一个编号。
+- 编号按主题递增，不按运行次数递增；索引不得保留指向不存在文件的条目。
 
 ## 记录索引
 
@@ -71,6 +72,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 033 | DeepResearch 任务拆分、状态归属与冲突控制 | 设计定稿，待实现 | [033-deep-research-decomposition-and-conflict-control.md](references/033-deep-research-decomposition-and-conflict-control.md) |
 | 034 | DeepResearch 架构相关论文检索与启发 | 研究输入已整理，架构结论待验证 | [034-research-papers-for-deep-research-architecture.md](references/034-research-papers-for-deep-research-architecture.md) |
 | 035 | Pi 子 Agent 模型选择与计费来源 | 已实现 Skill 规范，运行时接入待实现 | [035-pi-model-selection-and-billing-source.md](references/035-pi-model-selection-and-billing-source.md) |
+| 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（2026-10-14 流式升级为标准 chunk 并复验通过；公网浏览器打开报告待用户执行） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
 | 036 | OpenAI 兼容端点 /v1/chat/completions：外部项目统一接入入口 | 已实现（2026-10-15 流式升级为标准 chunk 格式 + 叙述重分类/工具帧聚合；线上抓包回归待跑） | [036-openai-compat-chat-endpoint.md](references/036-openai-compat-chat-endpoint.md) |
 | 030 | 在线运行安全进度时间线 | 已实现（真实 Pi 工具事件与浏览器回归待验证） | [030-stream-progress-timeline.md](references/030-stream-progress-timeline.md) |
 | 032 | industry-education-report 在广场沙箱内首次端到端运行观察 | 已实现观察（parseReport 链路回归待验证） | [032-industry-education-report-sandbox-run.md](references/032-industry-education-report-sandbox-run.md) |
@@ -91,6 +93,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 044 | tech-forecast 纺织服装（广东）沙箱运行：快照复用、库内零样本边界、英文检索降级 | 已实现观察（2026-10-13 会话；parseReport/浏览器回归待跑） | [044-tech-forecast-textile-sandbox-run.md](references/044-tech-forecast-textile-sandbox-run.md) |
 | 045 | tech-forecast 纺织服装第二次沙箱运行：快照+实时复核一致性、检索相关性放行与 GBK 取数踩坑 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [045-tech-forecast-textile-second-run.md](references/045-tech-forecast-textile-second-run.md) |
 | 046 | tech-forecast 纺织服装第三次沙箱运行：`--query` 整批失准与 Bing 站内 `--fetch` 兜底 | 已实现观察（2026-10-14 会话；parseReport/浏览器回归待跑） | [046-tech-forecast-textile-third-run-search-fallback.md](references/046-tech-forecast-textile-third-run-search-fallback.md) |
-| 047 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [047-career-guidance-guangzhou-java-intern-20261015.md](references/047-career-guidance-guangzhou-java-intern-20261015.md) |
+| 048 | 广场技能列表动态化：/api/skills 与幽灵卡移除 | 已实现（构建通过、API 实测 6 技能；浏览器页面回归待用户） | [048-plaza-skill-list-dynamic.md](references/048-plaza-skill-list-dynamic.md) |
 | 048 | 就业指导广场沙箱第三次运行：广州 Java 后端实习（2026-10-16 快照，六图报告，服务端校验通过） | 已实现观察（2026-10-16 会话；浏览器/运行历史回归待跑） | [048-career-guidance-guangzhou-java-intern-20261016.md](references/048-career-guidance-guangzhou-java-intern-20261016.md) |
 | 049 | 精确岗位名候选查询与合并岗位统计工具 | 已实现（真实 market-summary 回归通过） | [049-exact-title-query-trial.md](references/049-exact-title-query-trial.md) |
+| 065 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [065-career-guidance-guangzhou-java-intern-20261015.md](references/065-career-guidance-guangzhou-java-intern-20261015.md) |

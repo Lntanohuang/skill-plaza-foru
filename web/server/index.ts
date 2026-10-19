@@ -37,7 +37,7 @@ import {
 } from './lib/htmlReport.ts'
 import { serverEnv } from './lib/agentEnv.ts'
 import { loadLocalEnv } from './lib/env.ts'
-import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, HTML_REPORT_CONTRACTS, HTML_REPORT_SKILLS } from './lib/skills.ts'
+import { SKILL_PROMPTS, INSTALLED_SKILLS, SIDECAR_SKILLS, HTML_REPORT_CONTRACTS, HTML_REPORT_SKILLS, listPlazaSkills } from './lib/skills.ts'
 import {
   extractSidecar,
   validateMeta,
@@ -147,8 +147,19 @@ function workspaceDirFor(clientSessionId: string): string {
 
 const PRIVATE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
+/* 公网入口白名单（web/.env 的 PLAZA_ALLOWED_ORIGINS，逗号分隔完整 origin，
+   含端口；loadLocalEnv 在模块顶部已执行）。防跨站默认不放松：只放行
+   显式登记的公网地址，任意公网页面仍被拒。 */
+const EXTRA_ALLOWED_ORIGINS = new Set(
+  (process.env.PLAZA_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, '').toLowerCase())
+    .filter(Boolean),
+)
+
 function originAllowed(origin: string | undefined): boolean {
   if (!origin) return true // 同源或非浏览器
+  if (EXTRA_ALLOWED_ORIGINS.has(origin.trim().replace(/\/+$/, '').toLowerCase())) return true
   try {
     const { hostname } = new URL(origin)
     if (PRIVATE_HOSTS.has(hostname) || hostname.endsWith('.local')) return true
@@ -202,6 +213,11 @@ const server = createServer((req, res) => {
       engines: [{ id: DEFAULT_ENGINE, available: true, model: runner.describe(), version: runner.envInfo().agentVersion }],
       message: 'API 已配置',
     })
+    return
+  }
+  if (req.method === 'GET' && path === '/api/skills') {
+    /* 广场技能清单：SKILL_PROMPTS 键为可运行权威集合，名称/描述取技能文件夹 frontmatter */
+    sendJson(res, 200, { skills: listPlazaSkills() })
     return
   }
   if (req.method === 'POST' && path === '/api/chat') {

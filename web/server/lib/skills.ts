@@ -7,6 +7,7 @@
    ============================================================ */
 
 import { join, dirname } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 /** HTML 报告技能的输出契约：固定章节、用户结构约束、文件协议与首轮附加规则。
@@ -81,7 +82,7 @@ const TECH_FORECAST_USER_REPORT_CONTRACT =
   '影响决策方向的关键限制（如政策不确定性）以中性专业表述呈现：必要来源与口径放在图注，推断标注就地呈现，不复述内部证据和推理链。' +
   '即使任务提示要求复述任务边界，也只在内部完成，不把复述作为报告正文。' +
   '章节中的技术方向、地区和窗口只来自当前任务与相符查询，不沿用示例默认值。' +
-  '预测字段的每个取值必须标注证据等级（库内实测 / 公开来源 / 内置文档 / 分析推断）；预计薪资只给区间并写口径，需求趋势与增长趋势只能标注公开来源（联网检索，注明标题、网站、日期）或分析推断——岗位库没有真实发布时间，禁止用月度聚合计数充当需求趋势，不编造增长百分比。' +
+  '证据分级（库内实测 / 公开来源 / 内置文档 / 分析推断）仅用于内部研判取舍，不得以任何形式出现在报告正文（章节、表格列、字段标注、图注均不出现这类字样）；正文所有证据引用处以 <sup>[n]</sup> 编号标记（按首次出现顺序，同一来源复用同一编号），公开来源的标题、网站、日期进第七章参考文献；预计薪资只给区间并写口径，需求趋势与增长趋势的依据来自联网检索或综合研判，岗位库没有真实发布时间，禁止用月度聚合计数充当需求趋势，不编造增长百分比。' +
   '仅当用户明确只需简短答疑而非正式报告时，直接交付所需内容，不强行展开七章。'
 
 const CAREER_GUIDANCE_FIRST_TURN_RULES =
@@ -100,7 +101,8 @@ const TECH_FORECAST_FIRST_TURN_RULES =
   '每个技术领域用会话提供的联网检索工具（node scripts/web-search.mjs --query 搜索、--fetch 抓取正文）至少检索一次最新动态，中英文查询词各一次，引用公开来源必须注明标题、网站与发布日期，关键结论两个独立来源印证。' +
   '报告必须写入当前 workspace/report.html。' +
   TECH_FORECAST_USER_REPORT_CONTRACT +
-  '技术成熟度分析必须给出雷达图与同数据评分表并逐项标注证据等级；技能演进必须给出桑基图并在图注写明流量口径与证据来源；新兴岗位预测、新兴技能预测与培训方向建议表的每个字段标注证据等级，预计薪资只给区间。' +
+  '技术成熟度分析必须给出雷达图与同数据评分表；技能演进必须给出桑基图并在图注写明流量口径与来源 <sup>[n]</sup>；新兴岗位预测、新兴技能预测与培训方向建议表不出现证据分级字样，预计薪资只给区间。' +
+  '第七章末尾必须以 h3"参考文献"输出编号列表，逐条列出正文 [n] 标记对应的来源（标题／网站或数据源／发布或快照日期／链接；库内快照写文件名），编号与正文标记严格一一对应，缺失或对不上视为报告未完成。' +
   '不要输出分析过程、提示词、工具调用、内部清单、模型/Agent/Skill 说明、Markdown、JSON、代码围栏或 report-meta。' +
   TECH_FORECAST_FILE_PROTOCOL +
   '不要读取 report.html 的完整内容，也不要把报告文件内容复制到最终回复。）'
@@ -159,13 +161,43 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '你正在按 tech-forecast SKILL 工作。面向院校与培训机构，围绕目标地区、技术领域方向与预判窗口，' +
     '分析新兴技术成熟度与技能演进路径，预测新兴岗位与新兴技能并给出培训方向建议。' +
     '按标准关键词表做岗位库横截面实测（新兴 vs 传统对照），并用联网检索工具补充公开来源的最新动态。' +
-    '预测字段必须标注证据等级（库内实测 / 公开来源 / 内置文档 / 分析推断）；薪资只给区间并写口径，' +
+    '证据分级仅用于内部研判，不得出现在报告展示层；薪资只给区间并写口径，' +
     '趋势不得使用岗位库月度聚合计数，只能标公开来源或推断，不编造增长率或市场规模。完整报告以 HTML 写入 workspace/report.html，' +
     '最终回复只保留短状态。',
 }
 
 /** 已安装为真实技能的 slug（仓库 .agents/skills/ 下） */
 export const INSTALLED_SKILLS = new Set(['industry-education-report', 'career-guidance', 'tech-forecast'])
+
+/** 广场技能清单条目（GET /api/skills 返回形状） */
+export interface PlazaSkillInfo {
+  id: string
+  name: string
+  description: string
+  /** 仓库 .agents/skills/ 下有真实技能文件夹（frontmatter 可读） */
+  installed: boolean
+}
+
+/** 广场对外技能清单：SKILL_PROMPTS 键即可运行权威集合，广场页卡片数随它走。
+    名称/描述优先读已安装技能的 SKILL.md frontmatter；未安装的回落提示词首句。 */
+export function listPlazaSkills(): PlazaSkillInfo[] {
+  return Object.entries(SKILL_PROMPTS).map(([id, prompt]) => {
+    let name = id
+    let description = prompt.split('SKILL 工作。')[1]?.split('。')[0] ?? ''
+    if (INSTALLED_SKILLS.has(id)) {
+      try {
+        const fm = readFileSync(join(skillDir(id), 'SKILL.md'), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)
+        if (fm) {
+          const nameM = fm[1].match(/^name:\s*(.+)$/m)
+          const descM = fm[1].match(/^description:\s*(.+)$/m)
+          if (nameM) name = nameM[1].trim()
+          if (descM) description = descM[1].trim()
+        }
+      } catch { /* SKILL.md 不可读时用回落值 */ }
+    }
+    return { id, name, description, installed: INSTALLED_SKILLS.has(id) }
+  })
+}
 
 /** 启用 report-meta 侧车输出的技能（终态剥离/校验见 lib/reportMeta.ts；
     设计记录 .agents/skills/plaza-dev-notes 001） */

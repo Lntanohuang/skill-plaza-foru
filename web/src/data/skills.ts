@@ -279,50 +279,9 @@ export const SKILLS: Skill[] = [
   },
 ]
 
-/* 智能体矩阵：24 个智能体按 4 大分类归组。
-   skillSlug 指向已上线的 SKILL；未上线的标 audiences 供筛选使用，卡片置灰。 */
-export interface Agent {
-  code: string
-  name: string
-  categoryId: string
-  audiences: string[]
-  skillSlug?: string
-}
-
-export const AGENTS: Agent[] = [
-  /* 产业与专业建设 */
-  { code: 'T01', name: '产业链分析与产业场景智能体', categoryId: 'industry', audiences: ['teacher', 'data'] },
-  { code: 'T02', name: '产业岗位画像与学习路径智能体', categoryId: 'industry', audiences: ['teacher', 'student'] },
-  { code: 'T03', name: '产教人才培养方案智能体', categoryId: 'industry', audiences: ['manager', 'teacher'] },
-  { code: 'T04', name: '产教决策报告生成智能体', categoryId: 'industry', audiences: ['manager', 'data'], skillSlug: 'industry-education-report' },
-  /* 课程与教学开发 */
-  { code: 'T05', name: '产教课程开发智能体', categoryId: 'teaching', audiences: ['teacher'] },
-  { code: 'T06', name: '智能排课智能体', categoryId: 'teaching', audiences: ['manager', 'teacher'] },
-  { code: 'T07', name: '智能分班智能体', categoryId: 'teaching', audiences: ['manager', 'teacher'] },
-  { code: 'T08', name: '智能课件生成智能体', categoryId: 'teaching', audiences: ['teacher'] },
-  { code: 'T09', name: '课堂助教智能体', categoryId: 'teaching', audiences: ['teacher', 'student'], skillSlug: 'classroom-assistant' },
-  { code: 'T10', name: '学勤与教学诊断智能体', categoryId: 'teaching', audiences: ['teacher'] },
-  /* 实训与就业服务 */
-  { code: 'T11', name: '学员个性化学习智能体', categoryId: 'career', audiences: ['student'] },
-  { code: 'T12', name: '岗位胜任力测评智能体', categoryId: 'career', audiences: ['teacher', 'student'] },
-  { code: 'T13', name: '岗位智能匹配智能体', categoryId: 'career', audiences: ['student'] },
-  { code: 'T14', name: '简历优化智能体', categoryId: 'career', audiences: ['student'] },
-  { code: 'T15', name: 'AI 面试智能体', categoryId: 'career', audiences: ['teacher', 'student'], skillSlug: 'ai-interview' },
-  { code: 'T24', name: '就业指导智能体', categoryId: 'career', audiences: ['student'], skillSlug: 'career-guidance' },
-  /* 数据治理与模型底座 */
-  { code: 'T16', name: '数据资产治理与质量智能体', categoryId: 'data', audiences: ['data'] },
-  { code: 'T17', name: 'JD 解析、聚类与统计智能体', categoryId: 'data', audiences: ['data'] },
-  { code: 'T18', name: '课程资源发现与入库智能体', categoryId: 'data', audiences: ['teacher', 'data'] },
-  { code: 'T19', name: '标准检索与课程合规校验智能体', categoryId: 'data', audiences: ['teacher', 'data'] },
-  { code: 'T20', name: '岗位—能力—知识点—课程映射智能体', categoryId: 'data', audiences: ['teacher', 'data'] },
-  { code: 'T21', name: '知识库运营与引用溯源智能体', categoryId: 'data', audiences: ['data'] },
-  { code: 'T22', name: '训练样本构造与标注质检智能体', categoryId: 'data', audiences: ['data'], skillSlug: 'training-data-qa' },
-  { code: 'T23', name: '模型评测与持续迭代智能体', categoryId: 'data', audiences: ['data'] },
-]
-
-export function agentsOf(categoryId: string): Agent[] {
-  return AGENTS.filter(a => a.categoryId === categoryId)
-}
+/* 智能体矩阵（T01–T24 规划清单）已移除：广场卡片改为跟随后端可运行技能清单
+   动态渲染（SkillsPage 拉 /api/skills，本数组做文案 enriched 与后端不可达时的回落），
+   未上线的规划项不再展示。历史数据见 git（9ab876f 之前版本）。 */
 
 /* 效果预览：左侧业务列表 + 右侧产物示意 */
 export const FEATURES: Feature[] = [  {

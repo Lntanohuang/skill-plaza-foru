@@ -17,7 +17,7 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `skill` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
+| `skill` | string | 是 | **技能 id**：`industry-education-report` / `career-guidance` / `tech-forecast` / `classroom-assistant` / `ai-interview` / `training-data-qa`；非法值返回 400 并列出可用值 |
 | `messages` | array | 是 | OpenAI 消息数组，最后一条必须是内容非空的 `user` 消息；无 `sessionId` 时历史会被拍平注入本轮上下文（无状态客户端直接带全量历史即可） |
 | `stream` | boolean | 否 | 默认 `false`；`true` 时输出 SSE 流 |
 | `sessionId` | string | 否 | 非标准扩展：复用服务端会话（多轮只发最新一条，省 token）；不传则每次新会话 |
@@ -27,6 +27,8 @@ OpenAI 风格的对话补全端点，供已有 OpenAI SDK/SSE 客户端的项目
 `model` 字段被忽略（服务端模型由 `PI_MODEL` 配置决定，该字段预留给将来按请求选模型的扩展）。其他 OpenAI 常见字段（`temperature` 等）同样忽略。
 
 **流式输出**（`stream: true`，每帧 `data: {JSON}\n\n`，标准 `chat.completion.chunk` 外壳，按序）：
+
+所有帧均为标准 OpenAI `chat.completion.chunk` 外壳（`id` / `object` / `created` / `model` / `choices`），正文与思考在 `choices[0].delta` 内；帧序示例：
 
 ```
 data: {"id":"chatcmpl-<runId>","object":"chat.completion.chunk","created":1760400000,"model":"<服务模型>","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]} ← role 首帧
@@ -39,6 +41,11 @@ data: {…同壳…,"choices":[],"usage":{"prompt_tokens":…,"completion_tokens
 data: [DONE]
 ```
 
+- `reasoning_content`（思考）与 `content`（正文）二选一出现在 delta 里；`choices` 为空数组的帧是扩展信息帧（工具 `status` / `reportUrl` / `usage`），标准客户端自然跳过。
+- 工具 `status` 帧为**活动时间线级别**：只有工具名（`tool`）、状态（`state`: `active`/`completed`/`failed`）与调用 id，不含工具入参和返回内容。
+- `reportUrl` 是相对路径，拼上后端地址使用（如 `http://<host>:<port>/api/reports/<runId>`）；加 `/download` 为下载。`resultType` 为 `success` 或 `timeout`。
+- 报告类技能成功时正文增量为空、结果在 `reportUrl`；其余技能结果在 `content` 增量拼接。
+- `cost_usd`、`status`、`reportUrl`、`runId`、`resultType` 均为非标准扩展字段，标准客户端可忽略；客户端 JSON 反序列化需配置忽略未知字段（Spring Boot 默认即是）。
 - 失败时在 `[DONE]` 前输出 `data: {"error":{"message":"…","type":"agent_error"}}`。
 - 每 15 秒一条 `: ping` 注释行作心跳，客户端忽略即可。
 - 正文与思考分离：Agent 工具调用前的过程叙述并入 `reasoning_content`；`delta.content` 只含最终答复，在任务完成时一次性发出（不逐 delta 流式）。
@@ -47,7 +54,7 @@ data: [DONE]
 - career-guidance 等报告类技能成功时结果在 `reportUrl`，`delta.content` 只含收尾说明（可能为空）；其余技能结果在 `delta.content`。
 - `cost_usd` 为非标准扩展字段，标准客户端可忽略。
 
-**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；`model` 回显服务端实际模型；career-guidance 成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
+**非流式输出**（`stream: false`）：标准 `chat.completion` JSON；`model` 回显服务端实际模型；报告类技能（career-guidance / tech-forecast）成功时顶层多 `reportUrl` / `runId` 字段，`choices[0].message.content` 为空串。
 
 ```json
 {
@@ -134,12 +141,24 @@ curl -N http://127.0.0.1:8767/v1/chat/completions \
 | type | 载荷 | 说明 |
 |---|---|---|
 | `started` | `runId`, `startedAt` | 首包，运行已开始 |
-| `status` | `phase`, `message` | 过程状态（如 initializing、思考/工具执行进度） |
+| `status` | `phase`, `state`?, `chars`?, `tool`?, `id`? | 过程状态，枚举见下表 |
 | `session` | `sessionId` | 新会话创建时返回，调用方需保存用于后续多轮 |
 | `text` | `delta` | 正文增量片段，拼接即为完整回答 |
 | `usage` | `usage`, `content` | token 用量信息 |
-| `done` | `content`, `resultType`, `charts`, `runId`, `reportUrl?` | **终态**。`reportUrl` 仅 career-guidance 成功生成报告时有值；此时 `content` 为空串，报告走该 URL 获取 |
+| `done` | `content`, `resultType`, `charts`, `runId`, `reportUrl?` | **终态**。`resultType` 为 `success` / `timeout`；`reportUrl` 仅报告类技能（career-guidance / tech-forecast）成功生成报告时有值；此时 `content` 为空串，报告走该 URL 获取 |
 | `error` | `message` | **终态**，运行失败 |
+
+**`status` 事件枚举**（前端判别"正在做什么"的依据）：
+
+| phase | state | 附加字段 | 含义 |
+|---|---|---|---|
+| `initializing` | —（无 state） | `message` | 正在启动运行环境（每轮一条） |
+| `thinking` | `active` | `chars`（已积累思考字数） | 模型思考中，约 700ms 一条节流进度 |
+| `text` | `active` | — | 正文输出中（text 增量本身走 `text` 事件，此状态只标记块开始） |
+| `tool` | `active` | `tool`（工具名，如 bash/read）、`id`（调用 id） | 正在执行工具调用 |
+| `tool` | `completed` / `failed` | `tool`、`id` | 工具调用结束（成功/失败） |
+
+即：看到 `phase:"tool"` 就是工具调用；`thinking` 或 `chars` 在涨就是思考；`text` 增量就是正文。
 
 说明：
 
@@ -198,6 +217,22 @@ curl -N http://127.0.0.1:8767/api/chat \
 | `GET /api/runs/{runId}/file/trace` | 完整 trace（json） |
 | `GET /api/runs/{runId}/file/report` | 结构化报告数据（json） |
 | `GET /api/runs/{runId}/file/md` | trace 的 Markdown 版（按需生成） |
+
+## 6. GET /api/skills（技能清单）
+
+返回当前可运行的技能列表（与 `/v1/chat/completions` 的 `skill` 合法值同源）。智能体广场的技能卡片数随此接口动态增减；公开数据，无鉴权、无跨源限制。
+
+```json
+{
+  "skills": [
+    { "id": "career-guidance", "name": "career-guidance", "description": "为学生、求职者和在职转型者提供…", "installed": true },
+    { "id": "classroom-assistant", "name": "classroom-assistant", "description": "只在用户明确提供或授权的课程资料范围内…", "installed": false }
+  ]
+}
+```
+
+- `installed: true` 表示仓库 `.agents/skills/<id>/` 下有真实技能文件夹，`name`/`description` 读自该 SKILL.md 的 frontmatter（`name` 是技能加载键，非中文展示名）。
+- `installed: false` 为外部仓库接入的技能（提示词内置），`description` 取回落提示词首句。
 
 ## 典型接入流程
 

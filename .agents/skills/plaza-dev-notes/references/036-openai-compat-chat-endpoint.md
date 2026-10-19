@@ -2,6 +2,16 @@
 
 **状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；2026-10-15 流式升级为标准 chunk 格式并修两项流式缺陷；同日二次修订：侧车扣留按 `SIDECAR_SKILLS` 门控 + 叙述定性上移消息边界，见下方 bullet 与 `docs/openai-stream-upgrade.md` §七。typecheck 与帧序对照通过，线上真实抓包回归待跑）
 
+**状态**：已实现（本地流式/非流式/错误用例/多轮拍平/回归全通过，2026-10-13；2026-10-14 流式升级为标准 `chat.completion.chunk` 并复验通过；公网 career-guidance 成功路径端到端待用户执行）
+
+## 2026-10-14 修订：流式帧升级为标准 chunk 格式
+
+- **动机**：外部项目（Java 客户端）按标准 OpenAI 流式结构定义 `OpenAIChatCompletionChunk`（`choices[]`/`object`/`created`/`model`/`usage`/`id`），原简化帧正文在顶层 `content`、无 `choices` 数组，对接方反序列化后取不到任何正文。升级后对接方现有类零改动可解析。
+- **新帧规范**（详见 `docs/agent-api.md` 第 0 节与 `docs/openai-stream-upgrade.md`）：所有帧为 `{id, object:"chat.completion.chunk", created, model, choices}` 外壳；role 首帧（`started` 时发出）；思考 `delta.reasoning_content`（DeepSeek 通行字段）；正文 `delta.content`；`finish_reason:"stop"` 收尾帧；报告帧与 usage 帧为 `choices:[]` + 顶层扩展（`reportUrl`/`runId`/`resultType`、`usage`）。
+- **工具活动帧（新增）**：`status()` 原 openai 协议直接丢弃，现仅转发 `phase:'tool'` 事件为 `choices:[]` + 顶层 `status:{phase,state,tool,id}`——**活动时间线级别**，只有工具名与状态，不含入参/返回内容（runner 层流式事件本就没有参数；完整输入输出仅落盘 trace）。thinking/text 的 chars 节流状态不转发（全文已流式，冗余）。否决参数级 `tool_calls` 流（需扩 RunnerEvent，报告类技能外部展示只需进度级别）与 SSE 注释行方案（标准客户端不可解析）。
+- **改动点**：仅 `web/server/index.ts` `createChatWire` openai 流式分支——`frame()` 拆为 `chunk(delta, finishReason)` 与 `extChunk(extra)` 两个出口；`started`/`thinkingDelta`/`textDelta`/`status`/`done` 五处。plaza 分支逐字节不变（`/api/chat` 事件序回归一致），非流式 JSON 不变，`busy`/`error` 流中帧不变。
+- **复验**（2026-10-14，PI_MODEL=deepseek-flash）：流式简单问题 role → reasoning_content 1569 帧 → content 362 帧 → stop → usage → `[DONE]`，工具活动帧 32 条（classroom-assistant bash 工具）；career-guidance 流式端到端（run 20261014-135228-hzyi，6.9 分钟）终态 stop → 报告帧 `reportUrl`/`resultType:"success"` → usage → `[DONE]`，报告 URL 200/126KB 六章完整；400 假 skill 错误体不变；非流式标准 `chat.completion` 不变；plaza 事件序回归一致。公网浏览器侧打开报告仍待用户验证。
+
 ## 动机
 
 另一个项目要调用本服务，其客户端已按 OpenAI 风格 SSE（`content` 正文增量、`reasonContent` 思考增量、`data: [DONE]`）开发。直接改造 `/api/chat` 会破坏广场前端两处事件消费（UsePage/ExperiencePage），故新增平行端点，两协议并存、共用编排核心。
