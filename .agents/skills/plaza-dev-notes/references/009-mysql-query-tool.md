@@ -20,7 +20,7 @@
 ### Agent 接入：沙箱 AGENTS.md（不改 runner 协议）
 
 - `web/server/index.ts` 的 `workspaceDirFor()`（约 `web/server/index.ts:121` 起，含 `sandboxAgentsMd()`/`mysqlConfigured()`）在创建沙箱目录时同步写入服务端维护的 `AGENTS.md`：声明工具绝对路径、选项、使用约定（先小范围探查再聚合、中文岗位名用 LIKE、报告类技能默认以内置口径文档为准除非用户明确要求查库——维持 006/007 与 industry-education-report 的禁网禁库决策）。
-- 告知通道依赖引擎从 cwd 收集 AGENTS.md 的共同约定：pi 实证于 `pi-coding-agent/dist/core/resource-loader.js:33`（candidates 含 AGENTS.md，cwd 向祖先遍历）；zcode 同约定。zcode/pi 两引擎共用 `workspaceDirFor`，两边同时生效，**PiRunner/JsonlChannel 零改动**。
+- 送达方式（2026-10-19 起，见 075）：pi 以 `--no-context-files` 关闭 AGENTS.md 目录链发现，沙箱 AGENTS.md 经 `--append-system-prompt` 显式注入系统提示词（两个 createSession 调用点均先经 `workspaceDirFor()` 写好该文件）；zcode 引擎不在当前执行链，如恢复仍走 cwd 链式发现（resource-loader 从 cwd 向祖先遍历收集）。
 - 条件化：`mysqlConfigured()`（MYSQL_HOST/USER/PASSWORD/DATABASE 齐）才写工具节，公开部署无凭据时不给 Agent 坏工具。
 - 凭据与路径边界：MYSQL_* 真实值只落本地 `web/.env`（gitignore 实证）；机器相关的脚本绝对路径只写进沙箱 AGENTS.md（不入 git）。
 
