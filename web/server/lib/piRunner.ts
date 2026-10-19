@@ -491,6 +491,13 @@ export class PiRunner extends AgentRunner {
       '-n', sid.slice(0, 8),
       /* 无头运行不需要扩展发现，裁掉固定上下文开销 */
       '--no-extensions',
+      /* 关闭 AGENTS.md/CLAUDE.md 目录链发现：沙箱 cwd 在仓库内，pi 会沿父目录
+         把仓库根的开发 AGENTS.md（开发手记强制读写等工程约定）收进用户运行
+         上下文，沙箱智能体曾据此写开发手记、改仓库文件（2026-10-19 实证，手记 075） */
+      '--no-context-files',
+      /* 沙箱说明改为显式注入：该参数对存在的路径读取文件内容（pi resource-loader
+         resolvePromptInput）；会话 AGENTS.md 由 workspaceDirFor 建目录时生成 */
+      '--append-system-prompt', join(workspaceDir, 'AGENTS.md'),
     ]
     if (opts.skill && INSTALLED_SKILLS.has(opts.skill)) args.push('--skill', skillDir(opts.skill))
     const channel = new JsonlChannel(this.cli, args, { cwd: workspaceDir })

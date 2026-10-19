@@ -89,9 +89,11 @@ const sessions = new Map<
 >()
 
 /* ------------------------------------------------------------
-   沙箱 AGENTS.md：会话工作目录的服务端说明（Agent 从 cwd 收集
-   AGENTS.md——由 pi resource-loader 加载）。目前只声明
-   MySQL 只读查询工具；MYSQL_* 未配置时（如公开部署无凭据）不写
+   沙箱 AGENTS.md：会话工作目录的服务端说明。pi 以 --no-context-files
+   关闭 AGENTS.md 目录链发现（沙箱 cwd 在仓库内，链式发现会把仓库根的
+   开发 AGENTS.md 装进用户运行上下文），本文件改由 piRunner 经
+   --append-system-prompt 显式注入系统提示词（见手记 075）。
+   目前只声明 MySQL 只读查询工具；MYSQL_* 未配置时（如公开部署无凭据）不写
    工具节，避免给 Agent 一把坏工具。内容确定性覆盖，每次创建重写。
    ------------------------------------------------------------ */
 const CAREER_MARKET_QUERY_TOOL = join(__dirname, '../../scripts/career-market-query.mjs')
@@ -128,6 +130,12 @@ function sandboxAgentsMd(): string {
       '涉及具体城市、岗位、实习/应届或学历门槛的问题，必须优先调用该工具；查询结果用于 report-meta 的 sources/metrics/charts，查询失败时把原因写入开发侧 gaps/risks。',
     )
   }
+  lines.push(
+    '',
+    '## 工程边界',
+    '',
+    '本目录是面向用户任务的独立沙箱。目录之外的项目文件（源码、web/、开发文档与开发手记等）是广场工程资料，与本次任务无关：不要读取，也不要在沙箱外创建或修改任何文件。仓库内容只能通过上文声明的工具脚本和已挂载的技能目录访问。',
+  )
   return lines.join('\n') + '\n'
 }
 

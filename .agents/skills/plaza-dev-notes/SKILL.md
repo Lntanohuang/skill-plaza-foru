@@ -7,7 +7,7 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 
 本技能是本仓库的**活记录本**，供开发会话（zcode / pi 在本仓库工作时）使用，记录"为什么这么设计、接在哪、后续怎么扩"。代码本身能说明的不重复记。
 
-**边界**：这是开发用内部技能——不进 `web/server/lib/skills.ts` 智能体列表、不进 `INSTALLED_SKILLS`、不在广场前端任何接入点出现。面向广场用户的技能接入走 skills.ts 等四个接入点，与本技能无关。
+**边界**：这是开发用内部技能——不进 `web/server/lib/skills.ts` 智能体列表、不进 `INSTALLED_SKILLS`、不在广场前端任何接入点出现；2026-10-19 起广场沙箱 pi 以 `--no-context-files` 关闭 AGENTS.md 链发现并显式注入沙箱说明，仓库根 AGENTS.md 与本技能不再进入运行上下文（见 075）。面向广场用户的技能接入走 skills.ts 等四个接入点，与本技能无关。
 
 ## 何时读
 
@@ -120,3 +120,4 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 072 | 会话归档与删除（RunRecord.archived + rewriteIndex、session 路由、侧栏 hover 操作与两步删除、已归档分区） | 已实现（2026-10-16 构建/curl/浏览器断言与截图通过；删除保留 trace 文件为索引层删除） | [072-conversation-archive-delete.md](references/072-conversation-archive-delete.md) |
 | 073 | industry-education-report 沙箱运行：政府部门广东 AI 招商研判（05 全量引用、25 项缺口、语义审核降级） | 已实现观察（2026-10-19 会话；技能脚本校验/渲染/verify 通过，parseReport/浏览器回归待跑） | [073-industry-education-report-guangdong-ai-gov-run.md](references/073-industry-education-report-guangdong-ai-gov-run.md) |
 | 074 | 侧栏实时对话条目与落库竞态重拉（liveConvGroup 占位、运行中徽章、reactive 会话 Map） | 已实现（2026-10-19 构建/真实两轮 e2e 8 断言与截图通过） | [074-live-sidebar-entry.md](references/074-live-sidebar-entry.md) |
+| 075 | 沙箱 pi 上下文隔离：--no-context-files 断链 + 沙箱说明 --append-system-prompt 显式注入 + 工程边界节 | 已实现（2026-10-19 重启后探针会话验证：上下文无开发 AGENTS.md） | [075-sandbox-context-isolation.md](references/075-sandbox-context-isolation.md) |
