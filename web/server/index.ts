@@ -46,6 +46,12 @@ import {
   type MetaChart,
   type SidecarExtract,
 } from './lib/reportMeta.ts'
+import {
+  readWorkspaceArtifact,
+  validateArtifact,
+  type ArtifactOutput,
+  type ArtifactValidation,
+} from './lib/artifact.ts'
 import { PiRunner, resolvePiCli, piModelRef } from './lib/piRunner.ts'
 import type { EngineName, RunnerEvent } from './lib/runner.ts'
 
@@ -294,6 +300,9 @@ function handleRunsApi(req: any, res: any, seg: string[]) {
       type = 'application/json; charset=utf-8'
     } else if (kind === 'report' && record.files.report && existsSync(record.files.report)) {
       file = record.files.report
+      type = 'application/json; charset=utf-8'
+    } else if (kind === 'artifact' && record.files.artifact && existsSync(record.files.artifact)) {
+      file = record.files.artifact
       type = 'application/json; charset=utf-8'
     } else if (kind === 'md' && record.files.trace && existsSync(record.files.trace)) {
       const mdFile = traceFilePath(runId, 'trace').replace(/\.json$/, '.md')
@@ -586,6 +595,14 @@ interface WireDonePayload {
   charts?: MetaChart[]
   runId: string
   reportUrl?: string
+  artifacts?: Array<{
+    id: string
+    type: string
+    audience: string
+    status: string
+    required?: boolean
+    downloadUrl?: string
+  }>
   usage?: UsageSummary | null
   /** career-guidance 报告未生成：content 为失败原因，openai 按错误帧输出 */
   failure?: boolean
@@ -759,6 +776,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
           charts: p.charts,
           runId: p.runId,
           reportUrl: p.reportUrl,
+          artifacts: p.artifacts,
         })
         return
       }
@@ -771,7 +789,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
         /* 残余缓冲未等到消息边界（异常收尾）：按最终答复发出 */
         flushMessageText(false)
         frame({}, 'stop')
-        if (p.reportUrl) extFrame({ reportUrl: p.reportUrl, runId: p.runId, resultType: p.resultType })
+        if (p.reportUrl || p.artifacts) extFrame({ reportUrl: p.reportUrl, artifacts: p.artifacts, runId: p.runId, resultType: p.resultType })
         if (usage) extFrame({ usage })
         sseDone()
       } else {
@@ -782,7 +800,7 @@ function createChatWire(protocol: ChatProtocol, stream: boolean) {
           model,
           choices: [{ index: 0, message: { role: 'assistant', content: p.content }, finish_reason: 'stop' }],
           ...(usage ? { usage } : {}),
-          ...(p.reportUrl ? { reportUrl: p.reportUrl, runId: p.runId } : {}),
+          ...(p.reportUrl || p.artifacts ? { reportUrl: p.reportUrl, artifacts: p.artifacts, runId: p.runId } : {}),
         })
       }
     },
@@ -925,6 +943,9 @@ async function runChatTurn(res: any, params: TurnParams) {
   let htmlReportFile: string | undefined
   let htmlReportValidation: HtmlReportValidation | undefined
   let htmlReportError: string | undefined
+  let artifactFile: string | undefined
+  let artifactValidation: ArtifactValidation | undefined
+  let artifactOutputs: ArtifactOutput[] = []
 
   /** Copy a validated report into the run-owned trace directory. */
   const saveHtmlReport = (reportHtml: string, source: string): boolean => {
@@ -961,6 +982,29 @@ async function runChatTurn(res: any, params: TurnParams) {
    * reader follows only the server-owned fixed report.html path; malformed or
    * oversized files fall back to the legacy terminal response.
    */
+  const captureWorkspaceArtifact = (): boolean => {
+    if (artifactFile || !entry?.workspaceDir) return Boolean(artifactFile)
+    const artifact = readWorkspaceArtifact(entry.workspaceDir)
+    if (artifact.error) {
+      recorder.note({ artifactError: artifact.error })
+      return false
+    }
+    if (!artifact.document || !artifact.raw) return false
+    const validation = validateArtifact(artifact.document)
+    artifactValidation = validation
+    artifactOutputs = artifact.document.outputs ?? []
+    recorder.note({ artifact: validation })
+    const target = traceFilePath(runId, 'artifact')
+    try {
+      writeFileSync(target, artifact.raw)
+      artifactFile = target
+      return true
+    } catch (error: any) {
+      recorder.note({ artifactError: error?.message ?? String(error) })
+      return false
+    }
+  }
+
   const captureWorkspaceHtmlReport = (): boolean => {
     if (!HTML_REPORT_SKILLS.has(skill) || htmlReportFile || !entry?.workspaceDir) return Boolean(htmlReportFile)
     const report = readWorkspaceHtmlReport(entry.workspaceDir)
@@ -980,6 +1024,7 @@ async function runChatTurn(res: any, params: TurnParams) {
     /* A timeout/abort can happen after the Agent flushed report.html but
        before its terminal event. Capture it before writing the run record. */
     captureWorkspaceHtmlReport()
+    captureWorkspaceArtifact()
     runFinalized = true
     const durationMs = Date.now() - startedAt
     const tokenUsage = currentTokenUsage()
@@ -1008,7 +1053,9 @@ async function runChatTurn(res: any, params: TurnParams) {
       files: { events: recorder.file },
     }
     if (htmlReportValidation) record.report = { ...(record.report ?? {}), html: htmlReportValidation }
+    if (artifactValidation) record.report = { ...(record.report ?? {}), artifact: artifactValidation }
     if (htmlReportFile) record.files.html = htmlReportFile
+    if (artifactFile) record.files.artifact = artifactFile
     void (async () => {
       try {
         if (entry?.engineSessionId) {
@@ -1224,6 +1271,7 @@ async function runChatTurn(res: any, params: TurnParams) {
         wire.usage(ev.usage)
         const checkedCharts = sidecar.meta && validateMeta(sidecar.meta).pass ? sidecar.meta.charts : []
         const workspaceReport = captureWorkspaceHtmlReport()
+        captureWorkspaceArtifact()
         if (HTML_REPORT_SKILLS.has(skill) && !workspaceReport) {
           /* Backward compatibility only: a plain short status is not a report.
              Legacy agents may still return a complete HTML document in text. */
@@ -1245,6 +1293,18 @@ async function runChatTurn(res: any, params: TurnParams) {
           charts: checkedCharts,
           runId,
           reportUrl: htmlReportFile ? `/api/reports/${encodeURIComponent(runId)}` : undefined,
+          artifacts: artifactFile && artifactValidation ? artifactOutputs.map((output) => ({
+            id: output.id,
+            type: output.type,
+            audience: output.audience,
+            status: output.status,
+            required: output.required,
+            downloadUrl: output.type === 'html' && htmlReportFile
+              ? `/api/reports/${encodeURIComponent(runId)}/download`
+              : output.type === 'json' && artifactFile
+                ? `/api/runs/${encodeURIComponent(runId)}/file/artifact`
+                : undefined,
+          })) : undefined,
           usage: ev.usage ?? lastUsage,
           failure: isHtmlReportSkill && !htmlReportFile,
         })

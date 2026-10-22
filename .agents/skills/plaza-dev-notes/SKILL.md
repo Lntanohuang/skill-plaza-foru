@@ -97,3 +97,5 @@ description: 技能广场仓库（skill-plaza-foru）的开发手记，沉淀本
 | 048 | 就业指导广场沙箱第三次运行：广州 Java 后端实习（2026-10-16 快照，六图报告，服务端校验通过） | 已实现观察（2026-10-16 会话；浏览器/运行历史回归待跑） | [048-career-guidance-guangzhou-java-intern-20261016.md](references/048-career-guidance-guangzhou-java-intern-20261016.md) |
 | 049 | 精确岗位名候选查询与合并岗位统计工具 | 已实现（真实 market-summary 回归通过） | [049-exact-title-query-trial.md](references/049-exact-title-query-trial.md) |
 | 065 | 就业指导广场沙箱第二次运行：广州 Java 后端实习（2026-10-15 快照，四图报告） | 已实现观察（2026-10-15 会话；服务端校验/浏览器回归待跑） | [065-career-guidance-guangzhou-java-intern-20261015.md](references/065-career-guidance-guangzhou-java-intern-20261015.md) |
+| 050 | 通用报告 Artifact 协议、统一证据模型与就业指导 Skill v2 | 已实现（真实就业指导 Artifact 生成与浏览器回归待验证） | [050-report-artifact-and-career-guidance-v2.md](references/050-report-artifact-and-career-guidance-v2.md) |
+| 066 | 岗位库 MySQL 本地副本（veryVision 服务器 Docker） | 已实现（构建进行中，验收待跑） | [066-mysql-replica-veryvision.md](references/066-mysql-replica-veryvision.md) |

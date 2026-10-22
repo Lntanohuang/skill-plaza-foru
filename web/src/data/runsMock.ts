@@ -82,9 +82,23 @@ export interface RunListItem {
       resumeReview?: { strengths?: string[]; missingEvidence?: string[]; rewriteItems?: string[] }
       charts?: ReportChart[]
     }
+    artifact?: {
+      pass: boolean
+      errors: string[]
+      status?: string
+      title?: string
+      counts: {
+        outputs: number
+        sources: number
+        metrics: number
+        claims: number
+        evidence: number
+        gaps: number
+      }
+    }
   }
   /** 原始文件路径（真实数据才有；演示数据无） */
-  files?: { events?: string; trace?: string; report?: string; html?: string }
+  files?: { events?: string; trace?: string; report?: string; html?: string; artifact?: string }
 }
 
 export interface RunToolPart {

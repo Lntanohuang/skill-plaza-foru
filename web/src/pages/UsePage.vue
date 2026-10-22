@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { SKILLS, bySlug, catOf } from '../data/skills'
 import { configOf, type TaskField } from '../data/useTaskConfigs'
-import { checkHealth, streamChat, type ApiState, type ChatAttachment, type ChatEvent, type ChatMessage } from '../composables/useChatApi'
+import { checkHealth, streamChat, type ApiState, type ArtifactSummary, type ChatAttachment, type ChatEvent, type ChatMessage } from '../composables/useChatApi'
 import ReportOutput from '../components/ReportOutput.vue'
 import type { ReportChart as ReportChartData } from '../data/runsMock'
 import { formatSize, uploadDemoFile, uploadFile, validateUploadFile } from '../composables/useUpload'
@@ -59,6 +59,7 @@ interface RunMessage {
   /** done 事件带回的最终一段文本（最后一条 assistant 消息）。 */
   final?: string
   charts?: ReportChartData[]
+  artifacts?: ArtifactSummary[]
   runId?: string
   reportUrl?: string
 }
@@ -418,6 +419,7 @@ function makeStreamHandler(answer: RunMessage) {
       for (const item of progressEvents.value) if (item.state === 'active') item.state = 'completed'
       if (event.content) answer.final = event.content
       answer.charts = event.charts ?? []
+      answer.artifacts = event.artifacts ?? []
       answer.reportUrl = event.reportUrl
     } else if (event.type === 'error') {
       for (const item of progressEvents.value) if (item.state === 'active') item.state = 'failed'

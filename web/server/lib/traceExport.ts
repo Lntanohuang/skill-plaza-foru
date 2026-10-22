@@ -193,8 +193,23 @@ export interface RunRecord {
     }
     /** career-guidance HTML figure/heatmap structural check. */
     html?: HtmlReportValidation
+    /** artifact/1 结构与证据引用校验摘要。 */
+    artifact?: {
+      pass: boolean
+      errors: string[]
+      status?: string
+      title?: string
+      counts: {
+        outputs: number
+        sources: number
+        metrics: number
+        claims: number
+        evidence: number
+        gaps: number
+      }
+    }
   }
-  files: { events?: string; trace?: string; report?: string; html?: string }
+  files: { events?: string; trace?: string; report?: string; html?: string; artifact?: string }
 }
 
 /** 时间可读 id：YYYYMMDD-HHMMSS-xxxx；prefix 用于区分用途（runId 无前缀，会话 id 传 'sess-'） */
@@ -221,10 +236,11 @@ export function readIndex(): RunRecord[] {
   }
 }
 
-export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report' | 'html'): string {
+export function traceFilePath(runId: string, kind: 'events' | 'trace' | 'report' | 'html' | 'artifact'): string {
   if (kind === 'events') return join(TRACES_DIR, `${runId}.events.jsonl`)
   if (kind === 'report') return join(TRACES_DIR, `${runId}.report.json`)
   if (kind === 'html') return join(TRACES_DIR, `${runId}.report.html`)
+  if (kind === 'artifact') return join(TRACES_DIR, `${runId}.artifact.json`)
   return join(TRACES_DIR, `${runId}.json`)
 }
 

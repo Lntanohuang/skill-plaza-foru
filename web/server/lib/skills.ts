@@ -46,7 +46,7 @@ export const CAREER_GUIDANCE_REPORT_SECTIONS = [
 ] as const
 
 const CAREER_GUIDANCE_FILE_PROTOCOL = reportFileProtocol(
-  '中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略',
+  '中国目标地点按热点图规则生成 heatmap-chart，查询失败、超时或资源未注册时写明“热点图未评估”和原因，国外地点省略；同时按 report-output Skill 写入 workspace/report.artifact.json，使用 artifact/1，登记实际产物和统一证据引用，不能把该 JSON 放进最终回复',
 )
 
 const CAREER_GUIDANCE_USER_REPORT_CONTRACT =
@@ -86,7 +86,7 @@ const TECH_FORECAST_USER_REPORT_CONTRACT =
   '仅当用户明确只需简短答疑而非正式报告时，直接交付所需内容，不强行展开七章。'
 
 const CAREER_GUIDANCE_FIRST_TURN_RULES =
-  '（先读取用户附件、Skill 参考资料和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
+  '（先读取用户附件、Skill 参考资料、report-writing、report-output 和共享 chart-visualization Skill；涉及具体城市、岗位、实习/应届或学历结构时必须调用岗位库只读查询工具。' +
   '报告必须写入当前 workspace/report.html。' +
   CAREER_GUIDANCE_USER_REPORT_CONTRACT +
   '岗位需求分析必须使用数据库结果并给出筛选口径、样本范围和内联 SVG 图表；数据不足时明确写未评估，不要编造。' +
@@ -142,17 +142,13 @@ export const SKILL_PROMPTS: Record<string, string> = {
     '一次只问一题，根据用户的真实回答智能追问；不要替用户作答。练习结束后引用用户回答原文，' +
     '按能力维度给出证据化复盘、待验证项和可执行的改进建议。评分不代表录用概率。',
   'career-guidance':
-    '你正在按 career-guidance SKILL 工作。把用户的目标、经历、岗位信息和现实约束转化为可执行的求职决策：' +
-    '先澄清目标，再给证据化判断，最后给有优先级、可检查的行动。每个岗位要求绑定用户提供的经历、作品或项目结果，' +
-    '标记为已证明、部分证明、缺口或未知；简历改写保留真实经历，不编造数字、公司、职责或成果。' +
-    '始终区分用户提供的事实、岗位原文、推断和待核实信息；不承诺录用概率，不给确定法律结论；' +
+    '你正在按 career-guidance SKILL 工作。把用户的目标、经历、岗位信息和现实约束转化为可执行的求职决策；先澄清会改变判断的关键信息，再绑定证据、形成结论和行动。' +
+    '读取并遵循 report-writing、report-output 与 chart-visualization 共享规则；业务 Skill 只负责就业领域数据、岗位库查询、简历材料、六章内容和业务图表选择。' +
+    '用户未提供的经历、数字、公司、职责和成果保持未知；始终区分用户事实、岗位原文、数据库统计、推断和待核实信息，不承诺录用概率，不给确定法律结论。' +
+    '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具；岗位需求分析优先调用 market-summary，只有信息不足或需要独立维度时才调用细分 query。' +
+    '涉及产业与薪酬数据优先读取技能内置文档并保留时间、地域和分母口径；简历改写必须基于用户材料。' +
     CAREER_GUIDANCE_USER_REPORT_CONTRACT +
-    '涉及具体城市、岗位名称、实习/应届筛选或学历门槛占比时，必须调用会话提供的 MySQL 只读查询工具，不能用通用招聘常识替代；' +
-    '就业指导岗位需求分析默认优先调用 market-summary，一次取得样本量、学历、经验、薪资和主要来源结构；仅在信息不足、合并查询失败或需要岗位名排行/省内城市分布等独立维度时调用细分 query，不要重复查询已覆盖指标；' +
-    '涉及产业与薪酬数据优先读取技能内置文档并保留时间与地域口径；' +
-    CAREER_GUIDANCE_FILE_PROTOCOL +
-    '量化数据和图表必须使用 HTML/CSS/内联 SVG 直接绘制，不能用 Markdown 表格冒充图表；' +
-    '每个图表必须按共享 chart-visualization Skill（.agents/skills/chart-visualization/references/）下对应的绘图规范输出，并在 figure 上标注 data-chart-skill；中国目标地点先查 `.agents/skills/chart-visualization/resources/regions/registry.json` 选择匹配 manifest，未注册省份标记未评估，再用同一岗位筛选口径调用 city-distribution（使用 province、limit=20），成功时必须输出 data-chart-skill="heatmap-chart"、data-chart-id="CH_CITY" 的无气泡热点图；只有同口径总量可得时才计算“其他”，否则明确标为未评估并说明。失败/超时/缺少边界时必须写“热点图未评估”及失败原因，国外目标地点省略，未知地点不猜测。',
+    CAREER_GUIDANCE_FILE_PROTOCOL,
   'training-data-qa':
     '你正在按 training-data-qa SKILL 工作。根据治理数据、任务模板和标注规则构造黄金种子、' +
     '扩增样本与难例，规划训练/验证/测试/独立评测划分，并检查 Schema、事实证据、业务规则、' +

@@ -301,6 +301,7 @@ const envRows = computed(() => {
               <a v-if="item.files.events" :href="runFileUrl(runId, 'events')" download>events.jsonl</a>
               <a v-if="item.files.trace" :href="runFileUrl(runId, 'trace')" download>trace.json</a>
               <a v-if="item.files.trace" :href="runFileUrl(runId, 'md')" download>trace.md</a>
+              <a v-if="item.files.artifact" :href="runFileUrl(runId, 'artifact')" download>report.artifact.json</a>
             </div>
             <p v-else class="rd-note">演示数据不含原始文件下载；接入后端后每次运行可下载 events.jsonl / trace.json / trace.md。</p>
           </main>

@@ -15,6 +15,15 @@ export type ApiState = 'checking' | 'ready' | 'offline' | 'nokey'
 export type EngineId = 'pi'
 import type { ReportChart } from '../data/runsMock'
 
+export type ArtifactSummary = {
+  id: string
+  type: string
+  audience: string
+  status: string
+  required?: boolean
+  downloadUrl?: string
+}
+
 export interface HealthResult {
   ok: boolean
   model?: string
@@ -39,7 +48,7 @@ export type ChatEvent =
     }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Record<string, number | string> }
-  | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[]; runId?: string; reportUrl?: string }
+  | { type: 'done'; content: string; resultType?: string; charts?: ReportChart[]; artifacts?: ArtifactSummary[]; runId?: string; reportUrl?: string }
   | { type: 'error'; message: string }
 
 export async function checkHealth(): Promise<HealthResult> {
